@@ -1,0 +1,22 @@
+# External projects used only as development references.
+/references/
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+
+# Build output
+lib/
+dist/
+out/
+
+# Test / coverage
+coverage/
+
+# Env files (credentials never enter git)
+.env
+.env.*
+!.env.example
+
+# OS noise
+.DS_Store

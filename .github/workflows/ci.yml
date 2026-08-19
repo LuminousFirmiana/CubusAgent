@@ -1,0 +1,26 @@
+# CI 骨架：每次 push 或开 PR，GitHub 云端自动跑这三个检查，全绿才算过。
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 把代码下载到 GitHub 的机器上
+      - uses: actions/checkout@v4
+      # 2. 装 pnpm（版本与本地一致，由 package.json 的 packageManager 字段锁定）
+      - uses: pnpm/action-setup@v4
+      # 3. 装 Node
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      # 4. 按 pnpm-lock.yaml 的指纹精确安装依赖（不允许悄悄漂移）
+      - run: pnpm install --frozen-lockfile
+      # 5. 三个门卫，任何一个红都会让整个 CI 失败
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test

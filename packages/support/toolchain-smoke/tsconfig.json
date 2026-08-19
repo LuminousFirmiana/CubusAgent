@@ -1,0 +1,5 @@
+{
+  // 每个包的编译器配置：只需 extends 根配置即可（相对路径往上三级到仓库根）。
+  "extends": "../../../tsconfig.base.json",
+  "include": ["src", "test"]
+}

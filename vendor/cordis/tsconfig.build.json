@@ -1,0 +1,14 @@
+{
+  // 只产出类型声明（lib/*.d.ts），不做 JS 产物。
+  // 消费者 typecheck 时读取这些声明文件，从而不再用消费者自己的严格配置
+  // 去检查 vendored 源码（源码仍由本包自己的 tsconfig.json 负责）。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "src",
+    "outDir": "lib"
+  },
+  "include": ["src"]
+}

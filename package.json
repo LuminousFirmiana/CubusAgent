@@ -8,13 +8,15 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "typecheck": "pnpm -r --if-present run typecheck",
+    "typecheck": "pnpm run build:vendor && pnpm -r --if-present run typecheck",
+    "build:vendor": "pnpm --filter @cubus/cordis run build",
     "test": "pnpm -r --if-present run test",
-    "lint": "oxlint packages vendor"
+    "lint": "oxlint packages"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "oxlint": "^1.78.0",
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
 }

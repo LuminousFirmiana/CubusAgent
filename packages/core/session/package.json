@@ -1,0 +1,15 @@
+{
+  "name": "@cubus/session",
+  "version": "0.0.0",
+  "description": "Append-only session log: the single source of truth for everything model-visible",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

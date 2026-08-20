@@ -74,15 +74,15 @@ test('serial: runs one at a time, the first non-empty result wins and stops the 
   const ctx = new Context()
   const calls: string[] = []
 
-  ctx.on('demo/serial', async (value) => {
+  ctx.on('demo/serial', async () => {
     calls.push('a')
     return undefined // 只有 null/false/undefined 才算"没结果"（bail 判定），继续下一个
   })
-  ctx.on('demo/serial', async (value) => {
+  ctx.on('demo/serial', async () => {
     calls.push('b')
     return 'winner'
   })
-  ctx.on('demo/serial', async (value) => {
+  ctx.on('demo/serial', async () => {
     calls.push('c') // 永远不会执行
     return 'late'
   })

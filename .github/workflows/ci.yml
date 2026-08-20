@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # 1. 把代码下载到 GitHub 的机器上
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # 2. 装 pnpm（版本与本地一致，由 package.json 的 packageManager 字段锁定）
-      - uses: pnpm/action-setup@v4
-      # 3. 装 Node
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v4.2.0
+      # 3. 装 Node（24 = 当前 LTS；这些 action 版本均运行在 Node 24 上）
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm

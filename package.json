@@ -11,7 +11,8 @@
     "typecheck": "pnpm run build:vendor && pnpm -r --if-present run typecheck",
     "build:vendor": "pnpm --filter @cubus/cordis run build",
     "test": "pnpm -r --if-present run test",
-    "lint": "oxlint packages"
+    "lint": "oxlint packages",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

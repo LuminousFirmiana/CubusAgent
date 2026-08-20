@@ -21,6 +21,14 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0))
 
+  packages/core/agent-loop:
+    dependencies:
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/core/session: {}
+
   packages/support/cordis-smoke:
     dependencies:
       '@cubus/cordis':

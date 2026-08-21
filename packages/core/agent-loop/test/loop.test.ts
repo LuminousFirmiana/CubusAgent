@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { ScriptedAdapter } from '@cubus/llm'
 import { SessionLogFile } from '@cubus/session'
 import type { SessionEvent } from '@cubus/session'
 import { echoTool } from '../src/echo-tool.ts'
-import { ScriptedAdapter } from '../src/llm.ts'
 import { Loop } from '../src/loop.ts'
 
 let dir: string

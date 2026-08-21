@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import type { LlmToolCall } from '@cubus/llm'
 import { deriveMessages } from '@cubus/session'
 import type { ContentBlock, SessionLogFile } from '@cubus/session'
-import type { InboxItem, LlmToolCall, LoopConfig, Tool } from './types.ts'
+import type { InboxItem, LoopConfig, Tool } from './types.ts'
 
 /**
  * 循环驱动：turn/step 语义 + inbox + 取消 + 全事件落日志。

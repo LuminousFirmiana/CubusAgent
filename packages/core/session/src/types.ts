@@ -68,12 +68,21 @@ export type SessionEvent =
       output: ToolOutput
     }
 
+/** 投影出的模型工具调用（从同 stepId 的 tool/call 事件重建）。 */
+export type ProjectedToolCall = {
+  id: ToolCallId
+  name: string
+  args: unknown
+}
+
 /**
  * 从日志投影出的、模型可见的消息序列（projection，纯函数输出）。
  * 投影规则：assistant/message 是权威正文，assistant/chunk 只服务回放保真；
+ * assistant 消息携带同 stepId 的 tool/call 事件重建出的 toolCalls
+ * （真模型 API 要求 assistant 的 tool_calls 与其后的 tool 结果配对）；
  * tool/call 与 tool/result 配对成一条工具消息。
  */
 export type ProjectedMessage =
   | { role: 'user'; content: ContentBlock[] }
-  | { role: 'assistant'; content: ContentBlock[] }
+  | { role: 'assistant'; content: ContentBlock[]; toolCalls?: ProjectedToolCall[] }
   | { role: 'tool-result'; toolCallId: ToolCallId; content: string; ok: boolean }

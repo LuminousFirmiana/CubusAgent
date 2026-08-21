@@ -34,7 +34,11 @@ test('pairs tool calls with results into tool-result messages', () => {
 
   expect(deriveMessages(events)).toEqual([
     { role: 'user', content: [{ type: 'text', text: '读文件' }] },
-    { role: 'assistant', content: [{ type: 'text', text: '好的' }] },
+    {
+      role: 'assistant',
+      content: [{ type: 'text', text: '好的' }],
+      toolCalls: [{ id: 'c1', name: 'read_file', args: { path: 'a.ts' } }],
+    },
     { role: 'tool-result', toolCallId: 'c1', content: '内容A', ok: true },
   ])
 })

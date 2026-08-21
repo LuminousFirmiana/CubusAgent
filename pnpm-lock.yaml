@@ -23,11 +23,20 @@ importers:
 
   packages/core/agent-loop:
     dependencies:
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
       '@cubus/session':
         specifier: workspace:*
         version: link:../session
 
   packages/core/session: {}
+
+  packages/seams/llm:
+    dependencies:
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
 
   packages/support/cordis-smoke:
     dependencies:

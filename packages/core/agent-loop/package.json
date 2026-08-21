@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cubus/cordis": "workspace:*",
     "@cubus/llm": "workspace:*",
     "@cubus/session": "workspace:*"
   }

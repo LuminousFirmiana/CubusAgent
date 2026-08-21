@@ -43,6 +43,7 @@ CubusAgent 的工程纪律。人和 agent 都遵守；规则冲突时，更具�
 
 - `packages/<group>/<pkg>`，包名 `@cubus/<pkg>`；`vendor/*` 留给 vendored 包。
 - `references/` 是外部参考项目，**永不提交**（.gitignore 已排除）。
-- 提交小步走：一个 commit 一个主题；`git add` 显式列路径，不用 `git add -A` 时
-  先 `git status` 确认没有误带。
+- 提交小步走：一个 commit 一个主题；`git add` 显式列路径，不用 `git add -A`。
+- **提交前必须 `git status --short` 逐行核对**：每个改动文件要么进本次 commit，
+  要么有明确的"不提交"理由（S1.3a 事故：源码漏提交而锁文件提交了，CI 红线才暴露）。
 

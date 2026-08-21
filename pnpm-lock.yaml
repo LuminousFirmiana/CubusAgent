@@ -23,6 +23,9 @@ importers:
 
   packages/core/agent-loop:
     dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm

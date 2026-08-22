@@ -4,3 +4,7 @@
 packages:
   - packages/*/*
   - vendor/*
+# pnpm 11 的安全门：依赖的安装脚本默认禁止。这里显式批准可信依赖。
+# esbuild（tsx 的转换器）需要跑它的安装脚本。
+allowBuilds:
+  esbuild: true

@@ -38,6 +38,12 @@ importers:
 
   packages/core/session: {}
 
+  packages/plugins/tools:
+    dependencies:
+      '@cubus/agent-loop':
+        specifier: workspace:*
+        version: link:../../core/agent-loop
+
   packages/sdk/sdk:
     dependencies:
       '@cubus/agent-loop':

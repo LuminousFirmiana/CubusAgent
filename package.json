@@ -1,0 +1,25 @@
+{
+  "name": "cubus-root",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "typecheck": "pnpm run build:vendor && pnpm -r --if-present run typecheck",
+    "build:vendor": "pnpm --filter @cubus/cordis run build",
+    "test": "pnpm -r --if-present run test",
+    "lint": "oxlint packages",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
+    "eval:real": "pnpm --filter @cubus/evals run eval:real"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "oxlint": "^1.78.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

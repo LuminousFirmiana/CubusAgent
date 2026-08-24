@@ -1,0 +1,10 @@
+# pnpm 多包仓库的"地图"：声明哪些目录是包，会被一起管理。
+# packages/*/*：两层结构（组/包），与 references 里 dsh 的布局一致，将来按能力分组。
+# vendor/*：vendor 进来的第三方源码（cordis），也在工作区里统一装依赖。
+packages:
+  - packages/*/*
+  - vendor/*
+# pnpm 11 的安全门：依赖的安装脚本默认禁止。这里显式批准可信依赖。
+# esbuild（tsx 的转换器）需要跑它的安装脚本。
+allowBuilds:
+  esbuild: true

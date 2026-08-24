@@ -1,0 +1,18 @@
+{
+  // vendored 第三方源码的例外配置：允许 enum / namespace（我们自己的包不允许）。
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // 照搬上游 cordis 的编译设置（bundler 解析允许省略 .ts 后缀；
+    // 上游的严格度设置也原样保留，vendored 源码不与我们的内部严格度混用）。
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noImplicitAny": false,
+    "noImplicitThis": false,
+    "strictFunctionTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "erasableSyntaxOnly": false,
+    "verbatimModuleSyntax": false
+  },
+  "include": ["src"]
+}

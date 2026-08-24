@@ -1,0 +1,22 @@
+{
+  "name": "@cubus/evals",
+  "version": "0.0.0",
+  "description": "Eval harness: repair tasks over fixture repos with hidden-test scoring",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "eval:real": "node --import tsx/esm src/run.ts"
+  },
+  "dependencies": {
+    "@cubus/llm": "workspace:*",
+    "@cubus/sdk": "workspace:*",
+    "@cubus/session": "workspace:*",
+    "@cubus/tools": "workspace:*"
+  }
+}

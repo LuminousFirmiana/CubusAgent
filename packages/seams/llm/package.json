@@ -1,0 +1,18 @@
+{
+  "name": "@cubus/llm",
+  "version": "0.0.0",
+  "description": "llm seam: adapter interface (Service Definition) and providers",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/session": "workspace:*"
+  }
+}

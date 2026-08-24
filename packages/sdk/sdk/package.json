@@ -1,0 +1,22 @@
+{
+  "name": "@cubus/sdk",
+  "version": "0.0.0",
+  "description": "Headless SDK: JSON-RPC 2.0 protocol, server, and session runner over the kernel",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "node --import tsx/esm examples/demo.ts"
+  },
+  "dependencies": {
+    "@cubus/agent-loop": "workspace:*",
+    "@cubus/cordis": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/session": "workspace:*"
+  }
+}

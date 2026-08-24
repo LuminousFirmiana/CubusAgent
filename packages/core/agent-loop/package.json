@@ -1,0 +1,20 @@
+{
+  "name": "@cubus/agent-loop",
+  "version": "0.0.0",
+  "description": "The turn/step driver loop over the session log, with a scripted fake model",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/cordis": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/session": "workspace:*"
+  }
+}

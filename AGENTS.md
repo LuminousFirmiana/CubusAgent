@@ -14,6 +14,8 @@ CubusAgent 的工程纪律。人和 agent 都遵守；规则冲突时，更具�
   不要用 `| tail` 之类的管道吞掉结果。
 - 每个包声明了 `test` 脚本就必须有测试文件（vitest 无测试文件会失败）。
 - 测试断言**行为**，不断言实现细节；新增行为必须带测试。
+- **每个阶段（S 步）完成时，同步更新 `docs/handover.md`**：状态总览、新的设计决策、
+  新踩的坑、技术债清单、下一步预告——阶段锁点 = 代码 + 测试 + 交接文档三件齐。
 
 ## TypeScript 风格
 
@@ -21,7 +23,7 @@ CubusAgent 的工程纪律。人和 agent 都遵守；规则冲突时，更具�
 - **Erasable syntax only**（Node 直接跑 TS 的前提）：
   - 禁止 `enum` / `namespace`；
   - 禁止构造器参数属性（`constructor(public x)`）——显式声明字段再赋值；
-  - 这是踩过三次的坑，写新类时先检查构造器。
+  - 这是踩过四次的坑，写新类时先检查构造器。
 - 全 strict（`noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 都开着），
   数组下标、可选字段按可能为 undefined 处理。
 

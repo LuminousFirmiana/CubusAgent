@@ -12,7 +12,8 @@
     "build:vendor": "pnpm --filter @cubus/cordis run build",
     "test": "pnpm -r --if-present run test",
     "lint": "oxlint packages",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run test"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
+    "eval:real": "pnpm --filter @cubus/evals run eval:real"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

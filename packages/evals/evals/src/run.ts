@@ -4,7 +4,7 @@
  *   pnpm run eval:real
  * 可选：DEEPSEEK_BASE_URL、DEEPSEEK_MODEL。
  */
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekAdapter } from '@cubus/llm'
@@ -33,7 +33,11 @@ if (!apiKey) {
   process.exit(2)
 }
 
-const repoDir = join(import.meta.dirname, '..', 'fixtures', 'bug-repos', 'add-bug')
+// fixture 是"永远带 bug"的原样仓库：任务在临时副本上跑，原样永不被动。
+const fixtureDir = join(import.meta.dirname, '..', 'fixtures', 'bug-repos', 'add-bug')
+const workDir = mkdtempSync(join(tmpdir(), 'cubus-eval-work-'))
+cpSync(fixtureDir, join(workDir, 'repo'), { recursive: true })
+const repoDir = join(workDir, 'repo')
 const sessionsDir = mkdtempSync(join(tmpdir(), 'cubus-eval-'))
 
 const result = await runRepairTask({

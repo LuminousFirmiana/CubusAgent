@@ -28,13 +28,23 @@ async function setup(scenes: Scenes) {
   return { runtime, transport, server }
 }
 
-/** 通过协议发一次请求，拿到解析后的响应。 */
+/**
+ * 通过协议发一次请求，按 id 关联拿到响应。
+ * 不猜延迟、不读"最后一条"：轮询等到匹配该 id 的响应为止（10 秒上限）。
+ * 教训：固定 setTimeout 等待在慢机器（CI）上会竞态读到上一条响应。
+ */
 async function rpc(transport: ReturnType<typeof createMemoryTransport>, method: string, params: Record<string, unknown> = {}, id: number | string = 1) {
+  const startIndex = transport.responses.length
   transport.receive(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
-  await new Promise(r => setTimeout(r, 10))
-  const last = transport.responses.at(-1)
-  expect(last).toBeDefined()
-  return JSON.parse(last!) as JsonRpcSuccess | JsonRpcError
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    for (let i = startIndex; i < transport.responses.length; i++) {
+      const message = JSON.parse(transport.responses[i]!) as { id?: number | string }
+      if (message.id === id) return message as JsonRpcSuccess | JsonRpcError
+    }
+    await new Promise(r => setTimeout(r, 5))
+  }
+  throw new Error('rpc timeout waiting for id ' + String(id))
 }
 
 beforeEach(async () => {

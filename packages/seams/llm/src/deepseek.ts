@@ -123,6 +123,18 @@ export class DeepSeekAdapter implements LlmAdapter {
         model: this.config.model,
         messages: toOpenAiMessages(request),
         stream: true,
+        ...(request.tools === undefined
+          ? {}
+          : {
+              tools: request.tools.map(tool => ({
+                type: 'function',
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                },
+              })),
+            }),
       }),
       signal,
     })

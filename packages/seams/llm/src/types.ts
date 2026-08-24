@@ -10,11 +10,20 @@ export interface LlmAdapter {
   stream(request: LlmRequest, signal: AbortSignal): AsyncGenerator<LlmChunk, void, void>
 }
 
-/** 一次模型请求：投影后的消息序列 + 可选系统提示。 */
+/** 模型可用的工具 schema（发给 provider 的 tools 字段）。 */
+export interface LlmToolSpec {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+/** 一次模型请求：投影后的消息序列 + 可选系统提示 + 可选工具清单。 */
 export interface LlmRequest {
   messages: ProjectedMessage[]
   /** 系统提示：适配器映射为 provider 的 system 消息（OpenAI 系为 role: system）。 */
   systemPrompt?: string
+  /** 工具 schema：模型只有收到它们才会发起真正的工具调用。 */
+  tools?: LlmToolSpec[]
 }
 
 /**

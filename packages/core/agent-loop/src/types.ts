@@ -4,9 +4,14 @@ import type { ContentBlock, SessionLogFile } from '@cubus/session'
 /**
  * 工具定义：v1 的 execute 返回文本（JSON 可序列化，直接进日志）。
  * 抛错时由循环捕获，记为 ok: false 的结果。
+ * description + parameters 是给模型看的 schema（随请求发给 API），
+ * 模型只有收到它们才会真正发起工具调用，而不是在正文里幻觉出调用文本。
  */
 export interface Tool {
   name: string
+  description: string
+  /** JSON Schema（对象型）：模型据此生成合法参数。 */
+  parameters: Record<string, unknown>
   execute(args: unknown): Promise<string> | string
 }
 

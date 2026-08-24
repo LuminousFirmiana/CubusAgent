@@ -18,7 +18,9 @@ export interface SubprocessResult {
 /** 本地 provider：在进程文件系统里 spawn shell。 */
 export class LocalSubprocess implements SubprocessProvider {
   async run(command: string, options: { cwd: string; timeoutMs?: number }): Promise<SubprocessResult> {
-    const child = spawn(command, { cwd: options.cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    // shell: true 硬编码 /bin/sh；某些沙箱环境没有它。优先用用户的 $SHELL。
+    const shell = process.env['SHELL'] || true
+    const child = spawn(command, { cwd: options.cwd, shell, stdio: ['ignore', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
@@ -38,10 +40,19 @@ export class LocalSubprocess implements SubprocessProvider {
       child.kill('SIGKILL')
     }, timeoutMs)
 
+    // 'error' 与 'close' 谁先来以谁为准：spawn 失败（如 shell 不存在）时
+    // 必须处理 error，否则 Node 抛出未处理事件直接崩掉整个进程。
     const exitCode = await new Promise<number | null>(resolve => {
-      child.on('close', code => resolve(code))
+      child.on('error', error => {
+        clearTimeout(timer)
+        stderr += 'spawn failed (cwd: ' + options.cwd + '): ' + error.message
+        resolve(null)
+      })
+      child.on('close', code => {
+        clearTimeout(timer)
+        resolve(code)
+      })
     })
-    clearTimeout(timer)
 
     return { exitCode, stdout, stderr, timedOut }
   }

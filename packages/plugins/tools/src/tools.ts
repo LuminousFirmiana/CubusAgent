@@ -17,6 +17,14 @@ function stringField(args: unknown, name: string): string {
 export function createReadFileTool(fs: FsProvider): Tool {
   return {
     name: 'read_file',
+    description: 'Read a text file under the workspace and return its content.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'file path relative to the workspace root' },
+      },
+      required: ['path'],
+    },
     async execute(args: unknown): Promise<string> {
       const path = stringField(args, 'path')
       const content = await fs.readText(path)
@@ -28,6 +36,15 @@ export function createReadFileTool(fs: FsProvider): Tool {
 export function createWriteFileTool(fs: FsProvider): Tool {
   return {
     name: 'write_file',
+    description: 'Write a text file under the workspace (creates or overwrites).',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'file path relative to the workspace root' },
+        content: { type: 'string', description: 'full file content' },
+      },
+      required: ['path', 'content'],
+    },
     async execute(args: unknown): Promise<string> {
       const path = stringField(args, 'path')
       const content = stringField(args, 'content')
@@ -44,6 +61,16 @@ export function createWriteFileTool(fs: FsProvider): Tool {
 export function createEditFileTool(fs: FsProvider): Tool {
   return {
     name: 'edit_file',
+    description: 'Replace a unique string in a file (old_string must occur exactly once).',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'file path relative to the workspace root' },
+        old_string: { type: 'string', description: 'exact text to replace; must be unique in the file' },
+        new_string: { type: 'string', description: 'replacement text' },
+      },
+      required: ['path', 'old_string', 'new_string'],
+    },
     async execute(args: unknown): Promise<string> {
       const path = stringField(args, 'path')
       const oldString = stringField(args, 'old_string')
@@ -65,6 +92,14 @@ export function createEditFileTool(fs: FsProvider): Tool {
 export function createBashTool(subprocess: SubprocessProvider, cwd: string): Tool {
   return {
     name: 'bash',
+    description: 'Run a shell command in the workspace (e.g. run the test suite).',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'shell command to run' },
+      },
+      required: ['command'],
+    },
     async execute(args: unknown): Promise<string> {
       const command = stringField(args, 'command')
       const result = await subprocess.run(command, { cwd })

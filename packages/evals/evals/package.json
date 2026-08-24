@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "eval:real": "node --env-file-if-exists=.env --import tsx/esm src/run.ts"
+    "eval:real": "node --import tsx/esm src/run.ts"
   },
   "dependencies": {
     "@cubus/llm": "workspace:*",

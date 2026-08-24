@@ -85,9 +85,19 @@ export class Loop {
     const toolCalls: LlmToolCall[] = []
     let aborted = false
 
+    const toolSpecs = [...this.tools.values()].map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }))
+
     try {
       for await (const chunk of this.adapter.stream(
-        { messages, ...(this.systemPrompt === undefined ? {} : { systemPrompt: this.systemPrompt }) },
+        {
+          messages,
+          ...(this.systemPrompt === undefined ? {} : { systemPrompt: this.systemPrompt }),
+          ...(toolSpecs.length === 0 ? {} : { tools: toolSpecs }),
+        },
         this.abort!.signal,
       )) {
         if (this.abort!.signal.aborted) {

@@ -6,6 +6,14 @@ import type { Tool } from './types.ts'
  */
 export const echoTool: Tool = {
   name: 'echo',
+  description: 'Echo back the given arguments as JSON. For testing the tool loop.',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'any text to echo back' },
+    },
+    required: ['text'],
+  },
   execute(args: unknown): string {
     return JSON.stringify(args)
   },

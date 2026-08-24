@@ -67,6 +67,13 @@ test('converts projected messages into OpenAI wire format', async () => {
 
   const request: LlmRequest = {
     systemPrompt: '你是一个修 bug 的 agent。',
+    tools: [
+      {
+        name: 'read_file',
+        description: 'Read a text file.',
+        parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      },
+    ],
     messages: [
       { role: 'user', content: [{ type: 'text', text: '读文件' }] },
       {
@@ -83,6 +90,16 @@ test('converts projected messages into OpenAI wire format', async () => {
   expect(captured[0]?.url).toBe('https://api.deepseek.com/chat/completions')
   const sent = JSON.parse(String(captured[0]?.init.body))
   expect(sent.model).toBe('deepseek-chat')
+  expect(sent.tools).toEqual([
+    {
+      type: 'function',
+      function: {
+        name: 'read_file',
+        description: 'Read a text file.',
+        parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      },
+    },
+  ])
   expect(sent.messages).toEqual([
     { role: 'system', content: '你是一个修 bug 的 agent。' },
     { role: 'user', content: '读文件' },

@@ -38,6 +38,21 @@ importers:
 
   packages/core/session: {}
 
+  packages/evals/evals:
+    dependencies:
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+      '@cubus/sdk':
+        specifier: workspace:*
+        version: link:../../sdk/sdk
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
+
   packages/plugins/tools:
     dependencies:
       '@cubus/agent-loop':

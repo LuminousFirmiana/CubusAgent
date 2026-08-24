@@ -18,6 +18,8 @@ export interface AgentLoopPluginConfig {
   logPath?: string
   /** 工具集；默认只有 echo。 */
   tools?: Tool[]
+  /** 系统提示：随每次模型请求传出。 */
+  systemPrompt?: string
   /** ID 生成器（测试注入实现确定性）；默认 randomUUID。 */
   generateId?: () => string
 }
@@ -42,6 +44,7 @@ export const agentLoopPlugin = {
       adapter,
       tools: config.tools ?? [echoTool],
       // exactOptionalPropertyTypes：可选属性不能收到显式 undefined，只能整体缺省
+      ...(config.systemPrompt === undefined ? {} : { systemPrompt: config.systemPrompt }),
       ...(config.generateId ? { generateId: config.generateId } : {}),
     })
     ctx.provide('loop', loop)

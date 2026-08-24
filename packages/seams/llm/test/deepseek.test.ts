@@ -66,6 +66,7 @@ test('converts projected messages into OpenAI wire format', async () => {
   const adapter = makeAdapter(transport)
 
   const request: LlmRequest = {
+    systemPrompt: '你是一个修 bug 的 agent。',
     messages: [
       { role: 'user', content: [{ type: 'text', text: '读文件' }] },
       {
@@ -83,6 +84,7 @@ test('converts projected messages into OpenAI wire format', async () => {
   const sent = JSON.parse(String(captured[0]?.init.body))
   expect(sent.model).toBe('deepseek-chat')
   expect(sent.messages).toEqual([
+    { role: 'system', content: '你是一个修 bug 的 agent。' },
     { role: 'user', content: '读文件' },
     {
       role: 'assistant',

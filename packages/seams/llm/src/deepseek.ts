@@ -63,9 +63,12 @@ async function* parseSse(
   }
 }
 
-/** 投影消息 -> OpenAI 消息格式（DeepSeek 兼容）。 */
+/** 投影消息 -> OpenAI 消息格式（DeepSeek 兼容）；systemPrompt 前置为 system 消息。 */
 function toOpenAiMessages(request: LlmRequest): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = []
+  if (request.systemPrompt) {
+    out.push({ role: 'system', content: request.systemPrompt })
+  }
   for (const message of request.messages) {
     switch (message.role) {
       case 'user':

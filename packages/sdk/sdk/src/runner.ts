@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { agentLoopPlugin } from '@cubus/agent-loop'
+import type { Tool } from '@cubus/agent-loop'
 import { Context } from '@cubus/cordis'
 import type { LlmAdapter } from '@cubus/llm'
 import type { SessionEvent } from '@cubus/session'
@@ -32,6 +33,10 @@ export interface SessionRuntimeOptions {
   rootDir: string
   /** 适配器工厂：每个会话创建独立实例（会话间不共享模型状态）。 */
   adapterFactory: () => LlmAdapter
+  /** 系统提示：传给循环插件。 */
+  systemPrompt?: string
+  /** 工具集：传给循环插件（默认 echo）。 */
+  tools?: Tool[]
   /** 会话 ID 生成器（测试注入计数器实现确定性）。 */
   generateId?: () => string
 }
@@ -64,7 +69,11 @@ export class SessionRuntime {
         c.provide('llm', adapter)
       },
     })
-    await ctx.plugin(agentLoopPlugin, { logPath: join(dir, 'session.jsonl') })
+    await ctx.plugin(agentLoopPlugin, {
+      logPath: join(dir, 'session.jsonl'),
+      ...(this.opts.systemPrompt === undefined ? {} : { systemPrompt: this.opts.systemPrompt }),
+      ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
+    })
 
     const logPath = join(dir, 'session.jsonl')
     this.sessions.set(id, { id, logPath, ctx })

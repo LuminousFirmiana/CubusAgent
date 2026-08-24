@@ -10,9 +10,11 @@ export interface LlmAdapter {
   stream(request: LlmRequest, signal: AbortSignal): AsyncGenerator<LlmChunk, void, void>
 }
 
-/** 一次模型请求：投影后的消息序列（system prompt 后续版本加入）。 */
+/** 一次模型请求：投影后的消息序列 + 可选系统提示。 */
 export interface LlmRequest {
   messages: ProjectedMessage[]
+  /** 系统提示：适配器映射为 provider 的 system 消息（OpenAI 系为 role: system）。 */
+  systemPrompt?: string
 }
 
 /**

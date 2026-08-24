@@ -20,12 +20,14 @@ export class Loop {
   private readonly log: SessionLogFile
   private readonly adapter: LoopConfig['adapter']
   private readonly tools = new Map<string, Tool>()
+  private readonly systemPrompt: string | undefined
   private readonly generateId: () => string
 
   constructor(config: LoopConfig) {
     this.log = config.log
     this.adapter = config.adapter
     for (const tool of config.tools) this.tools.set(tool.name, tool)
+    this.systemPrompt = config.systemPrompt
     this.generateId = config.generateId ?? randomUUID
   }
 
@@ -84,7 +86,10 @@ export class Loop {
     let aborted = false
 
     try {
-      for await (const chunk of this.adapter.stream({ messages }, this.abort!.signal)) {
+      for await (const chunk of this.adapter.stream(
+        { messages, ...(this.systemPrompt === undefined ? {} : { systemPrompt: this.systemPrompt }) },
+        this.abort!.signal,
+      )) {
         if (this.abort!.signal.aborted) {
           aborted = true
           break

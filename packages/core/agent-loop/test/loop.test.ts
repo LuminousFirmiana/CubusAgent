@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ScriptedAdapter } from '@cubus/llm'
+import type { LlmAdapter, LlmChunk, LlmRequest } from '@cubus/llm'
 import { SessionLogFile } from '@cubus/session'
 import type { SessionEvent } from '@cubus/session'
 import { echoTool } from '../src/echo-tool.ts'
@@ -121,6 +122,30 @@ test('cancel mid-stream: interrupted prefix logged, undispatched tool calls abse
   })
   // 回合正常闭环
   expect(events.at(-1)).toEqual({ type: 'turn/end', turnId: 'id2' })
+})
+
+test('the configured systemPrompt reaches the adapter on every request', async () => {
+  // 记录型适配器：捕获收到的请求，不产出任何碎片
+  const received: LlmRequest[] = []
+  const recorder: LlmAdapter = {
+    async *stream(request: LlmRequest): AsyncGenerator<LlmChunk, void, void> {
+      received.push(request)
+    },
+  }
+  const log = new SessionLogFile(join(dir, 'run-rec', 'session.jsonl'))
+  await mkdir(join(dir, 'run-rec'))
+  const loop = new Loop({
+    log,
+    adapter: recorder,
+    tools: [echoTool],
+    systemPrompt: '你是一个修 bug 的 agent。',
+    generateId: makeIdGen(),
+  })
+
+  await loop.submit([{ type: 'text', text: '你好' }])
+
+  expect(received).toHaveLength(1)
+  expect(received[0]?.systemPrompt).toBe('你是一个修 bug 的 agent。')
 })
 
 test('unknown tool produces an ok: false result, and the loop continues', async () => {

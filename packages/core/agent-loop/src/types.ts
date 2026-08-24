@@ -15,6 +15,8 @@ export interface LoopConfig {
   log: SessionLogFile
   adapter: LlmAdapter
   tools: Tool[]
+  /** 系统提示：随每次模型请求传出（适配器映射为 provider 的 system 消息）。 */
+  systemPrompt?: string
   /** 默认随机；测试注入计数器实现确定性回放。 */
   generateId?: () => string
 }

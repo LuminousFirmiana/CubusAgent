@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { ScriptedAdapter } from '@cubus/llm'
-import { SessionLogFile } from '@cubus/session'
+import { SessionLogFile } from '@cubus/session-jsonl'
 import { LocalSubprocess } from '@cubus/tools'
 import { runRepairTask } from '../src/harness.ts'
 
@@ -33,7 +33,10 @@ afterEach(async () => {
 
 test('fixture sanity: the bug repo really fails before any fix', async () => {
   const repo = await copyFixture()
-  const result = await new LocalSubprocess().run('node --test test/', { cwd: repo })
+  const result = await new LocalSubprocess().run('node --test test/', {
+    cwd: repo,
+    signal: new AbortController().signal,
+  })
   expect(result.exitCode).not.toBe(0)
 })
 

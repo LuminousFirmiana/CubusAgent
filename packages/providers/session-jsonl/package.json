@@ -1,0 +1,19 @@
+{
+  "name": "@cubus/session-jsonl",
+  "version": "0.0.0",
+  "description": "Append-only JSONL provider for the Cubus session log seam",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/cordis": "workspace:*",
+    "@cubus/session": "workspace:*"
+  }
+}

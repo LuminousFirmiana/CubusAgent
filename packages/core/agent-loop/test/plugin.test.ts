@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 import { Context } from '@cubus/cordis'
 import { ScriptedAdapter } from '@cubus/llm'
 import type { LlmAdapter } from '@cubus/llm'
+import { jsonlSessionPlugin } from '@cubus/session-jsonl'
+import { systemPromptContribution, systemPromptPlugin } from '@cubus/system-prompt'
+import { toolContribution, toolRegistryPlugin } from '@cubus/tool-registry'
+import type { Tool } from '@cubus/tool-registry'
 import { agentLoopPlugin } from '../src/plugin.ts'
 
 let dir: string
@@ -39,7 +43,8 @@ test('mounts as a plugin, waits for llm, and drives a turn through the log', asy
   const adapter = new ScriptedAdapter([{ steps: [{ chunk: { delta: '插件版你好' } }] }])
 
   await ctx.plugin(llmProviderPlugin(adapter))
-  await ctx.plugin(agentLoopPlugin, { logPath: join(dir, 'a.jsonl') })
+  await ctx.plugin(jsonlSessionPlugin, { path: join(dir, 'a.jsonl') })
+  await ctx.plugin(agentLoopPlugin, {})
 
   const loop = ctx.get('loop')
   expect(loop).toBeDefined()
@@ -54,7 +59,8 @@ test('swapping the provider plugin re-mounts the loop with the new adapter', asy
   const adapterB = new ScriptedAdapter([{ steps: [{ chunk: { delta: 'B 回答' } }] }])
 
   const providerA = ctx.plugin(llmProviderPlugin(adapterA))
-  const loopFiber = ctx.plugin(agentLoopPlugin, { logPath: join(dir, 'b.jsonl') })
+  await ctx.plugin(jsonlSessionPlugin, { path: join(dir, 'b.jsonl') })
+  const loopFiber = ctx.plugin(agentLoopPlugin, {})
   await Promise.all([providerA, loopFiber])
 
   await ctx.get('loop')!.submit([{ type: 'text', text: '谁在' }])
@@ -74,7 +80,9 @@ test('unmounting the loop plugin leaves zero residue', async () => {
   const adapter = new ScriptedAdapter([{ steps: [{ chunk: { delta: 'x' } }] }])
 
   await ctx.plugin(llmProviderPlugin(adapter))
-  const loopFiber = ctx.plugin(agentLoopPlugin, { logPath: join(dir, 'c.jsonl') })
+  const sessionFiber = ctx.plugin(jsonlSessionPlugin, { path: join(dir, 'c.jsonl') })
+  await sessionFiber
+  const loopFiber = ctx.plugin(agentLoopPlugin, {})
   await loopFiber
   expect(ctx.get('loop')).toBeDefined()
   expect(ctx.get('sessionLog')).toBeDefined()
@@ -82,6 +90,60 @@ test('unmounting the loop plugin leaves zero residue', async () => {
   await loopFiber.dispose()
 
   expect(ctx.get('loop')).toBeUndefined()
+  expect(ctx.get('sessionLog')).toBeDefined()
+
+  await sessionFiber.dispose()
   expect(ctx.get('sessionLog')).toBeUndefined()
 })
 
+test('uses one prompt/tool snapshot for request and execution', async () => {
+  const ctx = new Context()
+  await ctx.plugin(systemPromptPlugin)
+  await ctx.plugin(toolRegistryPlugin)
+  await ctx.plugin(systemPromptContribution({ id: 'role', text: 'Use registered tools.' }))
+
+  const lookupTool: Tool = {
+    name: 'lookup',
+    description: 'Look up one known fact.',
+    parameters: { type: 'object' },
+    execute: () => 'snapshot result',
+  }
+  const lookupFiber = ctx.plugin(toolContribution(lookupTool))
+  await lookupFiber
+
+  const requests: Parameters<LlmAdapter['stream']>[0][] = []
+  let call = 0
+  const adapter: LlmAdapter = {
+    provider: 'snapshot-test',
+    model: 'snapshot-model',
+    async *stream(request) {
+      requests.push(request)
+      call += 1
+      if (call === 1) {
+        await lookupFiber.dispose()
+        yield { toolCalls: [{ id: 'lookup-1', name: 'lookup', args: {} }] }
+        return
+      }
+      yield { delta: 'done' }
+    },
+  }
+
+  await ctx.plugin(llmProviderPlugin(adapter))
+  await ctx.plugin(jsonlSessionPlugin, { path: join(dir, 'snapshot.jsonl') })
+  await ctx.plugin(agentLoopPlugin, {})
+  await ctx.loop.submit([{ type: 'text', text: 'look it up' }])
+
+  const { events } = await ctx.sessionLog.read()
+  const headers = events.filter(event => event.type === 'request/header')
+  expect(headers[0]?.header.systemPrompt).toBe('Use registered tools.')
+  expect(headers[0]?.header.tools?.map(tool => tool.name)).toEqual(['lookup'])
+  expect(headers[1]?.header.tools).toBeUndefined()
+  expect(events.find(event => event.type === 'tool/result')).toMatchObject({
+    type: 'tool/result',
+    id: 'lookup-1',
+    ok: true,
+    output: { text: 'snapshot result' },
+  })
+  expect(requests[0]?.tools?.map(tool => tool.name)).toEqual(['lookup'])
+  expect(requests[1]?.tools).toBeUndefined()
+})

@@ -1,9 +1,10 @@
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
-import { SessionLogCorruptionError, SessionLogFile } from '../src/log.ts'
-import type { SessionEvent } from '../src/types.ts'
+import { Context } from '@cubus/cordis'
+import type { SessionEvent } from '@cubus/session'
+import { jsonlSessionPlugin, SessionLogCorruptionError, SessionLogFile } from '../src/index.ts'
 
 let dir: string
 let logPath: string
@@ -27,9 +28,18 @@ test('roundtrip: appended events read back byte-for-byte identical', async () =>
     ev('turn/start', { turnId: 't1' }),
     ev('step/start', { stepId: 's1', turnId: 't1' }),
     ev('user/message', { messageId: 'm1', content: [{ type: 'text', text: '修一个 bug' }] }),
+    ev('request/header', {
+      stepId: 's1',
+      header: { provider: 'deepseek', model: 'deepseek-chat', systemPrompt: '修复问题' },
+    }),
     ev('assistant/chunk', { stepId: 's1', delta: '我来' }),
-    ev('assistant/chunk', { stepId: 's1', delta: '看看' }),
-    ev('assistant/message', { messageId: 'm2', stepId: 's1', content: [{ type: 'text', text: '我来看看' }] }),
+    ev('assistant/chunk', { stepId: 's1', thinkingDelta: '先检查' }),
+    ev('assistant/message', {
+      messageId: 'm2',
+      stepId: 's1',
+      content: [{ type: 'text', text: '我来看看' }],
+      thinking: '先检查',
+    }),
     ev('tool/call', { id: 'c1', stepId: 's1', name: 'read_file', args: { path: 'a.ts' } }),
     ev('tool/result', { id: 'c1', ok: true, output: { text: '文件内容' } }),
     ev('step/end', { stepId: 's1' }),
@@ -48,7 +58,6 @@ test('crash truncation: a half-written final line is dropped and reported', asyn
   await log.append(ev('turn/start', { turnId: 't1' }))
   await log.append(ev('turn/end', { turnId: 't1' }))
 
-  // 模拟进程在写入中途被杀：文件末尾留下半行 JSON
   const raw = await readFile(logPath, 'utf8')
   await writeFile(logPath, raw + '{"type":"user/mess', 'utf8')
 
@@ -68,22 +77,27 @@ test('corruption: a bad line in the middle throws with its line number', async (
   await expect(log.read()).rejects.toThrow('line 2')
 })
 
-test('append continues: old events survive, new events join them', async () => {
+test('append continues and a missing file reads as an empty log', async () => {
   const log = new SessionLogFile(logPath)
-  await log.append(ev('turn/start', { turnId: 't1' }))
+  expect(await log.read()).toEqual({ events: [], truncated: false })
 
+  await log.append(ev('turn/start', { turnId: 't1' }))
   await log.append(ev('turn/end', { turnId: 't1' }))
 
   const { events } = await log.read()
-  expect(events).toHaveLength(2)
-  expect(events[0]).toEqual(ev('turn/start', { turnId: 't1' }))
-  expect(events[1]).toEqual(ev('turn/end', { turnId: 't1' }))
+  expect(events).toEqual([
+    ev('turn/start', { turnId: 't1' }),
+    ev('turn/end', { turnId: 't1' }),
+  ])
 })
 
-test('missing file reads as an empty log, not an error', async () => {
-  const log = new SessionLogFile(logPath)
-  const { events, truncated } = await log.read()
-  expect(events).toEqual([])
-  expect(truncated).toBe(false)
-})
+test('provider lifecycle exposes and removes the session seam', async () => {
+  const ctx = new Context()
+  const provider = ctx.plugin(jsonlSessionPlugin, { path: logPath })
+  await provider
 
+  expect(ctx.get('sessionLog')).toBeInstanceOf(SessionLogFile)
+
+  await provider.dispose()
+  expect(ctx.get('sessionLog')).toBeUndefined()
+})

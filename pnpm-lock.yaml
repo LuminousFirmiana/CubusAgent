@@ -24,6 +24,37 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12))
 
+  packages/apps/cli:
+    dependencies:
+      '@cubus/host-local':
+        specifier: workspace:*
+        version: link:../../hosts/local
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+      '@cubus/llm-retry':
+        specifier: workspace:*
+        version: link:../../policies/llm-retry
+      '@cubus/recipe-coding-agent':
+        specifier: workspace:*
+        version: link:../../recipes/coding-agent
+      '@cubus/sdk':
+        specifier: workspace:*
+        version: link:../../sdk/sdk
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@cubus/tool-approval':
+        specifier: workspace:*
+        version: link:../../policies/tool-approval
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
+    devDependencies:
+      '@cubus/session-jsonl':
+        specifier: workspace:*
+        version: link:../../providers/session-jsonl
+
   packages/core/agent-loop:
     dependencies:
       '@cubus/cordis':
@@ -35,44 +66,218 @@ importers:
       '@cubus/session':
         specifier: workspace:*
         version: link:../session
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../system-prompt
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../tool-registry
+    devDependencies:
+      '@cubus/session-jsonl':
+        specifier: workspace:*
+        version: link:../../providers/session-jsonl
 
-  packages/core/session: {}
-
-  packages/evals/evals:
+  packages/core/agent-recipe:
     dependencies:
+      '@cubus/agent-loop':
+        specifier: workspace:*
+        version: link:../agent-loop
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../system-prompt
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../tool-registry
+    devDependencies:
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/core/session: {}
+
+  packages/core/system-prompt:
+    dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+
+  packages/core/tool-registry:
+    dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+
+  packages/evals/evals:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/host-local':
+        specifier: workspace:*
+        version: link:../../hosts/local
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+      '@cubus/llm-retry':
+        specifier: workspace:*
+        version: link:../../policies/llm-retry
+      '@cubus/recipe-reference-agent':
+        specifier: workspace:*
+        version: link:../../recipes/reference-agent
+      '@cubus/recipe-repair-eval':
+        specifier: workspace:*
+        version: link:../../recipes/repair-eval
       '@cubus/sdk':
         specifier: workspace:*
         version: link:../../sdk/sdk
       '@cubus/session':
         specifier: workspace:*
         version: link:../../core/session
+      '@cubus/session-jsonl':
+        specifier: workspace:*
+        version: link:../../providers/session-jsonl
+      '@cubus/tool-approval':
+        specifier: workspace:*
+        version: link:../../policies/tool-approval
       '@cubus/tools':
         specifier: workspace:*
         version: link:../../plugins/tools
 
-  packages/plugins/tools:
+  packages/hosts/local:
     dependencies:
-      '@cubus/agent-loop':
+      '@cubus/agent-recipe':
         specifier: workspace:*
-        version: link:../../core/agent-loop
-
-  packages/sdk/sdk:
-    dependencies:
-      '@cubus/agent-loop':
-        specifier: workspace:*
-        version: link:../../core/agent-loop
+        version: link:../../core/agent-recipe
       '@cubus/cordis':
         specifier: workspace:*
         version: link:../../../vendor/cordis
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm
+      '@cubus/session-jsonl':
+        specifier: workspace:*
+        version: link:../../providers/session-jsonl
+
+  packages/plugins/tools:
+    dependencies:
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+
+  packages/policies/llm-retry:
+    dependencies:
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+
+  packages/policies/tool-approval:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+
+  packages/providers/session-jsonl:
+    dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
       '@cubus/session':
         specifier: workspace:*
         version: link:../../core/session
+
+  packages/recipes/coding-agent:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@cubus/tool-approval':
+        specifier: workspace:*
+        version: link:../../policies/tool-approval
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
+    devDependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+
+  packages/recipes/reference-agent:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+    devDependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+
+  packages/recipes/repair-eval:
+    dependencies:
+      '@cubus/recipe-coding-agent':
+        specifier: workspace:*
+        version: link:../coding-agent
+    devDependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@cubus/tool-approval':
+        specifier: workspace:*
+        version: link:../../policies/tool-approval
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
+
+  packages/sdk/sdk:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
+    devDependencies:
+      '@cubus/host-local':
+        specifier: workspace:*
+        version: link:../../hosts/local
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
 
   packages/seams/llm:
     dependencies:

@@ -1,4 +1,4 @@
-import type { Tool } from '@cubus/agent-loop'
+import type { Tool } from '@cubus/tool-registry'
 import type { FsProvider } from './fs.ts'
 import type { SubprocessProvider } from './subprocess.ts'
 
@@ -25,7 +25,8 @@ export function createReadFileTool(fs: FsProvider): Tool {
       },
       required: ['path'],
     },
-    async execute(args: unknown): Promise<string> {
+    async execute(args: unknown, context): Promise<string> {
+      context.signal.throwIfAborted()
       const path = stringField(args, 'path')
       const content = await fs.readText(path)
       return `# ${path}\n\n${content}`
@@ -45,9 +46,11 @@ export function createWriteFileTool(fs: FsProvider): Tool {
       },
       required: ['path', 'content'],
     },
-    async execute(args: unknown): Promise<string> {
+    async execute(args: unknown, context): Promise<string> {
+      context.signal.throwIfAborted()
       const path = stringField(args, 'path')
       const content = stringField(args, 'content')
+      context.signal.throwIfAborted()
       await fs.writeText(path, content)
       return `wrote ${content.length} chars to ${path}`
     },
@@ -71,7 +74,8 @@ export function createEditFileTool(fs: FsProvider): Tool {
       },
       required: ['path', 'old_string', 'new_string'],
     },
-    async execute(args: unknown): Promise<string> {
+    async execute(args: unknown, context): Promise<string> {
+      context.signal.throwIfAborted()
       const path = stringField(args, 'path')
       const oldString = stringField(args, 'old_string')
       const newString = stringField(args, 'new_string')
@@ -83,6 +87,7 @@ export function createEditFileTool(fs: FsProvider): Tool {
       if (count > 1) {
         throw new Error(`old_string appears ${count} times in ${path}; provide more context to make it unique`)
       }
+      context.signal.throwIfAborted()
       await fs.writeText(path, content.replace(oldString, newString))
       return `edited ${path} (1 replacement)`
     },
@@ -100,9 +105,10 @@ export function createBashTool(subprocess: SubprocessProvider, cwd: string): Too
       },
       required: ['command'],
     },
-    async execute(args: unknown): Promise<string> {
+    async execute(args: unknown, context): Promise<string> {
+      context.signal.throwIfAborted()
       const command = stringField(args, 'command')
-      const result = await subprocess.run(command, { cwd })
+      const result = await subprocess.run(command, { cwd, signal: context.signal })
       const parts = [
         `exit code: ${result.exitCode ?? 'null'}${result.timedOut ? ' (timed out)' : ''}`,
       ]
@@ -122,4 +128,3 @@ export function createTools(fs: FsProvider, subprocess: SubprocessProvider, cwd:
     createBashTool(subprocess, cwd),
   ]
 }
-

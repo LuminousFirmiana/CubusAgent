@@ -1,16 +1,12 @@
+import { createLocalAgentHost } from '@cubus/host-local'
 import { SessionRuntime } from '@cubus/sdk'
 import type { LlmAdapter } from '@cubus/llm'
+import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
 import type { SessionEvent } from '@cubus/session'
-import { createTools, LocalFs, LocalSubprocess } from '@cubus/tools'
+import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
+import { LocalFs, LocalSubprocess } from '@cubus/tools'
 
-/** 编码 agent 的系统提示（v1 文案，随评测迭代）。 */
-export const CODING_AGENT_PROMPT = [
-  '你是一个修 bug 的编码 agent。',
-  '可用工具：read_file（读文件）、edit_file（字符串替换编辑）、write_file（整写）、bash（跑命令）。',
-  '任务：找到测试失败的原因，修改代码修复，然后用 bash 跑测试确认全部通过。',
-  'edit_file 要求 old_string 在文件中唯一出现；失败时带着更多上下文重试。',
-  '完成后用一句话报告你改了什么。',
-].join('\n')
+export { CODING_AGENT_PROMPT } from '@cubus/recipe-repair-eval'
 
 export interface RepairTaskOptions {
   /** 被修复的仓库目录。 */
@@ -43,13 +39,21 @@ export interface EvalRunResult {
  */
 export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunResult> {
   const testCommand = opts.testCommand ?? "node --test 'test/*.test.ts'"
-  const tools = createTools(new LocalFs(opts.repoDir), new LocalSubprocess(), opts.repoDir)
+  const subprocess = new LocalSubprocess()
 
   const runtime = new SessionRuntime({
     rootDir: opts.sessionsDir,
-    adapterFactory: opts.adapterFactory,
-    tools,
-    ...(opts.systemPrompt === undefined ? {} : { systemPrompt: opts.systemPrompt }),
+    host: withToolApprovalHost(
+      createLocalAgentHost({ adapterFactory: opts.adapterFactory }),
+      createStaticToolApproval('allow', 'automated repair eval'),
+    ),
+    recipe: repairEvalRecipe,
+    recipeOptions: {
+      fs: new LocalFs(opts.repoDir),
+      subprocess,
+      workspaceDir: opts.repoDir,
+      ...(opts.systemPrompt === undefined ? {} : { systemPrompt: opts.systemPrompt }),
+    },
     ...(opts.generateId === undefined ? {} : { generateId: opts.generateId }),
   })
 
@@ -59,7 +63,10 @@ export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunRes
     '仓库里的测试失败了。请找到原因并修复代码，让所有测试通过。改完后运行测试确认，然后报告你改了什么。',
   )
 
-  const testResult = await new LocalSubprocess().run(testCommand, { cwd: opts.repoDir })
+  const testResult = await subprocess.run(testCommand, {
+    cwd: opts.repoDir,
+    signal: new AbortController().signal,
+  })
   const passed = testResult.exitCode === 0
 
   return {

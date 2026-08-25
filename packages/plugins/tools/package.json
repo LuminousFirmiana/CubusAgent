@@ -13,6 +13,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@cubus/agent-loop": "workspace:*"
+    "@cubus/tool-registry": "workspace:*"
   }
 }

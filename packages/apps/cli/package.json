@@ -1,0 +1,29 @@
+{
+  "name": "@cubus/cli",
+  "version": "0.0.0",
+  "description": "Headless CubusAgent command-line application",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "start": "node --import tsx/esm src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/host-local": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/llm-retry": "workspace:*",
+    "@cubus/recipe-coding-agent": "workspace:*",
+    "@cubus/sdk": "workspace:*",
+    "@cubus/session": "workspace:*",
+    "@cubus/tool-approval": "workspace:*",
+    "@cubus/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/session-jsonl": "workspace:*"
+  }
+}

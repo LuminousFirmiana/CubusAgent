@@ -12,6 +12,13 @@ CubusAgent 的工程纪律。人和 agent 都遵守；规则冲突时，更具�
 
 - 提交前跑 `pnpm run check`（typecheck + lint + test，任一失败即中断），**看退出码**，
   不要用 `| tail` 之类的管道吞掉结果。
+- 每个小步必须按固定顺序锁定：本地 `pnpm install --frozen-lockfile` 与
+  `pnpm run check` 通过 -> 显式提交本步文件 -> push 当前分支 -> 等待该 commit 的
+  GitHub Actions 全绿。**云端未绿，不得开始下一小步**。
+- GitHub Actions 失败时只修复当前锁点并重新执行同一套本地检查、提交、push、等待；
+  不得一边修 CI 一边继续开发后续功能。
+- 当前尚无发布物或部署目标，因此只有 CI、没有 CD；未来新增包发布、镜像或部署时，
+  必须先讨论交付目标、凭据和回滚策略，再增加 CD workflow。
 - 每个包声明了 `test` 脚本就必须有测试文件（vitest 无测试文件会失败）。
 - 测试断言**行为**，不断言实现细节；新增行为必须带测试。
 - **每个阶段（S 步）完成时，同步更新 `docs/handover.md`**：状态总览、新的设计决策、
@@ -48,4 +55,3 @@ CubusAgent 的工程纪律。人和 agent 都遵守；规则冲突时，更具�
 - 提交小步走：一个 commit 一个主题；`git add` 显式列路径，不用 `git add -A`。
 - **提交前必须 `git status --short` 逐行核对**：每个改动文件要么进本次 commit，
   要么有明确的"不提交"理由（S1.3a 事故：源码漏提交而锁文件提交了，CI 红线才暴露）。
-

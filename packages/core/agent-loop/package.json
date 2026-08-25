@@ -15,6 +15,11 @@
   "dependencies": {
     "@cubus/cordis": "workspace:*",
     "@cubus/llm": "workspace:*",
-    "@cubus/session": "workspace:*"
+    "@cubus/session": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
+    "@cubus/tool-registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/session-jsonl": "workspace:*"
   }
 }

@@ -14,9 +14,16 @@
     "eval:real": "node --import tsx/esm src/run.ts"
   },
   "dependencies": {
+    "@cubus/agent-recipe": "workspace:*",
+    "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
+    "@cubus/llm-retry": "workspace:*",
+    "@cubus/recipe-reference-agent": "workspace:*",
+    "@cubus/recipe-repair-eval": "workspace:*",
     "@cubus/sdk": "workspace:*",
     "@cubus/session": "workspace:*",
+    "@cubus/session-jsonl": "workspace:*",
+    "@cubus/tool-approval": "workspace:*",
     "@cubus/tools": "workspace:*"
   }
 }

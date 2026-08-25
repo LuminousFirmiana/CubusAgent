@@ -1,8 +1,28 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmToolCall } from '@cubus/llm'
-import { deriveMessages } from '@cubus/session'
-import type { ContentBlock, SessionLogFile } from '@cubus/session'
-import type { InboxItem, LoopConfig, Tool } from './types.ts'
+import { deriveRequest } from '@cubus/session'
+import type { ContentBlock, SessionLog } from '@cubus/session'
+import type { InboxItem, LoopConfig, StepCapabilities, Tool } from './types.ts'
+
+interface ResolvedStepCapabilities {
+  systemPrompt?: string
+  tools: readonly Tool[]
+  toolsByName: ReadonlyMap<string, Tool>
+}
+
+function resolveStepCapabilities(capabilities: StepCapabilities): ResolvedStepCapabilities {
+  const tools = Object.freeze([...capabilities.tools])
+  const toolsByName = new Map<string, Tool>()
+  for (const tool of tools) {
+    if (toolsByName.has(tool.name)) throw new Error(`duplicate tool in step capabilities: ${tool.name}`)
+    toolsByName.set(tool.name, tool)
+  }
+  return {
+    ...(capabilities.systemPrompt === undefined ? {} : { systemPrompt: capabilities.systemPrompt }),
+    tools,
+    toolsByName,
+  }
+}
 
 /**
  * 循环驱动：turn/step 语义 + inbox + 取消 + 全事件落日志。
@@ -17,17 +37,19 @@ export class Loop {
   private readonly inbox: InboxItem[] = []
   private running = false
   private abort: AbortController | null = null
-  private readonly log: SessionLogFile
+  private readonly log: SessionLog
   private readonly adapter: LoopConfig['adapter']
-  private readonly tools = new Map<string, Tool>()
-  private readonly systemPrompt: string | undefined
+  private readonly resolveCapabilities: () => StepCapabilities
   private readonly generateId: () => string
 
   constructor(config: LoopConfig) {
     this.log = config.log
     this.adapter = config.adapter
-    for (const tool of config.tools) this.tools.set(tool.name, tool)
-    this.systemPrompt = config.systemPrompt
+    const staticTools = Object.freeze([...config.tools])
+    this.resolveCapabilities = config.resolveCapabilities ?? (() => ({
+      ...(config.systemPrompt === undefined ? {} : { systemPrompt: config.systemPrompt }),
+      tools: staticTools,
+    }))
     this.generateId = config.generateId ?? randomUUID
   }
 
@@ -64,7 +86,7 @@ export class Loop {
     try {
       while (true) {
         const stepDone = await this.runStep(turnId)
-        if (stepDone) break
+        if (stepDone || this.abort.signal.aborted) break
       }
     } finally {
       await this.log.append({ type: 'turn/end', turnId })
@@ -75,31 +97,35 @@ export class Loop {
   /** 跑一个 step。返回 true = 回合闭环；false = 需要下一步（工具结果待回喂）。 */
   private async runStep(turnId: string): Promise<boolean> {
     const stepId = this.generateId()
+    const capabilities = resolveStepCapabilities(this.resolveCapabilities())
     await this.log.append({ type: 'step/start', stepId, turnId })
 
+    const toolSpecs = capabilities.tools.map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }))
+    await this.log.append({
+      type: 'request/header',
+      stepId,
+      header: {
+        provider: this.adapter.provider,
+        model: this.adapter.model,
+        ...(capabilities.systemPrompt === undefined ? {} : { systemPrompt: capabilities.systemPrompt }),
+        ...(toolSpecs.length === 0 ? {} : { tools: toolSpecs }),
+      },
+    })
     const { events } = await this.log.read()
-    const messages = deriveMessages(events)
+    const request = deriveRequest(events, stepId)
+    if (!request) throw new Error(`request/header missing for step: ${stepId}`)
 
     let text = ''
     let thinkingText = ''
     const toolCalls: LlmToolCall[] = []
     let aborted = false
 
-    const toolSpecs = [...this.tools.values()].map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    }))
-
     try {
-      for await (const chunk of this.adapter.stream(
-        {
-          messages,
-          ...(this.systemPrompt === undefined ? {} : { systemPrompt: this.systemPrompt }),
-          ...(toolSpecs.length === 0 ? {} : { tools: toolSpecs }),
-        },
-        this.abort!.signal,
-      )) {
+      for await (const chunk of this.adapter.stream(request, this.abort!.signal)) {
         if (this.abort!.signal.aborted) {
           aborted = true
           break
@@ -131,6 +157,7 @@ export class Loop {
           messageId: this.generateId(),
           stepId,
           content: text ? [{ type: 'text', text }] : [],
+          ...(thinkingText ? { thinking: thinkingText } : {}),
           interrupted: true,
         })
       }
@@ -144,6 +171,7 @@ export class Loop {
       messageId: this.generateId(),
       stepId,
       content: text ? [{ type: 'text', text }] : [],
+      ...(thinkingText ? { thinking: thinkingText } : {}),
     })
     for (const call of toolCalls) {
       await this.log.append({ type: 'tool/call', id: call.id, stepId, name: call.name, args: call.args })
@@ -156,25 +184,36 @@ export class Loop {
 
     // 执行工具，结果回喂（下一个 step 的投影会自动包含它们）。
     // step/end 在工具结果之后：step = 一次模型请求 + 它触发的工具执行。
+    const signal = this.abort!.signal
+    let toolExecutionAborted = false
     for (const call of toolCalls) {
-      const tool = this.tools.get(call.name)
+      const tool = capabilities.toolsByName.get(call.name)
       let ok = true
       let outputText: string
-      if (!tool) {
+      if (signal.aborted) {
+        toolExecutionAborted = true
+        ok = false
+        outputText = 'cancelled before execution'
+      } else if (!tool) {
         ok = false
         outputText = `unknown tool: ${call.name}`
       } else {
         try {
-          outputText = await tool.execute(call.args)
+          outputText = await tool.execute(call.args, { signal })
         } catch (error) {
           ok = false
-          outputText = error instanceof Error ? error.message : String(error)
+          if (signal.aborted) {
+            toolExecutionAborted = true
+            outputText = 'cancelled'
+          } else {
+            outputText = error instanceof Error ? error.message : String(error)
+          }
         }
       }
+      if (signal.aborted) toolExecutionAborted = true
       await this.log.append({ type: 'tool/result', id: call.id, ok, output: { text: outputText } })
     }
     await this.log.append({ type: 'step/end', stepId })
-    return false
+    return toolExecutionAborted || signal.aborted
   }
 }
-

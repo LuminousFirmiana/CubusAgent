@@ -1,0 +1,18 @@
+{
+  "name": "@cubus/llm-retry",
+  "version": "0.0.0",
+  "description": "Abort-aware bounded retry policy for typed LLM failures",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/llm": "workspace:*"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@cubus/recipe-reference-agent",
+  "version": "0.0.0",
+  "description": "Domain-neutral reference Agent Recipe with a deterministic arithmetic tool",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/agent-recipe": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
+    "@cubus/tool-registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/cordis": "workspace:*"
+  }
+}

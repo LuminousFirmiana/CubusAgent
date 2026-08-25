@@ -20,7 +20,5 @@ jobs:
           cache: pnpm
       # 4. 按 pnpm-lock.yaml 的指纹精确安装依赖（不允许悄悄漂移）
       - run: pnpm install --frozen-lockfile
-      # 5. 三个门卫，任何一个红都会让整个 CI 失败
-      - run: pnpm run typecheck
-      - run: pnpm run lint
-      - run: pnpm run test
+      # 5. 复用仓库唯一检查入口；它会递归覆盖所有 workspace 包
+      - run: pnpm run check

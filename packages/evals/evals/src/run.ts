@@ -8,6 +8,7 @@ import { cpSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekAdapter } from '@cubus/llm'
+import { withLlmRetry } from '@cubus/llm-retry'
 import { CODING_AGENT_PROMPT, runRepairTask } from './harness.ts'
 
 // 加载仓库根的 .env：本文件位于 packages/evals/evals/src，
@@ -44,11 +45,14 @@ const result = await runRepairTask({
   repoDir,
   sessionsDir,
   adapterFactory: () =>
-    new DeepSeekAdapter({
-      baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
-      apiKey,
-      model: process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat',
-    }),
+    withLlmRetry(
+      new DeepSeekAdapter({
+        baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
+        apiKey,
+        model: process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat',
+      }),
+      { maxAttempts: 3 },
+    ),
   systemPrompt: CODING_AGENT_PROMPT,
 })
 

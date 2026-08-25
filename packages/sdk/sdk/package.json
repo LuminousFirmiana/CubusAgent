@@ -14,9 +14,13 @@
     "demo": "node --import tsx/esm examples/demo.ts"
   },
   "dependencies": {
-    "@cubus/agent-loop": "workspace:*",
+    "@cubus/agent-recipe": "workspace:*",
     "@cubus/cordis": "workspace:*",
-    "@cubus/llm": "workspace:*",
     "@cubus/session": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/host-local": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/tool-registry": "workspace:*"
   }
 }

@@ -31,6 +31,9 @@ function abortPromise(signal: AbortSignal): Promise<never> {
  * 收到工具结果后的第二步回答。
  */
 export class ScriptedAdapter implements LlmAdapter {
+  readonly provider = 'scripted'
+  readonly model = 'scripted'
+
   /** 已产出的碎片数（测试等待用）。 */
   delivered = 0
 
@@ -58,4 +61,3 @@ export class ScriptedAdapter implements LlmAdapter {
     }
   }
 }
-

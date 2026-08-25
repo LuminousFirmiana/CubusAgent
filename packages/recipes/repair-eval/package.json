@@ -1,0 +1,25 @@
+{
+  "name": "@cubus/recipe-repair-eval",
+  "version": "0.0.0",
+  "description": "Repair-eval Agent Recipe with coding prompt and four workspace tools",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/recipe-coding-agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/cordis": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
+    "@cubus/tool-approval": "workspace:*",
+    "@cubus/tool-registry": "workspace:*",
+    "@cubus/tools": "workspace:*"
+  }
+}

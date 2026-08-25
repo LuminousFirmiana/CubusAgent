@@ -13,7 +13,8 @@
     "test": "pnpm -r --if-present run test",
     "lint": "oxlint packages",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
-    "eval:real": "pnpm --filter @cubus/evals run eval:real"
+    "eval:real": "pnpm --filter @cubus/evals run eval:real",
+    "cubus": "node --import tsx/esm packages/apps/cli/src/main.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

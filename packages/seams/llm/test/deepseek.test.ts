@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { DeepSeekAdapter } from '../src/deepseek.ts'
+import { LlmError } from '../src/errors.ts'
 import type { Transport } from '../src/deepseek.ts'
 import type { LlmRequest } from '../src/types.ts'
 
@@ -33,7 +34,11 @@ async function collect(adapter: DeepSeekAdapter, request: LlmRequest, signal?: A
   return chunks
 }
 
-const emptyRequest: LlmRequest = { messages: [{ role: 'user', content: [{ type: 'text', text: '你好' }] }] }
+const emptyRequest: LlmRequest = {
+  provider: 'deepseek',
+  model: 'deepseek-chat',
+  messages: [{ role: 'user', content: [{ type: 'text', text: '你好' }] }],
+}
 
 test('parses content deltas and thinking deltas from the recorded SSE stream', async () => {
   const adapter = makeAdapter(fixtureTransport())
@@ -66,6 +71,8 @@ test('converts projected messages into OpenAI wire format', async () => {
   const adapter = makeAdapter(transport)
 
   const request: LlmRequest = {
+    provider: 'deepseek',
+    model: 'deepseek-chat',
     systemPrompt: '你是一个修 bug 的 agent。',
     tools: [
       {
@@ -79,6 +86,7 @@ test('converts projected messages into OpenAI wire format', async () => {
       {
         role: 'assistant',
         content: [],
+        thinking: '先读取文件。',
         toolCalls: [{ id: 'c1', name: 'read_file', args: { path: 'a.ts' } }],
       },
       { role: 'tool-result', toolCallId: 'c1', content: '内容A', ok: true },
@@ -106,6 +114,7 @@ test('converts projected messages into OpenAI wire format', async () => {
     {
       role: 'assistant',
       content: '',
+      reasoning_content: '先读取文件。',
       tool_calls: [
         { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
       ],
@@ -115,9 +124,49 @@ test('converts projected messages into OpenAI wire format', async () => {
   expect(captured[0]?.init.headers).toMatchObject({ authorization: 'Bearer test-key' })
 })
 
+test('passes reasoning_content back on a tool-call-free assistant turn', async () => {
+  let sent: Record<string, unknown> | undefined
+  const adapter = makeAdapter(async (_url, init) => {
+    sent = JSON.parse(String(init.body)) as Record<string, unknown>
+    return new Response('data: [DONE]\n\n', { status: 200 })
+  })
+
+  await collect(adapter, {
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    messages: [{
+      role: 'assistant',
+      content: [{ type: 'text', text: '答案' }],
+      thinking: '逐步推理',
+    }],
+  })
+
+  expect(sent?.['messages']).toEqual([
+    { role: 'assistant', content: '答案', reasoning_content: '逐步推理' },
+  ])
+})
+
 test('non-2xx response throws with status and body excerpt', async () => {
   const adapter = makeAdapter(fixtureTransport(401))
-  await expect(collect(adapter, emptyRequest)).rejects.toThrow('deepseek api error 401')
+  const error = await collect(adapter, emptyRequest).catch(value => value as unknown)
+  expect(error).toBeInstanceOf(LlmError)
+  expect(error).toMatchObject({
+    message: expect.stringContaining('deepseek api error 401'),
+    kind: 'authentication',
+    retryable: false,
+    status: 401,
+  })
+})
+
+test('classifies rate limits, server failures, and transport failures as retryable', async () => {
+  for (const [status, kind] of [[429, 'rate-limit'], [503, 'server']] as const) {
+    const error = await collect(makeAdapter(fixtureTransport(status)), emptyRequest).catch(value => value as unknown)
+    expect(error).toMatchObject({ kind, retryable: true, status })
+  }
+
+  const networkError = await collect(makeAdapter(async () => { throw new TypeError('fetch failed') }), emptyRequest)
+    .catch(value => value as unknown)
+  expect(networkError).toMatchObject({ kind: 'network', retryable: true })
 })
 
 test('an already-aborted signal rejects the stream', async () => {
@@ -126,4 +175,3 @@ test('an already-aborted signal rejects the stream', async () => {
   controller.abort()
   await expect(collect(adapter, emptyRequest, controller.signal)).rejects.toThrow('aborted')
 })
-

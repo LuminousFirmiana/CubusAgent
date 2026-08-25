@@ -1,4 +1,4 @@
-import type { ProjectedMessage } from '@cubus/session'
+import type { ProjectedRequest, RequestToolSpec } from '@cubus/session'
 
 /**
  * llm seam 的 Service Definition：模型适配器接口。
@@ -7,24 +7,17 @@ import type { ProjectedMessage } from '@cubus/session'
  * 消费方（循环）只依赖接口，不依赖具体实现——换供应商 = 换 Provider。
  */
 export interface LlmAdapter {
+  /** Stable route identity recorded in request/header before every dispatch. */
+  readonly provider: string
+  readonly model: string
   stream(request: LlmRequest, signal: AbortSignal): AsyncGenerator<LlmChunk, void, void>
 }
 
 /** 模型可用的工具 schema（发给 provider 的 tools 字段）。 */
-export interface LlmToolSpec {
-  name: string
-  description: string
-  parameters: Record<string, unknown>
-}
+export type LlmToolSpec = RequestToolSpec
 
-/** 一次模型请求：投影后的消息序列 + 可选系统提示 + 可选工具清单。 */
-export interface LlmRequest {
-  messages: ProjectedMessage[]
-  /** 系统提示：适配器映射为 provider 的 system 消息（OpenAI 系为 role: system）。 */
-  systemPrompt?: string
-  /** 工具 schema：模型只有收到它们才会发起真正的工具调用。 */
-  tools?: LlmToolSpec[]
-}
+/** 一次模型请求；由 request/header 与此前日志消息纯投影重建。 */
+export type LlmRequest = ProjectedRequest
 
 /**
  * 模型流的一个碎片。
@@ -44,4 +37,3 @@ export interface LlmToolCall {
   name: string
   args: unknown
 }
-

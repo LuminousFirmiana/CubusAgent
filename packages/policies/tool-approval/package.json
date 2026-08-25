@@ -1,0 +1,20 @@
+{
+  "name": "@cubus/tool-approval",
+  "version": "0.0.0",
+  "description": "Host-provided tool approval policy seam and tool wrapper",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/agent-recipe": "workspace:*",
+    "@cubus/cordis": "workspace:*",
+    "@cubus/tool-registry": "workspace:*"
+  }
+}

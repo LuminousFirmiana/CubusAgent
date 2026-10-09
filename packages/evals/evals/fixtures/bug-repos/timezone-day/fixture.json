@@ -1,0 +1,15 @@
+{
+  "id": "timezone-day",
+  "title": "用 UTC 取值判断\"今天\"，跨时区错一天",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/day.ts",
+        "content": "/** 取本地日期（YYYY-MM-DD）。 */\nexport function localDay(date: Date): string {\n  const year = String(date.getFullYear())\n  const month = String(date.getMonth() + 1).padStart(2, \"0\")\n  const day = String(date.getDate()).padStart(2, \"0\")\n  return year + \"-\" + month + \"-\" + day\n}\n"
+      }
+    }
+  ]
+}

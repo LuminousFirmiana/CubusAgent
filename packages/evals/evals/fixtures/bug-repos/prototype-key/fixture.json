@@ -1,0 +1,15 @@
+{
+  "id": "prototype-key",
+  "title": "用 in 判断对象键，命中了原型链",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/registry.ts",
+        "content": "/** 判断注册表里有没有这个键（不能把原型链上的东西算进来）。 */\nexport function hasKey(registry: Record<string, number>, key: string): boolean {\n  return Object.hasOwn(registry, key)\n}\n"
+      }
+    }
+  ]
+}

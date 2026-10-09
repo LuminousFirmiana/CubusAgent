@@ -1,0 +1,15 @@
+{
+  "id": "truncate-surrogate",
+  "title": "截断字符串切断了代理对（emoji）",
+  "bugKind": "boundary",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/truncate.ts",
+        "content": "/** 按字符截断（不能把 emoji 劈成两半）。 */\nexport function truncate(text: string, maxChars: number): string {\n  return [...text].slice(0, maxChars).join(\"\")\n}\n"
+      }
+    }
+  ]
+}

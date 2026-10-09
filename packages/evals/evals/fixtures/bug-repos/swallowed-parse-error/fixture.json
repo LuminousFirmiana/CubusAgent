@@ -1,0 +1,15 @@
+{
+  "id": "swallowed-parse-error",
+  "title": "JSON 解析失败被静默吞掉",
+  "bugKind": "error-handling",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/parse.ts",
+        "content": "/** 解析配置：非法 JSON 必须抛出，不能静默返回 undefined。 */\nexport function parseConfig(text: string): unknown {\n  return JSON.parse(text)\n}\n"
+      }
+    }
+  ]
+}

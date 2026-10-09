@@ -1,0 +1,15 @@
+{
+  "id": "case-sensitive-email",
+  "title": "邮箱比较区分大小写",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/email.ts",
+        "content": "/** 判断两个邮箱是不是同一个（大小写与首尾空格都不应影响）。 */\nexport function sameEmail(left: string, right: string): boolean {\n  return left.trim().toLowerCase() === right.trim().toLowerCase()\n}\n"
+      }
+    }
+  ]
+}

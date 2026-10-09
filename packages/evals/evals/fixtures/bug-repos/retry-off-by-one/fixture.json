@@ -1,0 +1,16 @@
+{
+  "id": "retry-off-by-one",
+  "title": "重试次数多算了一次",
+  "bugKind": "boundary",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/retry.ts",
+        "old_string": "attempt <= attempts",
+        "new_string": "attempt < attempts"
+      }
+    }
+  ]
+}

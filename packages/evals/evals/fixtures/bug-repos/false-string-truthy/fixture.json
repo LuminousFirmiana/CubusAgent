@@ -1,0 +1,15 @@
+{
+  "id": "false-string-truthy",
+  "title": "字符串 \"false\" 被当成真值",
+  "bugKind": "type-coercion",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/flags.ts",
+        "content": "/** 读取布尔开关：只有明确的 true 才算打开。 */\nexport function isEnabled(raw: string | undefined): boolean {\n  return raw === 'true' || raw === '1'\n}\n"
+      }
+    }
+  ]
+}

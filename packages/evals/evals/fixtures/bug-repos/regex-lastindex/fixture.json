@@ -1,0 +1,15 @@
+{
+  "id": "regex-lastindex",
+  "title": "带 g 的正则复用时 lastIndex 残留",
+  "bugKind": "side-effect",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/match.ts",
+        "content": "/** 找第一个匹配的位置：每次调用都用新的正则，避免 lastIndex 残留。 */\nexport function firstMatchIndex(text: string): number {\n  const pattern = /ab/g\n  return pattern.exec(text)?.index ?? -1\n}\n"
+      }
+    }
+  ]
+}

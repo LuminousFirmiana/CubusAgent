@@ -1,0 +1,15 @@
+{
+  "id": "dedupe-by-reference",
+  "title": "用 Set 去重对象（按引用而非取值）",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/dedupe.ts",
+        "content": "/** 按取值去重：{a,b} 相同即视为重复。 */\nexport function uniquePairs(pairs: { a: number; b: number }[]): { a: number; b: number }[] {\n  const seen = new Set<string>()\n  const result: { a: number; b: number }[] = []\n  for (const pair of pairs) {\n    const key = String(pair.a) + \":\" + String(pair.b)\n    if (seen.has(key)) continue\n    seen.add(key)\n    result.push(pair)\n  }\n  return result\n}\n"
+      }
+    }
+  ]
+}

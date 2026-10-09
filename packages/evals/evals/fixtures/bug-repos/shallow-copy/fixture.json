@@ -1,0 +1,16 @@
+{
+  "id": "shallow-copy",
+  "title": "浅拷贝导致嵌套对象被共享",
+  "bugKind": "side-effect",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/clone.ts",
+        "old_string": "return { ...config }",
+        "new_string": "return { ...config, nested: { ...config.nested } }"
+      }
+    }
+  ]
+}

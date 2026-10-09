@@ -1,0 +1,16 @@
+{
+  "id": "slice-vs-splice",
+  "title": "删除元素用了 slice 而不是 splice",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/list.ts",
+        "old_string": "items.slice(index, 1)",
+        "new_string": "items.splice(index, 1)"
+      }
+    }
+  ]
+}

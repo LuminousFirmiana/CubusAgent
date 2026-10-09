@@ -1,0 +1,16 @@
+{
+  "id": "numeric-sort",
+  "title": "数字排序用了默认字典序",
+  "bugKind": "type-coercion",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/sort.ts",
+        "old_string": "[...values].sort()",
+        "new_string": "[...values].sort((a, b) => a - b)"
+      }
+    }
+  ]
+}

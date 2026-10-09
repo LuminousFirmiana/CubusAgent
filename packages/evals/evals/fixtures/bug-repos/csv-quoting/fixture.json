@@ -1,0 +1,15 @@
+{
+  "id": "csv-quoting",
+  "title": "CSV 字段没有转义逗号与引号",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/csv.ts",
+        "content": "/** 生成一行 CSV：每个字段都用双引号包裹，内部引号翻倍。 */\nexport function toCsvRow(values: string[]): string {\n  return values.map(value => '\"' + value.split('\"').join('\"\"') + '\"').join(',')\n}\n"
+      }
+    }
+  ]
+}

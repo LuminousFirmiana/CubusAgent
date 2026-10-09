@@ -1,0 +1,16 @@
+{
+  "id": "pagination-offset",
+  "title": "分页偏移把第 1 页当成第 0 页之后",
+  "bugKind": "boundary",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/pagination.ts",
+        "old_string": "return page * pageSize",
+        "new_string": "return (page - 1) * pageSize"
+      }
+    }
+  ]
+}

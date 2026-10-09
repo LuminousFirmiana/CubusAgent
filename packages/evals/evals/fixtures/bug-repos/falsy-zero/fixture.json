@@ -1,0 +1,16 @@
+{
+  "id": "falsy-zero",
+  "title": "用 || 兜底把 0 当成缺失值",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/defaults.ts",
+        "old_string": "return value || fallback",
+        "new_string": "return value ?? fallback"
+      }
+    }
+  ]
+}

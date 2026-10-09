@@ -1,0 +1,15 @@
+{
+  "id": "unstable-cache-key",
+  "title": "缓存键依赖对象键顺序",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/cache.ts",
+        "content": "/** 由查询参数生成缓存键：键顺序不同也必须是同一个键。 */\nexport function cacheKey(query: Record<string, number>): string {\n  const keys = Object.keys(query).sort()\n  return JSON.stringify(keys.map(key => [key, query[key]]))\n}\n"
+      }
+    }
+  ]
+}

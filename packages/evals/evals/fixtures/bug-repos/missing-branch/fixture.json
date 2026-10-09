@@ -1,0 +1,16 @@
+{
+  "id": "missing-branch",
+  "title": "分类函数两个分支返回同一个值",
+  "bugKind": "missing-branch",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/classify.ts",
+        "old_string": "  if (value < 0) return 'negative'\n  return 'negative'",
+        "new_string": "  if (value < 0) return 'negative'\n  return 'non-negative'"
+      }
+    }
+  ]
+}

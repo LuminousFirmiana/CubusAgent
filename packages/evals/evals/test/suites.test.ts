@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { loadFixtures } from '../src/fixtures.ts'
+import { goldenPathFor, parseGolden } from '../src/fingerprint.ts'
 import { renderLatestResult } from '../src/results.ts'
 import {
   assertSuiteRegistered,
@@ -22,20 +24,32 @@ const validSuite: EvalSuite = {
 test('the repair-eval suite is an explicit, versioned artifact', async () => {
   const suite = await loadSuite('repair-eval-v1')
 
-  expect(suite.version).toBe('1.0.0')
   expect(suite.judge).toBe('hidden-tests')
-  // 任务清单是显式的：不再靠扫目录
-  expect(suite.tasks.map(task => task.id)).toEqual([
-    'add-bug',
-    'empty-input',
-    'in-place-mutation',
-    'missing-await',
-    'off-by-one',
-    'string-coercion',
-    'swallowed-error',
-  ])
+  expect(suite.version).toBe('1.1.0')
+  // 任务清单是显式的（不靠扫目录），且必须与磁盘上的夹具集合完全一致 ——
+  // 两边任一漏项都会红：清单漏了夹具 = 任务不参与评测；夹具漏了清单 = 任务集名不副实。
+  const fixtures = await loadFixtures()
+  expect(suite.tasks.map(task => task.id)).toEqual(fixtures.map(fixture => fixture.spec.id))
+  expect(suite.tasks.length).toBeGreaterThanOrEqual(30)
   // 默认门禁档：guardrails（判分 + 文件集 + 调用预算，不比工具身份）
   expect(suite.tasks.every(task => task.gate === 'guardrails')).toBe(true)
+})
+
+test('every golden file parses and describes a passing run', async () => {
+  const fixtures = await loadFixtures()
+  const missing: string[] = []
+  for (const fixture of fixtures) {
+    const path = goldenPathFor(fixture.dir)
+    if (!existsSync(path)) {
+      missing.push(fixture.spec.id)
+      continue
+    }
+    const golden = parseGolden(readFileSync(path, 'utf8'), path)
+    // golden 必须来自一次判分通过的运行，且确实改动了文件（不等于"什么都没干也过"）
+    expect(golden.judge, fixture.spec.id).toBe('pass')
+    expect(golden.files.length, fixture.spec.id).toBeGreaterThan(0)
+  }
+  expect(missing, 'tasks without a golden: ' + missing.join(', ')).toEqual([])
 })
 
 test('every fixture belongs to a suite so nothing silently falls out of the eval', async () => {

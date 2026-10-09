@@ -1,0 +1,16 @@
+{
+  "id": "wrong-comparator",
+  "title": "边界判断用了 >= 而不是 >",
+  "bugKind": "boundary",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/limit.ts",
+        "old_string": "return value >= limit",
+        "new_string": "return value > limit"
+      }
+    }
+  ]
+}

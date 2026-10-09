@@ -1,0 +1,15 @@
+{
+  "id": "async-foreach",
+  "title": "forEach 里的异步回调没有被等待",
+  "bugKind": "async",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/collect.ts",
+        "content": "/** 收集：必须等所有异步任务完成后再返回。 */\nexport async function collectAll(items: number[]): Promise<number[]> {\n  return await Promise.all(items.map(async item => {\n    await Promise.resolve()\n    return item * 2\n  }))\n}\n"
+      }
+    }
+  ]
+}

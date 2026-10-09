@@ -1,0 +1,15 @@
+{
+  "id": "mutation-argument",
+  "title": "函数修改了调用方传入的数组",
+  "bugKind": "side-effect",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/queue.ts",
+        "content": "/** 取出下一个：不能改动调用方的队列。 */\nexport function takeNext(queue: string[]): string | undefined {\n  return queue[0]\n}\n"
+      }
+    }
+  ]
+}

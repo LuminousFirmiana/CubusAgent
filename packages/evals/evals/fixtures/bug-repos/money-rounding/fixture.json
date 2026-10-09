@@ -1,0 +1,15 @@
+{
+  "id": "money-rounding",
+  "title": "金额用浮点相加导致精度误差",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/money.ts",
+        "content": "/** 金额以\"分\"为单位计算，返回元（两位小数）。 */\nexport function sumYuan(cents: number[]): number {\n  const totalCents = cents.reduce((sum, cent) => sum + cent, 0)\n  return Math.round(totalCents) / 100\n}\n"
+      }
+    }
+  ]
+}

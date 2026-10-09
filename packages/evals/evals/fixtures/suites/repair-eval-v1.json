@@ -1,14 +1,127 @@
 {
   "id": "repair-eval-v1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "judge": "hidden-tests",
   "tasks": [
-    { "id": "add-bug", "gate": "guardrails" },
-    { "id": "empty-input", "gate": "guardrails" },
-    { "id": "in-place-mutation", "gate": "guardrails" },
-    { "id": "missing-await", "gate": "guardrails" },
-    { "id": "off-by-one", "gate": "guardrails" },
-    { "id": "string-coercion", "gate": "guardrails" },
-    { "id": "swallowed-error", "gate": "guardrails" }
+    {
+      "id": "add-bug",
+      "gate": "guardrails"
+    },
+    {
+      "id": "async-foreach",
+      "gate": "guardrails"
+    },
+    {
+      "id": "case-sensitive-email",
+      "gate": "guardrails"
+    },
+    {
+      "id": "chunk-drops-tail",
+      "gate": "guardrails"
+    },
+    {
+      "id": "csv-quoting",
+      "gate": "guardrails"
+    },
+    {
+      "id": "dedupe-by-reference",
+      "gate": "guardrails"
+    },
+    {
+      "id": "empty-input",
+      "gate": "guardrails"
+    },
+    {
+      "id": "false-string-truthy",
+      "gate": "guardrails"
+    },
+    {
+      "id": "falsy-zero",
+      "gate": "guardrails"
+    },
+    {
+      "id": "in-place-mutation",
+      "gate": "guardrails"
+    },
+    {
+      "id": "indexof-nan",
+      "gate": "guardrails"
+    },
+    {
+      "id": "missing-await",
+      "gate": "guardrails"
+    },
+    {
+      "id": "missing-branch",
+      "gate": "guardrails"
+    },
+    {
+      "id": "money-rounding",
+      "gate": "guardrails"
+    },
+    {
+      "id": "mutation-argument",
+      "gate": "guardrails"
+    },
+    {
+      "id": "numeric-sort",
+      "gate": "guardrails"
+    },
+    {
+      "id": "off-by-one",
+      "gate": "guardrails"
+    },
+    {
+      "id": "pagination-offset",
+      "gate": "guardrails"
+    },
+    {
+      "id": "prototype-key",
+      "gate": "guardrails"
+    },
+    {
+      "id": "regex-lastindex",
+      "gate": "guardrails"
+    },
+    {
+      "id": "retry-off-by-one",
+      "gate": "guardrails"
+    },
+    {
+      "id": "shallow-copy",
+      "gate": "guardrails"
+    },
+    {
+      "id": "slice-vs-splice",
+      "gate": "guardrails"
+    },
+    {
+      "id": "string-coercion",
+      "gate": "guardrails"
+    },
+    {
+      "id": "swallowed-error",
+      "gate": "guardrails"
+    },
+    {
+      "id": "swallowed-parse-error",
+      "gate": "guardrails"
+    },
+    {
+      "id": "timezone-day",
+      "gate": "guardrails"
+    },
+    {
+      "id": "truncate-surrogate",
+      "gate": "guardrails"
+    },
+    {
+      "id": "unstable-cache-key",
+      "gate": "guardrails"
+    },
+    {
+      "id": "wrong-comparator",
+      "gate": "guardrails"
+    }
   ]
 }

@@ -59,3 +59,11 @@
 
 总耗时 7.1s。未通过项需人工看日志定位（会话日志即完整轨迹）。
 
+## 2026-10-09 12:11 UTC · deepseek-chat · 1 tasks (suite repair-eval-v1 v1.1.0) · 1/1 passed (100%)
+
+| fixture | bug 类型 | 结果 | 门禁 | 耗时 | 会话日志 |
+|---|---|---|---|---|---|
+| falsy-zero | logic | ✅ | ✅ | 6.3s | /var/folders/gl/dmnnkdn57j97smsm5xwph5j80000gn/T/cubus-eval-falsy-zero-nJ0aBi/sessions/05661e9e-0020-45a3-908d-f5106fabf3b9/session.jsonl |
+
+总耗时 6.3s。未通过项需人工看日志定位（会话日志即完整轨迹）。
+

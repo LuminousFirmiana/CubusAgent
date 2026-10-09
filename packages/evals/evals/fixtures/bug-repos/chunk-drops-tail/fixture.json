@@ -1,0 +1,16 @@
+{
+  "id": "chunk-drops-tail",
+  "title": "分块循环丢掉了最后一块",
+  "bugKind": "boundary",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/chunk.ts",
+        "old_string": "index + size < items.length",
+        "new_string": "index < items.length"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "indexof-nan",
+  "title": "indexOf 找不到 NaN",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/scan.ts",
+        "old_string": "return values.indexOf(Number.NaN) >= 0",
+        "new_string": "return values.some(Number.isNaN)"
+      }
+    }
+  ]
+}

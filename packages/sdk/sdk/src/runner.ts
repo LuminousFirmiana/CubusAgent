@@ -1,10 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { createAgentRuntimePlugin } from '@cubus/agent-recipe'
 import type { AgentHost, AgentRecipe, AgentSessionDescriptor, CapabilityPins } from '@cubus/agent-recipe'
 import { Context } from '@cubus/cordis'
 import type { BudgetState } from '@cubus/budget'
+import {
+  parseSessionMeta,
+  planSettlement,
+  renderSessionMeta,
+  settlementEvents,
+  SESSION_FORMAT_VERSION,
+} from '@cubus/session'
 import type { BudgetLimits, MountSnapshot, SessionEvent } from '@cubus/session'
 import { ConcurrencyGate } from './concurrency.ts'
 import type { ConcurrencySnapshot } from './concurrency.ts'
@@ -14,6 +21,22 @@ import type { RpcMethod } from './server.ts'
 export interface SessionInfo {
   id: string
   logPath: string
+}
+
+export interface ResumeOptions {
+  /** 已存在的会话目录（里面应有 session.jsonl 与 session.meta.json）。 */
+  directory: string
+  /** 会话 id；缺省取目录名。 */
+  id?: string
+}
+
+export interface ResumeResult {
+  session: SessionInfo
+  /** 这份日志的格式版本（缺失 sidecar 记为 1）。 */
+  formatVersion: number
+  /** 是否补写了结算事件（崩溃留下的未闭合区间）。 */
+  settled: boolean
+  settlementEvents: readonly SessionEvent[]
 }
 
 /** 一次会话运行的回合结果（协议返回值）。 */
@@ -80,13 +103,11 @@ export class SessionRuntime<RecipeOptions = void> {
     return this.gate.snapshot()
   }
 
-  async create(): Promise<SessionInfo> {
-    const id = this.generateId()
-    const dir = join(this.opts.rootDir, id)
-    await mkdir(dir, { recursive: true })
-    const logPath = join(dir, 'session.jsonl')
-    const descriptor: AgentSessionDescriptor = Object.freeze({ id, directory: dir, logPath })
-
+  /** 装配一个会话（create 与 resume 共用；resume 时插件会校验装配身份且不写第二条快照）。 */
+  private async mount(
+    descriptor: AgentSessionDescriptor,
+    extras: { resume?: true } = {},
+  ): Promise<Context> {
     const ctx = new Context()
     await ctx.plugin(createAgentRuntimePlugin({
       host: this.opts.host,
@@ -96,10 +117,67 @@ export class SessionRuntime<RecipeOptions = void> {
       ...(this.opts.capabilityPins === undefined ? {} : { capabilityPins: this.opts.capabilityPins }),
       ...(this.opts.permissionProfile === undefined ? {} : { permissionProfile: this.opts.permissionProfile }),
       ...(this.opts.budget === undefined ? {} : { budget: this.opts.budget }),
+      ...(extras.resume === true ? { resume: true as const } : {}),
     }))
+    return ctx
+  }
 
+  async create(): Promise<SessionInfo> {
+    const id = this.generateId()
+    const dir = join(this.opts.rootDir, id)
+    await mkdir(dir, { recursive: true })
+    const logPath = join(dir, 'session.jsonl')
+    const descriptor: AgentSessionDescriptor = Object.freeze({ id, directory: dir, logPath })
+
+    // 格式版本 sidecar（D3）：装配前写好，读取方据此判断能不能读这份日志。
+    await writeFile(join(dir, 'session.meta.json'), renderSessionMeta({
+      formatVersion: SESSION_FORMAT_VERSION,
+      createdAt: new Date().toISOString(),
+      sessionId: id,
+      recipe: { id: this.opts.recipe.manifest.id, version: this.opts.recipe.manifest.version },
+    }), 'utf8')
+
+    const ctx = await this.mount(descriptor)
     this.sessions.set(id, { id, logPath, ctx, runTail: Promise.resolve() })
     return { id, logPath }
+  }
+
+  /**
+   * 恢复一个已存在的会话（D3）：校验格式版本 → 重新装配（装配身份必须一致）→ 结算未闭合区间。
+   *
+   * 不做的事：不重放任何已记录的副作用、不重放孤儿工具调用（不知道它是否已经产生副作用）、
+   * 不回滚崩溃前的半成品改动。恢复是"继续"，不是"重来"。
+   */
+  async resume(options: ResumeOptions): Promise<ResumeResult> {
+    const directory = options.directory
+    const id = options.id ?? basename(directory)
+    const logPath = join(directory, 'session.jsonl')
+    if (this.sessions.has(id)) throw new Error('session already open: ' + id)
+
+    // 格式版本：文件缺失按 v1；更高版本直接拒绝（不静默降级）。
+    let rawMeta: string | undefined
+    try {
+      rawMeta = await readFile(join(directory, 'session.meta.json'), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    const meta = parseSessionMeta(rawMeta)
+
+    const ctx = await this.mount(Object.freeze({ id, directory, logPath }), { resume: true })
+
+    const log = ctx.get('sessionLog')
+    if (log === undefined) throw new Error('session kernel not ready')
+    const { events } = await log.read()
+    const settledEvents = settlementEvents(planSettlement(events))
+    for (const event of settledEvents) await log.append(event)
+
+    this.sessions.set(id, { id, logPath, ctx, runTail: Promise.resolve() })
+    return {
+      session: { id, logPath },
+      formatVersion: meta.formatVersion,
+      settled: settledEvents.length > 0,
+      settlementEvents: settledEvents,
+    }
   }
 
   async run(sessionId: string, text: string): Promise<RunResult> {

@@ -64,6 +64,72 @@ export interface MountSnapshotInput {
   readonly config: unknown
 }
 
+/**
+ * 装配身份（D3）：恢复时必须与原会话一致的那部分。
+ * 刻意不含 config 与可选缺失项 —— 它们是"这次怎么跑的"，不是"这是哪个会话"。
+ */
+export interface AssemblyIdentity {
+  readonly recipeId: string
+  readonly recipeVersion: string
+  /** 'kind:provider'，排序后比较（顺序无关）。 */
+  readonly capabilities: readonly string[]
+  readonly permissionProfile: string
+  readonly budget: string
+}
+
+export function assemblyIdentity(snapshot: MountSnapshot): AssemblyIdentity {
+  return {
+    recipeId: snapshot.recipe.id,
+    recipeVersion: snapshot.recipe.version,
+    capabilities: snapshot.capabilities
+      .map(capability => capability.kind + ':' + capability.provider)
+      .sort(),
+    permissionProfile: snapshot.permission.profile,
+    budget: JSON.stringify(snapshot.budget ?? null),
+  }
+}
+
+/** 逐字段比较两份装配，返回人类可读的差异（空数组 = 一致）。 */
+export function compareAssemblyIdentity(previous: MountSnapshot, next: MountSnapshot): string[] {
+  const before = assemblyIdentity(previous)
+  const after = assemblyIdentity(next)
+  const differences: string[] = []
+  if (before.recipeId !== after.recipeId || before.recipeVersion !== after.recipeVersion) {
+    differences.push(
+      'recipe: ' + before.recipeId + '@' + before.recipeVersion +
+      ' -> ' + after.recipeId + '@' + after.recipeVersion,
+    )
+  }
+  const beforeCapabilities = before.capabilities.join(', ')
+  const afterCapabilities = after.capabilities.join(', ')
+  if (beforeCapabilities !== afterCapabilities) {
+    differences.push('capabilities: [' + beforeCapabilities + '] -> [' + afterCapabilities + ']')
+  }
+  if (before.permissionProfile !== after.permissionProfile) {
+    differences.push('permission: ' + before.permissionProfile + ' -> ' + after.permissionProfile)
+  }
+  if (before.budget !== after.budget) {
+    differences.push('budget: ' + before.budget + ' -> ' + after.budget)
+  }
+  return differences
+}
+
+/** 拒绝恢复：本机能提供的装配与会话日志里记录的不一致（不允许静默降级）。 */
+export class AssemblyMismatchError extends Error {
+  readonly recipeId: string
+  readonly differences: readonly string[]
+
+  constructor(recipeId: string, differences: readonly string[]) {
+    super(
+      'cannot resume session: the assembly this runtime can provide differs from the recorded one (' +
+      differences.join('; ') + '); start a new session instead of silently changing the environment',
+    )
+    this.name = 'AssemblyMismatchError'
+    this.recipeId = recipeId
+    this.differences = differences
+  }
+}
+
 /** 构造装配快照；config 非纯 JSON 值时抛 MountSnapshotError。 */
 export function createMountSnapshot(input: MountSnapshotInput): MountSnapshot {
   const recipeId = input.manifest.id

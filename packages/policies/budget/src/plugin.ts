@@ -19,6 +19,8 @@ export interface BudgetPolicyPluginConfig {
   limits: BudgetLimits
   /** 时长检查的轮询间隔；模型调用期间没有事件，靠它兜底。 */
   checkIntervalMs?: number
+  /** 恢复时喂入的历史事件：步数/工具数续算（D3）。 */
+  history?: readonly SessionEvent[]
 }
 
 /**
@@ -37,6 +39,7 @@ export const budgetPolicyPlugin = {
       onTrip: () => {
         ctx.loop.cancel()
       },
+      ...(config.history === undefined ? {} : { history: config.history }),
     })
 
     ctx.provide('budget', policy)

@@ -34,6 +34,8 @@ export class BudgetPolicy {
     limits: BudgetLimits
     onTrip: (reason: BudgetTripReason) => void
     now?: number
+    /** 恢复时喂入的历史事件：只计数、不 trip（D1 §5.4：步数/工具数跨崩溃累计）。 */
+    history?: readonly SessionEvent[]
   }) {
     const { limits } = options
     if (limits.maxSteps !== undefined) assertPositiveInteger(limits.maxSteps, 'maxSteps')
@@ -45,12 +47,18 @@ export class BudgetPolicy {
     this.limits = limits
     this.onTrip = options.onTrip
     this.startedAt = options.now ?? Date.now()
+    for (const event of options.history ?? []) this.count(event)
+  }
+
+  /** 只做计数（历史回放用；不评估是否超限）。 */
+  private count(event: SessionEvent): void {
+    if (event.type === 'step/start') this.steps += 1
+    if (event.type === 'tool/call') this.toolCalls += 1
   }
 
   /** 观察一条已落盘的事件（插件订阅日志而来）。 */
   observe(event: SessionEvent, now: number = Date.now()): void {
-    if (event.type === 'step/start') this.steps += 1
-    if (event.type === 'tool/call') this.toolCalls += 1
+    this.count(event)
     this.check(now)
   }
 

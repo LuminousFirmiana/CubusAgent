@@ -106,9 +106,19 @@ export type SessionEvent =
       mount: MountSnapshot
     }
   | { type: 'turn/start'; turnId: TurnId }
-  | { type: 'turn/end'; turnId: TurnId }
+  | {
+      type: 'turn/end'
+      turnId: TurnId
+      /** 恢复时写下的闭合（D3）：与循环正常收尾可区分。 */
+      settled?: true
+    }
   | { type: 'step/start'; stepId: StepId; turnId: TurnId }
-  | { type: 'step/end'; stepId: StepId }
+  | {
+      type: 'step/end'
+      stepId: StepId
+      /** 恢复时补写的闭合（D3）；正常收尾不带此字段。 */
+      settled?: true
+    }
   | {
       /** 紧邻模型调用前记录；与此前日志前缀共同重建该 step 的完整请求。 */
       type: 'request/header'

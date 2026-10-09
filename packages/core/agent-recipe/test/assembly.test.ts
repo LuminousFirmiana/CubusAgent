@@ -6,7 +6,9 @@ import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
 import type { Tool } from '@cubus/tool-registry'
 import {
+  AssemblyMismatchError,
   CapabilityNegotiationError,
+  compareAssemblyIdentity,
   createAgentRuntimePlugin,
   MountSnapshotError,
   RecipeDeclarationMismatchError,
@@ -18,6 +20,7 @@ import type {
   AgentSessionDescriptor,
   HostCapabilityOffering,
 } from '../src/index.ts'
+import type { MountSnapshot } from '@cubus/session'
 
 class MemorySessionLog implements SessionLog {
   readonly events: SessionEvent[] = []
@@ -434,6 +437,39 @@ test('the effective budget comes from the app or the manifest and is recorded in
   const plainEvent = plainHarness.log.events[0]
   expect(plainEvent?.type === 'session/mount' ? 'budget' in plainEvent.mount : true).toBe(false)
   expect(plainCtx.get('budget')).toBeUndefined()
+})
+
+test('assembly identity compares recipe, capabilities, permission and budget', () => {
+  const base: MountSnapshot = {
+    recipe: { id: 'r', version: '1.0.0', contractVersion: 1 },
+    capabilities: [{ kind: 'llm', provider: 'a', features: [] }, { kind: 'fs', provider: 'local', features: [] }],
+    optionalMissing: [],
+    permission: { profile: 'ask', source: 'manifest' as const },
+    budget: { maxSteps: 5 },
+    config: null,
+  }
+
+  expect(compareAssemblyIdentity(base, base)).toEqual([])
+  // capabilities 顺序无关
+  expect(compareAssemblyIdentity(base, {
+    ...base,
+    capabilities: [{ kind: 'fs', provider: 'local', features: [] }, { kind: 'llm', provider: 'a', features: [] }],
+  })).toEqual([])
+  // 换 provider / 换 recipe / 换权限档 / 换预算都算不一致
+  expect(compareAssemblyIdentity(base, {
+    ...base,
+    capabilities: [{ kind: 'llm', provider: 'b', features: [] }, { kind: 'fs', provider: 'local', features: [] }],
+  })[0]).toContain('capabilities')
+  expect(compareAssemblyIdentity(base, { ...base, recipe: { id: 'r', version: '2.0.0', contractVersion: 1 } })[0])
+    .toContain('recipe: r@1.0.0 -> r@2.0.0')
+  expect(compareAssemblyIdentity(base, { ...base, permission: { profile: 'deny', source: 'app' as const } })[0])
+    .toContain('permission: ask -> deny')
+  const { budget: _droppedBudget, ...withoutBudget } = base
+  expect(compareAssemblyIdentity(base, withoutBudget)[0]).toContain('budget')
+
+  const error = new AssemblyMismatchError('r', ['capabilities: [fs:local] -> [fs:docker]'])
+  expect(error.message).toContain('start a new session instead of silently changing the environment')
+  expect(error.differences).toEqual(['capabilities: [fs:local] -> [fs:docker]'])
 })
 
 test('a recipe that fails to mount leaves no snapshot and rolls back the host capabilities', async () => {

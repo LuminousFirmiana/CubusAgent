@@ -62,6 +62,26 @@ test('tool-call and duration limits trip independently', () => {
   expect(timePolicy.state(1_001).elapsedMs).toBe(1_001)
 })
 
+test('history seeding continues the count across a crash without tripping on its own', () => {
+  const trips: BudgetTripReason[] = []
+  const history: SessionEvent[] = [
+    { type: 'turn/start', turnId: 't1' },
+    { type: 'step/start', stepId: 's1', turnId: 't1' },
+    { type: 'tool/call', id: 'c1', stepId: 's1', name: 'bash', args: {} },
+    { type: 'step/start', stepId: 's2', turnId: 't1' },
+  ]
+
+  // 历史本身不触发：先只计数，等下一次 check/observe 再判断
+  const policy = new BudgetPolicy({ limits: { maxSteps: 2 }, onTrip: reason => trips.push(reason), history, now: 0 })
+  expect(policy.state(0)).toMatchObject({ steps: 2, toolCalls: 1 })
+  expect(trips).toEqual([])
+
+  // 历史已用满上限：恢复后的第一个新 step 让累计值超过上限 -> 立刻 trip
+  policy.observe({ type: 'step/start', stepId: 's3', turnId: 't2' }, 1)
+  expect(trips).toEqual(['max-steps'])
+  expect(policy.state(1).steps).toBe(3)
+})
+
 test('a budget without limits, or with non-positive limits, is rejected', () => {
   expect(() => new BudgetPolicy({ limits: {}, onTrip: () => {} })).toThrow('at least one limit')
   expect(() => new BudgetPolicy({ limits: { maxSteps: 0 }, onTrip: () => {} })).toThrow('positive integer')

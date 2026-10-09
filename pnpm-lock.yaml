@@ -372,6 +372,9 @@ importers:
       '@cubus/tool-registry':
         specifier: workspace:*
         version: link:../../core/tool-registry
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
 
   packages/seams/credentials:
     dependencies:

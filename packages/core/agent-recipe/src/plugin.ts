@@ -14,7 +14,12 @@ import {
   verifyDeclarations,
 } from './capabilities.ts'
 import type { ActualContributions, CapabilityPins } from './capabilities.ts'
-import { createMountSnapshot, MountSnapshotError } from './snapshot.ts'
+import {
+  AssemblyMismatchError,
+  compareAssemblyIdentity,
+  createMountSnapshot,
+  MountSnapshotError,
+} from './snapshot.ts'
 import type {
   AgentHost,
   AgentRecipe,
@@ -35,6 +40,11 @@ export interface AgentRuntimePluginConfig<RecipeOptions = void> {
   permissionProfile?: string
   /** app 级预算覆盖；优先级 app > manifest.budget。设置时挂载预算策略插件。 */
   budget?: BudgetLimits
+  /**
+   * 恢复模式（D3）：日志已存在，先校验装配身份一致，再续跑。
+   * 一致时不写第二条 session/mount；不一致则抛 AssemblyMismatchError。
+   */
+  resume?: boolean
 }
 
 /** 协商结果：选中的 offerings + 声明可选但缺失的能力。 */
@@ -119,11 +129,22 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
       })
       await ctx.plugin(agentLoopPlugin, config.loop ?? {})
 
+      const log = ctx.get('sessionLog')
+      if (log === undefined) {
+        throw new MountSnapshotError(recipeId, 'cannot record session/mount: no session-log provider is mounted')
+      }
+      // 恢复模式（D3）：读既有日志 —— 前一条装配快照用于身份校验，历史事件用于预算计数续算。
+      const history = config.resume === true ? (await log.read()).events : undefined
+
       // 预算（C5）：只要有效上限里至少有一项，就挂策略插件；
       // 它观察日志事件并在超限时调用 loop.cancel()（走 S4.3b 的取消与结算）。
+      // 恢复时把历史事件喂进去：步数/工具调用数跨崩溃累计（D1 §5.4）。
       const budget = config.budget ?? manifest.budget
       if (budget !== undefined) {
-        await ctx.plugin(budgetPolicyPlugin, { limits: budget })
+        await ctx.plugin(budgetPolicyPlugin, {
+          limits: budget,
+          ...(history === undefined ? {} : { history }),
+        })
       }
 
       verifyDeclarations(manifest, actualContributions(ctx))
@@ -141,10 +162,21 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
         config: config.recipeOptions,
       })
 
-      const log = ctx.get('sessionLog')
-      if (log === undefined) {
-        throw new MountSnapshotError(recipeId, 'cannot record session/mount: no session-log provider is mounted')
+      if (history !== undefined) {
+        // 恢复：身份必须与日志里记录的一致，否则拒绝（不允许"以为在沙箱里其实在本地"）。
+        const original = history.find(event => event.type === 'session/mount')
+        if (original?.type !== 'session/mount') {
+          throw new MountSnapshotError(
+            recipeId,
+            'cannot resume: the session log has no assembly snapshot (created before D3); start a new session',
+          )
+        }
+        const differences = compareAssemblyIdentity(original.mount, snapshot)
+        if (differences.length > 0) throw new AssemblyMismatchError(recipeId, differences)
+        // 身份一致：**不追加第二条 session/mount**（不变量：唯一且最先）。
+        return
       }
+
       // 装配已全部成功；这条事件必须是日志第一条（此前没有任何写入者）。
       await log.append({ type: 'session/mount', mount: snapshot })
     },

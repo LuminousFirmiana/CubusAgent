@@ -9,19 +9,33 @@ import { join } from 'node:path'
 import type { AgentRecipe } from '@cubus/agent-recipe'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { ScriptedAdapter } from '@cubus/llm'
+import { systemPromptContribution } from '@cubus/system-prompt'
 import { createRunnerMethods, SessionRuntime } from '../src/runner.ts'
 import { RpcServer } from '../src/server.ts'
 import { createStdioTransport } from '../src/stdio.ts'
 
 const rootDir = process.env['CUBUS_DEMO_DIR'] ?? mkdtempSync(join(tmpdir(), 'cubus-demo-'))
+const workspaceDir = process.env['CUBUS_DEMO_WORKSPACE'] ?? mkdtempSync(join(tmpdir(), 'cubus-demo-ws-'))
 const demoRecipe: AgentRecipe<void> = {
-  manifest: { id: 'headless-demo', version: '1.0.0', displayName: 'Headless Demo' },
-  mount() {},
+  manifest: {
+    contractVersion: 1,
+    id: 'headless-demo',
+    version: '1.0.0',
+    displayName: 'Headless Demo',
+    requires: [{ kind: 'llm' }, { kind: 'session-log' }],
+    prompt: { fragmentId: 'headless-demo/role' },
+    tools: [],
+    permission: { profile: 'allow' },
+  },
+  async mount(ctx) {
+    await ctx.plugin(systemPromptContribution({ id: 'headless-demo/role', text: 'Headless demo agent.' }))
+  },
 }
 
 const runtime = new SessionRuntime({
   rootDir,
   host: createLocalAgentHost({
+    workspaceDir,
     adapterFactory: () => new ScriptedAdapter([
       { steps: [{ chunk: { delta: '你好！我是通过真实进程的 stdio 回答你的。' } }] },
       { steps: [{ chunk: { delta: '这是第二轮。' } }] },

@@ -36,9 +36,11 @@ P3 建立了 Host/Recipe 装配入口，但"产品契约"仍停留在代码里�
 | `git` | 只读版本状态检查 | `read-only-report` | Host（`@cubus/git-cli`） | 已有，B3 迁入 Host |
 | `sandbox` | 执行隔离 | `fs-isolation`, `network-deny`, `resource-limits` | Host（Docker） | P5 新增 kind |
 | `credentials` | 凭据引用（非明文值） | 例如 `deepseek` | Host | P5 新增 kind |
-| `approval` | 逐工具审批策略 | `ask`, `static-allow`, `static-deny` | app 装饰器（`withToolApprovalHost`） | 已有，B3 纳入协商 |
+| `approval` | 逐工具审批策略 | 无（策略档 ask/allow/deny 是声明与覆盖数据，不是能力特性） | app 装饰器（withToolApprovalHost） | 已有，B3 纳入协商 |
 
 规则：kind 是**闭集**。想表达"我需要一个带 X 特性的 Y"，只能先在 seam 层真实存在 Y 与 X，再进这张表。
+
+环境事实（不是能力）：workspaceDir 由 Host 随 fs offering 一起提供（ctx.workspaceDir），Recipe 在 mount 时读取；缺失即装配失败，不参与协商。
 
 `CapabilityKind` 定义在 `packages/core/session/src/types.ts`：它会随装配快照进入日志，因此与日志词汇同源；`@cubus/agent-recipe` 引用它，需求/供给/协商逻辑仍在后者。
 
@@ -78,7 +80,7 @@ interface CapabilityRequirement {
 | 默认审批档名、评测套件 id | 领域服务、记忆、检索等插件装配 |
 | 呈现意图（label/description/icon） | 任何条件分支、循环、IO |
 
-声明式 manifest 的必填子集（B3 起由 validateManifest 强制）：`contractVersion`、`requires`、`prompt`、`tools`、`permission` —— 缺任何一项装配期报 `RecipeManifestError`。`description`、`evaluation`、`presentation` 保持可选。理由：快照要完整记录产品面，半套声明会让快照出现"未指定"的洞。
+B4 起所有 manifest 都是完整声明式契约（类型层面必填，legacy 装配路径已删除）。必填子集：`contractVersion`、`requires`、`prompt`、`tools`、`permission` —— 缺任何一项装配期报 `RecipeManifestError`。`description`、`evaluation`、`presentation` 保持可选。理由：快照要完整记录产品面，半套声明会让快照出现"未指定"的洞。
 
 明确**不进** manifest：凭据值（只声明 `credentials` 需求）、Host/provider 选择（recipe 永不点名 host）、模型参数（属 app/部署决策；实际值由 `request/header` 记录）、YAML/JSON 编写方式。
 
@@ -169,15 +171,17 @@ export interface MountedCapability {
 - mount 快照（§8）：装配结果，整个会话不变；
 - 两者都不改变"模型可见即已记录"：模型看到的内容仍由 `request/header` 的 `systemPrompt`/`tools` 完整记录，mount 快照只是补充来源。
 
-## 10. 迁移映射（B3/B4 执行）
+## 10. 迁移映射（B4 已执行）
 
-| 今天的 owner | 目标 owner | 迁移动作 |
+| 原 owner | 现 owner | 落地情况 |
 |---|---|---|
-| CLI 造 `LocalFs`/`LocalSubprocess` 并塞进 `recipeOptions` | Host 的 `fs`/`subprocess` offerings | Host 接收 app 传入的 `workspaceDir` 等部署参数，自行构造 provider |
-| CLI 造 `GitCliWorkspaceProvider`（A1） | Host 的 `git` offering | 同上；CLI 需要报告时改从 ctx 取 |
-| `withToolApprovalHost` 装饰器 | `approval` offering + manifest 默认档 | 装饰器保留为实现形式，向 `capabilities()` 贡献 `approval`；优先级 app > manifest |
-| `recipeOptions.systemPrompt` 覆盖 | manifest `prompt.fragmentId` + app 覆盖 | 评测用 `CODING_AGENT_PROMPT` 改为注册片段，manifest 声明其 id |
-| 三个 recipe 的 `mount()` 直接注册 | 声明 + mount 双份 | 声明需求与产品面，mount 里注册实现；用 §5 校验保证一致 |
+| CLI 造 LocalFs/LocalSubprocess 塞进 recipeOptions | Host 的 fs/subprocess offerings | 已迁：Host 接收 app 的 workspaceDir 并自行构造 provider；Recipe 从 ctx.fs / ctx.subprocess / ctx.workspaceDir 读取，三个 recipe 的 recipeOptions 都是 undefined |
+| CLI 造 GitCliWorkspaceProvider（A1） | 保持 app 级只读探测（未迁） | 理由见下 |
+| withToolApprovalHost 装饰器 | approval offering + manifest 默认档 | 已迁：装饰器向 capabilities() 追加 approval，且只把属于自己的 selected offerings 转发给内层 Host |
+| recipeOptions.systemPrompt 覆盖 | manifest prompt.fragmentId | 已删：提示词由 recipe 以固定片段 id 注册；评测 harness 不再传覆盖值 |
+| 三个 recipe 直接注册 | 声明 + mount 双份 | 已迁：reference-agent / coding-agent / repair-eval 均声明 requires/prompt/tools/permission，装配期校验工具集合相等 |
+
+**为什么 git 报告留在 app 级**：CLI 的变更报告要在**会话创建之前**拍基线（运行前快照），而 Host 能力只在会话 ctx 里可用。工作区路径本来就是 app 的部署输入，所以「运行前后各探一次工作区状态」是 app 的只读检查，不是会话能力。P5 引入容器化 Host 后报告路径要跟着进容器，届时把它提升为 Host 的 git offering，并配一个 app 侧取用入口（留到 D1 讨论）。
 
 ## 11. 验收（B2/B3/B4 的证据清单）
 
@@ -190,7 +194,10 @@ export interface MountedCapability {
 | 同一 recipe 换 Host 零改动 | 同一 recipe 分别用 local Host 与假 Docker Host 装配：prompt/tools 一致，快照 provider 名不同；recipe 目录无 diff |
 | 新 recipe 零内核改动 | 测试内定义一个仅存在于测试文件的 recipe 并成功装配运行；内核包无 diff（评审清单项） |
 | 快照可复现装配 | `create()` 后日志第一条即快照，且与 recipe+host+config 推导出的值往返一致（B3 已在真实 JSONL 上验证） |
-| 只挂被选中的能力 | Host 声明 3 项、recipe 只要求 2 项时，未选中项的 mount 不被调用 |
+| 只挂被选中的能力 | Host 声明 3 项、recipe 只要求 2 项时，未选中项的 mount 不被调用（B3 已验） |
+| 同 Runtime 换 Recipe 只换产品面 | reference-agent 与 repair-eval 在同一 Host/Runtime/协议上运行：事件序列一致，快照能力清单不同（B4 已验） |
+| 默认档与 app 覆盖都进快照 | CLI 不给 --approval 时快照记 {ask, manifest}，给了则记 {deny, app}（B4 已验） |
+| 装配失败可回卷 | recipe 挂载失败时无快照，Host 已挂能力与内核服务全部卸载（B4 已验） |
 | 旧日志仍可读 | 无 `session/mount` 的既有日志照常投影与回放（回归测试） |
 | 装配失败不写日志 | 协商失败时 `create()` 抛错且会话目录内无 `session.jsonl` |
 

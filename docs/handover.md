@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：B3 Host 能力声明 + 选中装配 + session/mount 快照落盘完成。本文件是"接手这个项目的第一份读物"。
+> 最后更新：B4 三个 recipe 迁移到声明式契约、环境能力归属 Host（B 阶段收尾）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -43,12 +43,13 @@
 | B1 能力契约 ADR | 完成（Accepted） | docs/design/recipe-capabilities.md：manifest 声明面 + CapabilityKind 闭集 + 协商算法 + 装配期校验；快照确认采用方案 B（新增 session/mount 事件） |
 | B2 manifest + 协商纯函数 | 完成 | CapabilityKind/MountSnapshot 进 core/session；manifest 声明字段（可选，legacy 兼容）+ resolveCapabilities + validateManifest + verifyDeclarations + 三类类型化错误（19 条单测） |
 | B3 能力协商接线 | 完成 | AgentHost.capabilities() + 只挂选中 offerings + 装配期声明校验 + session/mount 成为日志第一条（第 11 种事件）+ 真实 JSONL 端到端验证 |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 B4：把 fs/subprocess/git 迁入 Host offerings，迁移三个 recipe 到声明式契约 |
+| B4 recipe 迁移与能力归属 | 完成 | manifest 声明必填、legacy 路径删除；fs/subprocess 迁入 Host（workspaceDir 为环境事实）；approval 成为 offering；三个 recipe 声明式化（179 测试） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | B 阶段完成；下一步 C1：沙箱 seam 与凭据最小暴露模型 ADR（roadmap C 阶段） |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：176 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：179 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -184,6 +185,9 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 协商歧义即失败 | 同 kind 多个候选且 app 未 pin -> 装配期报错；不静默挑一个，也不在运行期降级 |
 | 装配快照是独立事件 | 新增 session/mount（第 11 种）：唯一且最先、非模型可见、确定性、可序列化无凭据；装配失败不写日志，所以它的存在等价于装配成功 |
 | 只挂被选中的能力 | Host 声明供给清单，运行时只把协商选中的 offerings 挂进会话；未选中的 mount 不被调用（有测试断言） |
+| 环境能力归 Host，产品面归 Recipe | B4 起 Recipe 不接收任何 provider：fs/subprocess/workspaceDir 由 Host 提供，Recipe 只声明 requires 并在 mount 时读取；三个 recipe 的 recipeOptions 都是 undefined |
+| 装饰器只转发自己拥有的 offerings | withToolApprovalHost 把 approval 追加进 capabilities()，但转发给内层 Host 前必须过滤掉不属于它的项；否则同一服务被注册两次（踩过一次） |
+| git 报告保持 app 级只读探测 | 基线必须在会话创建前拍，而 Host 能力只在会话 ctx 里；工作区路径本就是 app 的部署输入，所以报告不进能力协商（容器化后见 D1） |
 
 ## 7. Reference 项目的借鉴边界
 
@@ -228,6 +232,8 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 19. 只调用 `child.kill()` 通常只杀 Shell，不会收束它启动的后台进程；Unix 本地 provider 必须使用独立进程组，并测试忽略 SIGTERM 的孙进程不会继续产生副作用。
 20. 取消不等于回滚：已完成的工具结果必须保持真实；文件工具只能在副作用前检查 signal，事务语义需要独立 provider 支持。
 21. 本地 `pnpm run check` 通过不等于阶段已锁定；每个小步必须提交、push，并等待该 commit 的 GitHub Actions 全绿后才能进入下一步。S2.3-P4 曾长期堆在本地，现已把此顺序写入 `AGENTS.md`。
+22. 给别处模块做 declaration merging 时，本文件必须显式 import 被增强的模块（副作用导入即可）；否则 TypeScript 把它当成新的模块声明，破坏其它包已有的 Context 合并 —— 表现为别处的 ctx.provide 突然「不存在」。（B4 踩过一次）
+23. Host 装饰器在协商路径下必须只转发自己拥有的 offerings：把不属于自己的项一起传给内层 Host，会让同一服务（ctx.provide 同名键）注册两次并在装配期抛错。（B4 被测试抓到）
 
 ## 9. 已知问题 / 技术债（接手后可以处理）
 
@@ -235,6 +241,8 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
 - Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
+- 装配快照记录 recipe 身份/能力/策略档，但工作区路径不在其中（它是 Host 的环境事实，不是 recipe 配置）；要追溯「哪次评测跑了哪个目录」目前靠 EVALS.md 与临时目录名，等 D1 的格式版本一起加环境字段。
+- manifest 的 evaluation 声明目前只在评测 harness 侧校验（断言套件 id 一致），运行时不做跨包套件注册表检查。
 - 评测：真模型分数表记录通过率与耗时，但不记录 token/费用（adapter 与日志都还没有 usage 字段）——要报成本先补 usage 落日志。
 - 评测：真模型全量跑目前是手动命令（pnpm run eval:real）；做成夜跑 CI 需要把 DEEPSEEK_API_KEY 作为仓库 secret，属于凭据决策，未擅自添加。
 - LLM provider：DeepSeek 已有 typed 错误和有界重试；其他供应商尚未接入，thinking 字段归一化表（vLLM/Qwen 等）未做。
@@ -245,14 +253,17 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：B4 迁移三个 recipe 与能力归属（roadmap B4）
+## 10. 下一步：C1 沙箱 seam 与凭据最小暴露 ADR（roadmap C1）
 
-B3 已把协商接到装配上（真实 JSONL 端到端验证）。B4 让现有产品真正用上它：
+B 阶段收尾：三个产品共用同一套 Host 能力与声明式契约，装配快照可从日志追溯。下一步进 P5 共享安全层，先写设计：
 
-1. fs / subprocess / git 从 CLI 的 recipeOptions 迁入 Host offerings；CLI 只留部署参数（workspaceDir、sessionsDir、审批档、凭据来源）；
-2. reference-agent / coding-agent / repair-eval 三个 recipe 改为声明式（requires + prompt 片段 id + tools + permission + evaluation + presentation），删掉 legacy 装配路径；
-3. 审批档：manifest 默认 + CLI 覆盖，最终值与来源进快照；
-4. 验收：换 recipe 不改内核（既有 S3.5）、同 recipe 换 Host 不改 recipe、评测套件的 suite id 参与声明校验。
+1. 沙箱 seam 的形状：sandbox 能力如何声明 features（fs-isolation / network-deny / resource-limits），与现有 fs/subprocess 能力的关系（替换还是叠加）；
+2. 凭据最小暴露：credentials 能力的引用语义（引用而非明文）、注入集合、审计事件；
+3. 本地「无隔离」provider 必须显式声明自己不隔离（不假装安全）；
+4. Docker provider 的会话容器、工作区挂载边界、网络默认关闭、资源上限；
+5. 验收形态：越界写 / 外网访问 / 逃逸尝试的拒绝测试，同 recipe 在 local 与 docker 下行为一致。
+
+C 与 D（评测契约与 resume）可并行；本步只写设计，不动内核。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

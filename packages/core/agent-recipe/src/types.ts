@@ -10,29 +10,28 @@ export interface CapabilityRequirement {
 }
 
 /**
- * 声明式产品契约（B2 起；形状见 docs/design/recipe-capabilities.md §4）。
+ * 声明式产品契约（B4 起为必填；形状见 docs/design/recipe-capabilities.md §4）。
  *
  * 声明是数据：只放名字与引用。分支、拼装顺序与实现留在 mount()。
- * 过渡规则：声明字段整体缺省 = legacy 装配（不协商、不校验），
- * B4 迁移三个 recipe 后这些字段转为必填并删除 legacy 路径。
+ * 必填子集 = contractVersion / requires / prompt / tools / permission：
+ * 少任何一项，装配快照就无法完整记录产品面，因此装配期直接失败。
  */
 export interface AgentRecipeManifest {
+  /** manifest 契约版本；形状变更时递增。 */
+  readonly contractVersion: 1
   readonly id: string
   readonly version: string
   readonly displayName: string
-
-  /** manifest 契约版本；出现任一声明字段时必须为 1。 */
-  readonly contractVersion?: 1
   readonly description?: string
-  /** 能力需求；解析见 resolveCapabilities。 */
-  readonly requires?: readonly CapabilityRequirement[]
+  /** 能力需求；解析见 resolveCapabilities（缺必需能力即装配失败）。 */
+  readonly requires: readonly CapabilityRequirement[]
   /** 静态基座提示词片段的稳定 id（必须由 mount 注册）。 */
-  readonly prompt?: { readonly fragmentId: string }
+  readonly prompt: { readonly fragmentId: string }
   /** 声明的工具名集合（必须与注册集合相等）。 */
-  readonly tools?: readonly string[]
-  /** 默认审批档；app 可覆盖（优先级 app > manifest）。 */
-  readonly permission?: { readonly profile: string }
-  /** 评测套件 id（由评测包注册）。 */
+  readonly tools: readonly string[]
+  /** 默认审批档；app 可覆盖（优先级 app > manifest），最终值与来源进装配快照。 */
+  readonly permission: { readonly profile: string }
+  /** 评测套件 id：这个产品按哪套评测计分（由评测包注册与校验）。 */
   readonly evaluation?: { readonly suite: string }
   /** 呈现意图，供 CLI/工作台消费。 */
   readonly presentation?: {

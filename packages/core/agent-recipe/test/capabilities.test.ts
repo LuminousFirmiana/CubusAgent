@@ -171,15 +171,11 @@ test('a duplicated requirement for the same kind is a manifest error', () => {
   })).toThrow(RecipeManifestError)
 })
 
-test('a legacy manifest (identity only) validates', () => {
-  expect(() => validateManifest({ id: 'legacy', version: '0.1.0', displayName: 'Legacy' })).not.toThrow()
-})
-
-test('declaration fields without contractVersion are rejected', () => {
+test('an unknown contract version is rejected', () => {
   const manifest = declarative()
   const { contractVersion: _dropped, ...withoutVersion } = manifest
   expect(() => validateManifest(withoutVersion as AgentRecipeManifest)).toThrow(RecipeManifestError)
-  expect(() => validateManifest(withoutVersion as AgentRecipeManifest)).toThrow('contractVersion must be 1')
+  expect(() => validateManifest(withoutVersion as AgentRecipeManifest)).toThrow('unsupported manifest.contractVersion')
 })
 
 test('manifest validation rejects unknown kinds, duplicates and empty names', () => {
@@ -240,11 +236,11 @@ test('declaration verification catches a missing prompt fragment and eval suite'
   })).toThrow('declares evaluation suite "repair-v1"')
 })
 
-test('legacy manifests skip declaration verification', () => {
-  expect(() => verifyDeclarations({ id: 'legacy', version: '0.1.0', displayName: 'Legacy' }, {
-    promptFragmentIds: [],
-    toolNames: [],
-  })).not.toThrow()
+test('required declaration fields are validated as non-empty strings', () => {
+  expect(() => validateManifest(declarative({ prompt: { fragmentId: '  ' } })))
+    .toThrow('prompt.fragmentId must be a non-empty string')
+  expect(() => validateManifest(declarative({ permission: { profile: '' } })))
+    .toThrow('permission.profile must be a non-empty string')
 })
 
 test('mounted capabilities are sorted and do not mutate the selection', () => {

@@ -38,8 +38,18 @@ const echoTool: Tool = {
 }
 
 const sdkTestRecipe: AgentRecipe<void> = {
-  manifest: { id: 'sdk-test', version: '1.0.0', displayName: 'SDK Test Agent' },
+  manifest: {
+    contractVersion: 1,
+    id: 'sdk-test',
+    version: '1.0.0',
+    displayName: 'SDK Test Agent',
+    requires: [{ kind: 'llm', features: ['tool-calling'] }, { kind: 'session-log' }],
+    prompt: { fragmentId: 'sdk-test/persona' },
+    tools: ['echo'],
+    permission: { profile: 'ask' },
+  },
   async mount(ctx) {
+    await ctx.plugin(systemPromptContribution({ id: 'sdk-test/persona', text: 'SDK test agent.' }))
     await ctx.plugin(toolContribution(echoTool))
   },
 }
@@ -47,7 +57,7 @@ const sdkTestRecipe: AgentRecipe<void> = {
 async function setup(scenes: Scenes) {
   const runtime = new SessionRuntime({
     rootDir: dir,
-    host: createLocalAgentHost({ adapterFactory: () => new ScriptedAdapter(scenes) }),
+    host: createLocalAgentHost({ workspaceDir: dir, adapterFactory: () => new ScriptedAdapter(scenes) }),
     recipe: sdkTestRecipe,
     recipeOptions: undefined,
     generateId: makeIdGen('s'),
@@ -139,14 +149,24 @@ test('session.cancel interrupts the active tool and the run returns a settled tu
     },
   }
   const recipe: AgentRecipe<void> = {
-    manifest: { id: 'cancel-test', version: '1.0.0', displayName: 'Cancel Test' },
+    manifest: {
+      contractVersion: 1,
+      id: 'cancel-test',
+      version: '1.0.0',
+      displayName: 'Cancel Test',
+      requires: [{ kind: 'llm', features: ['tool-calling'] }, { kind: 'session-log' }],
+      prompt: { fragmentId: 'cancel-test/role' },
+      tools: ['wait'],
+      permission: { profile: 'ask' },
+    },
     async mount(ctx) {
+      await ctx.plugin(systemPromptContribution({ id: 'cancel-test/role', text: 'Cancel test agent.' }))
       await ctx.plugin(toolContribution(waitTool))
     },
   }
   const runtime = new SessionRuntime({
     rootDir: dir,
-    host: createLocalAgentHost({ adapterFactory: () => adapter }),
+    host: createLocalAgentHost({ workspaceDir: dir, adapterFactory: () => adapter }),
     recipe,
     recipeOptions: undefined,
     generateId: makeIdGen('c'),
@@ -229,7 +249,7 @@ test('concurrent runs on one session each wait for and return their own complete
   }
   const runtime = new SessionRuntime({
     rootDir: dir,
-    host: createLocalAgentHost({ adapterFactory: () => adapter }),
+    host: createLocalAgentHost({ workspaceDir: dir, adapterFactory: () => adapter }),
     recipe: sdkTestRecipe,
     recipeOptions: undefined,
     generateId: makeIdGen('q'),
@@ -270,7 +290,10 @@ const declarativeTestRecipe: AgentRecipe<void> = {
 test('a declarative recipe records its assembly snapshot as the first log line', async () => {
   const runtime = new SessionRuntime({
     rootDir: dir,
-    host: createLocalAgentHost({ adapterFactory: () => new ScriptedAdapter([{ steps: [{ chunk: { delta: 'ok' } }] }]) }),
+    host: createLocalAgentHost({
+      workspaceDir: dir,
+      adapterFactory: () => new ScriptedAdapter([{ steps: [{ chunk: { delta: 'ok' } }] }]),
+    }),
     recipe: declarativeTestRecipe,
     recipeOptions: undefined,
     permissionProfile: 'deny',

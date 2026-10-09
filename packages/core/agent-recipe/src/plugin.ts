@@ -33,24 +33,21 @@ export interface AgentRuntimePluginConfig<RecipeOptions = void> {
   permissionProfile?: string
 }
 
-/** 声明式装配的协商结果（legacy 装配为 undefined）。 */
+/** 协商结果：选中的 offerings + 声明可选但缺失的能力。 */
 interface DeclarativeAssembly {
   readonly selection: readonly HostCapabilityOffering[]
   readonly optionalMissing: readonly CapabilityRequirement[]
 }
 
 /**
- * 需求 x 供给协商：只在 recipe 声明了 requires 时走这条路。
+ * 需求 x 供给协商：B4 起每个 recipe 都声明 requires，因此这是唯一路径。
  * 缺必需能力 / 歧义 / pin 未知 / Host 不支持声明，都在这里失败（装配期）。
  */
 function negotiate(
   manifest: AgentRecipe['manifest'],
   host: AgentHost,
   pins: CapabilityPins | undefined,
-): DeclarativeAssembly | undefined {
-  const requirements = manifest.requires
-  if (requirements === undefined) return undefined
-
+): DeclarativeAssembly {
   const offerings = host.capabilities?.()
   if (offerings === undefined) {
     throw new CapabilityNegotiationError({
@@ -63,7 +60,7 @@ function negotiate(
 
   const resolution = resolveCapabilities({
     recipeId: manifest.id,
-    requirements,
+    requirements: manifest.requires,
     offerings,
     ...(pins === undefined ? {} : { pins }),
   })
@@ -90,8 +87,8 @@ function actualContributions(ctx: Context): ActualContributions {
  * One session composition root. Child fibers preserve the Host/Recipe boundary while
  * making the complete assembly reversible through one parent fiber.
  *
- * B3 起：声明式装配走"协商 -> 只挂选中 -> 校验声明 -> 写装配快照"；
- * legacy 装配（recipe 无 requires）保持原行为，不写快照。
+ * 装配顺序（B4 起唯一路径）：
+ * 协商 -> 只挂选中 -> 挂 Recipe -> 挂 Loop -> 校验声明 -> 写装配快照。
  */
 export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePluginConfig<RecipeOptions>) {
   const manifest = config.recipe.manifest
@@ -107,9 +104,7 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
       await ctx.plugin({
         name: 'agent-host',
         apply(hostContext: Context) {
-          return assembly === undefined
-            ? config.host.mount(hostContext, config.session)
-            : config.host.mount(hostContext, config.session, assembly.selection)
+          return config.host.mount(hostContext, config.session, assembly.selection)
         },
       })
       await ctx.plugin({
@@ -120,13 +115,10 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
       })
       await ctx.plugin(agentLoopPlugin, config.loop ?? {})
 
-      // 声明式装配才记录快照：legacy 路径没有协商结果，写一份空清单会撒谎。
-      if (assembly === undefined) return
-
       verifyDeclarations(manifest, actualContributions(ctx))
 
       const permission = config.permissionProfile === undefined
-        ? { profile: manifest.permission?.profile ?? 'unspecified', source: 'manifest' as const }
+        ? { profile: manifest.permission.profile, source: 'manifest' as const }
         : { profile: config.permissionProfile, source: 'app' as const }
 
       const snapshot = createMountSnapshot({

@@ -57,7 +57,7 @@ A(P4收尾) ──> B(契约声明式化) ──> C(P5共享安全层) ──> E
 | B1 ✅ | **ADR**：Recipe 声明式契约 + Host 能力解析 | `docs/design/recipe-capabilities.md` | 明确哪些进 manifest、哪些留在代码挂载；step 能力快照语义不变 |
 | B2 ✅ | manifest 扩展 | `capabilities.requires`、prompt 片段 id、tool 能力名、审批策略名、eval suite 引用、UI 呈现意图 | 类型 + 校验（缺失/冲突装配期 fail-loud）+ 单测 |
 | B3 ✅ | Host 能力装配与协商 | 由 requires 解析 provider；装配结果（recipe 身份 + 能力快照）写入会话日志 | 缺 provider 拒装配；同 recipe 换 Host 零 recipe 改动（diff 断言） |
-| B4 | 迁移现有 3 个 recipe | reference/coding/repair-eval 改为声明式 | 保留 S3.5 验收：换 recipe 不改 session/loop/Host/SDK |
+| B4 ✅ | 迁移现有 3 个 recipe | reference/coding/repair-eval 改为声明式 | 保留 S3.5 验收：换 recipe 不改 session/loop/Host/SDK |
 
 **关闭声明 ①② 的核心**：recipe 声明需求、Host 提供能力；新增产品 = 新增 recipe 包 + 0 行内核改动（用 diff 断言证明，而非百分比）。
 

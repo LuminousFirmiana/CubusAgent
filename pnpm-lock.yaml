@@ -169,9 +169,15 @@ importers:
       '@cubus/session-jsonl':
         specifier: workspace:*
         version: link:../../providers/session-jsonl
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
 
   packages/plugins/tools:
     dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
       '@cubus/tool-registry':
         specifier: workspace:*
         version: link:../../core/tool-registry

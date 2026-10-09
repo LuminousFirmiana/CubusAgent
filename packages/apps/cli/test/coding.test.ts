@@ -65,11 +65,14 @@ test('parses the explicit trusted-workspace command surface', () => {
       workspace: './repo',
       task: 'fix tests',
       trustWorkspace: true,
-      approval: 'ask',
+      // 没给 --approval 时不覆盖：默认档来自 recipe manifest（B4）
       maxModelAttempts: 3,
       sessionsDir: './sessions',
     },
   })
+  expect(parseCodingCommand([
+    '--workspace', './repo', '--task', 'x', '--approval', 'deny',
+  ]).options?.approval).toBe('deny')
   expect(() => parseCodingCommand(['--workspace', './repo'])).toThrow('coding requires --task')
   expect(() => parseCodingCommand(['--unknown'])).toThrow('unknown option')
   expect(() => parseCodingCommand([
@@ -331,6 +334,44 @@ test('reports a non-git workspace without failing the run', async () => {
   const lines: string[] = []
   renderCodingResult(result, { write: line => lines.push(line) })
   expect(lines).toContain('git: not a repository')
+})
+
+test('the mount snapshot records the manifest default profile, and an app override when given', async () => {
+  const workspace = join(dir, 'snapshot-repo')
+  const sessionsDir = join(dir, 'snapshot-sessions')
+  await mkdir(workspace)
+
+  const run = async (approval: 'ask' | 'deny' | undefined) => {
+    const result = await runCodingCommand({
+      workspace,
+      task: 'Say hi.',
+      trustWorkspace: true,
+      sessionsDir,
+      ...(approval === undefined ? {} : { approval }),
+    }, {
+      adapterFactory: () => new ScriptedAdapter([{ steps: [{ chunk: { delta: 'hi' } }] }]),
+      generateId: () => (approval === undefined ? 'manifest-session' : 'app-session'),
+    })
+    const { events } = await new SessionLogFile(result.logPath).read()
+    const mount = events[0]
+    return mount?.type === 'session/mount' ? mount.mount : undefined
+  }
+
+  // 没给 --approval：默认档来自 manifest，来源记 manifest。
+  const fromManifest = await run(undefined)
+  expect(fromManifest?.permission).toEqual({ profile: 'ask', source: 'manifest' })
+  expect(fromManifest?.recipe).toEqual({ id: 'coding-agent', version: '1.0.0', contractVersion: 1 })
+  expect(fromManifest?.capabilities.map(capability => capability.kind + ':' + capability.provider)).toEqual([
+    'approval:tool-approval',
+    'fs:local',
+    'llm:local-adapter',
+    'session-log:jsonl',
+    'subprocess:local',
+  ])
+
+  // 给了 --approval：app 覆盖 manifest，来源记 app。
+  const fromApp = await run('deny')
+  expect(fromApp?.permission).toEqual({ profile: 'deny', source: 'app' })
 })
 
 test('streams model text and tool cards live while the run is still in flight', async () => {

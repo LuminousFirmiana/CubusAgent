@@ -6,10 +6,7 @@ import type { AgentRecipe } from '@cubus/agent-recipe'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { ScriptedAdapter } from '@cubus/llm'
 import { referenceAgentRecipe, REFERENCE_AGENT_PROMPT } from '@cubus/recipe-reference-agent'
-import {
-  CODING_AGENT_PROMPT,
-  repairEvalRecipe,
-} from '@cubus/recipe-repair-eval'
+import { CODING_AGENT_PROMPT, repairEvalRecipe } from '@cubus/recipe-repair-eval'
 import {
   createMemoryTransport,
   createRunnerMethods,
@@ -19,7 +16,6 @@ import {
 import type { JsonRpcError, JsonRpcSuccess } from '@cubus/sdk'
 import { SessionLogFile } from '@cubus/session-jsonl'
 import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
-import type { FsProvider, SubprocessProvider } from '@cubus/tools'
 
 let dir: string
 
@@ -52,15 +48,21 @@ async function rpc(
   throw new Error(`rpc timeout waiting for id ${id}`)
 }
 
-async function runRecipe<Options>(recipe: AgentRecipe<Options>, recipeOptions: Options, scenes: Scenes) {
+/**
+ * 同一个 Runtime / Host / 协议路径跑任意 Recipe（B4 起 Recipe 不再接收 provider，
+ * 环境能力全部来自 Host；两个产品共用同一套组装代码）。
+ */
+async function runRecipe(recipe: AgentRecipe<void>, scenes: Scenes) {
+  const workspaceDir = join(dir, 'workspace')
   const runtime = new SessionRuntime({
     rootDir: join(dir, recipe.manifest.id),
     host: withToolApprovalHost(
-      createLocalAgentHost({ adapterFactory: () => new ScriptedAdapter(scenes) }),
+      createLocalAgentHost({ workspaceDir, adapterFactory: () => new ScriptedAdapter(scenes) }),
       createStaticToolApproval('allow', 'recipe acceptance test'),
     ),
     recipe,
-    recipeOptions,
+    recipeOptions: undefined,
+    permissionProfile: 'allow',
     generateId: () => 'session',
   })
   const transport = createMemoryTransport()
@@ -77,7 +79,7 @@ async function runRecipe<Options>(recipe: AgentRecipe<Options>, recipeOptions: O
 }
 
 test('reference-agent completes a domain-neutral tool loop through the common JSON-RPC SDK', async () => {
-  const { response, events } = await runRecipe(referenceAgentRecipe, undefined, [
+  const { response, events } = await runRecipe(referenceAgentRecipe, [
     { steps: [{ chunk: { toolCalls: [{ id: 'add-1', name: 'add_numbers', args: { a: 2, b: 3 } }] } }] },
     { steps: [{ chunk: { delta: '5' } }] },
   ])
@@ -95,22 +97,12 @@ test('reference-agent completes a domain-neutral tool loop through the common JS
 })
 
 test('switching Recipe changes only prompt and tools on the same runtime and protocol path', async () => {
-  const fs: FsProvider = {
-    async readText() { return '' },
-    async writeText() {},
-  }
-  const subprocess: SubprocessProvider = {
-    async run() { return { exitCode: 0, stdout: '', stderr: '', timedOut: false } },
-  }
   const scenes: Scenes = [{ steps: [{ chunk: { delta: 'ready' } }] }]
 
-  const reference = await runRecipe(referenceAgentRecipe, undefined, scenes)
-  const repair = await runRecipe(repairEvalRecipe, {
-    fs,
-    subprocess,
-    workspaceDir: '/workspace',
-  }, scenes)
+  const reference = await runRecipe(referenceAgentRecipe, scenes)
+  const repair = await runRecipe(repairEvalRecipe, scenes)
 
+  // 事件序列完全一致（含装配快照）：换产品不改内核行为。
   expect(reference.events.map(event => event.type)).toEqual(repair.events.map(event => event.type))
   const referenceHeader = reference.events.find(event => event.type === 'request/header')
   const repairHeader = repair.events.find(event => event.type === 'request/header')
@@ -122,5 +114,20 @@ test('switching Recipe changes only prompt and tools on the same runtime and pro
     'edit_file',
     'read_file',
     'write_file',
+  ])
+
+  // 装配快照记录的是各自声明与协商结果：reference 只要两项能力，repair 要五项。
+  const referenceMount = reference.events[0]
+  const repairMount = repair.events[0]
+  expect(referenceMount?.type === 'session/mount' ? referenceMount.mount.capabilities.map(c => c.kind) : []).toEqual([
+    'llm',
+    'session-log',
+  ])
+  expect(repairMount?.type === 'session/mount' ? repairMount.mount.capabilities.map(c => c.kind) : []).toEqual([
+    'approval',
+    'fs',
+    'llm',
+    'session-log',
+    'subprocess',
   ])
 })

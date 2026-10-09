@@ -149,20 +149,10 @@ function isCapabilityKind(value: string): value is CapabilityKind {
   return (CAPABILITY_KINDS as readonly string[]).includes(value)
 }
 
-/** 声明字段是否出现（全部缺省 = legacy manifest）。 */
-function hasDeclarations(manifest: AgentRecipeManifest): boolean {
-  return manifest.contractVersion !== undefined ||
-    manifest.requires !== undefined ||
-    manifest.prompt !== undefined ||
-    manifest.tools !== undefined ||
-    manifest.permission !== undefined ||
-    manifest.evaluation !== undefined ||
-    manifest.presentation !== undefined
-}
-
 /**
- * 校验 manifest 自身。legacy manifest（只有身份字段）通过；
- * 一旦出现声明字段就必须是完整契约（contractVersion: 1 + 合法内容）。
+ * 校验 manifest 自身（B4 起所有 manifest 都是完整声明式契约）。
+ * 类型系统已经保证字段存在；这里校验运行期可能损坏的内容
+ * （JSON 来源、空字符串、未知 kind、重复项、契约版本）。
  */
 export function validateManifest(manifest: AgentRecipeManifest): void {
   const id = manifest.id
@@ -171,23 +161,18 @@ export function validateManifest(manifest: AgentRecipeManifest): void {
   if (manifest.displayName.trim() === '') {
     throw new RecipeManifestError(id, 'manifest.displayName must be a non-empty string')
   }
-  if (!hasDeclarations(manifest)) return
-  if (manifest.contractVersion !== 1) {
-    throw new RecipeManifestError(id, 'manifest.contractVersion must be 1 when declaration fields are present')
+  if ((manifest.contractVersion as number) !== 1) {
+    throw new RecipeManifestError(id, 'unsupported manifest.contractVersion: ' + String(manifest.contractVersion))
   }
-  // 声明式 manifest 必须是完整契约：否则装配快照无法完整记录产品面。
-  if (manifest.prompt === undefined) {
-    throw new RecipeManifestError(id, 'manifest.prompt is required for a declarative manifest')
+  if (manifest.prompt.fragmentId.trim() === '') {
+    throw new RecipeManifestError(id, 'manifest.prompt.fragmentId must be a non-empty string')
   }
-  if (manifest.tools === undefined) {
-    throw new RecipeManifestError(id, 'manifest.tools is required for a declarative manifest')
-  }
-  if (manifest.permission === undefined) {
-    throw new RecipeManifestError(id, 'manifest.permission is required for a declarative manifest')
+  if (manifest.permission.profile.trim() === '') {
+    throw new RecipeManifestError(id, 'manifest.permission.profile must be a non-empty string')
   }
 
   const seen = new Set<string>()
-  for (const requirement of manifest.requires ?? []) {
+  for (const requirement of manifest.requires) {
     if (!isCapabilityKind(requirement.kind)) {
       throw new RecipeManifestError(id, 'unknown capability kind: ' + String(requirement.kind))
     }
@@ -301,10 +286,10 @@ export interface ActualContributions {
 
 /**
  * 声明与实现必须对得上：片段 id 已注册、工具集合相等、评测套件已注册。
- * legacy manifest（无声明）不校验。
+ * 这是"声明不退化成正释"的执行者，因此没有跳过选项。
  */
 export function verifyDeclarations(manifest: AgentRecipeManifest, actual: ActualContributions): void {
-  if (manifest.prompt !== undefined && !actual.promptFragmentIds.includes(manifest.prompt.fragmentId)) {
+  if (!actual.promptFragmentIds.includes(manifest.prompt.fragmentId)) {
     throw new RecipeDeclarationMismatchError(
       manifest.id,
       'declares prompt fragment ' + JSON.stringify(manifest.prompt.fragmentId) +
@@ -312,18 +297,16 @@ export function verifyDeclarations(manifest: AgentRecipeManifest, actual: Actual
     )
   }
 
-  if (manifest.tools !== undefined) {
-    const declared = new Set(manifest.tools)
-    const registered = new Set(actual.toolNames)
-    const missing = [...declared].filter(name => !registered.has(name)).sort()
-    const undeclared = [...registered].filter(name => !declared.has(name)).sort()
-    if (missing.length > 0 || undeclared.length > 0) {
-      throw new RecipeDeclarationMismatchError(
-        manifest.id,
-        'tool declaration mismatch: declared but not registered ' + describeList(missing) +
-        '; registered but not declared ' + describeList(undeclared),
-      )
-    }
+  const declared = new Set(manifest.tools)
+  const registered = new Set(actual.toolNames)
+  const missing = [...declared].filter(name => !registered.has(name)).sort()
+  const undeclared = [...registered].filter(name => !declared.has(name)).sort()
+  if (missing.length > 0 || undeclared.length > 0) {
+    throw new RecipeDeclarationMismatchError(
+      manifest.id,
+      'tool declaration mismatch: declared but not registered ' + describeList(missing) +
+      '; registered but not declared ' + describeList(undeclared),
+    )
   }
 
   if (manifest.evaluation !== undefined && actual.evaluationSuites !== undefined &&

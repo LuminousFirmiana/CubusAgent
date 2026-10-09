@@ -1,22 +1,21 @@
 import { createLocalAgentHost } from '@cubus/host-local'
 import { SessionRuntime } from '@cubus/sdk'
 import type { LlmAdapter } from '@cubus/llm'
-import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
+import { repairEvalRecipe, REPAIR_EVAL_SUITE } from '@cubus/recipe-repair-eval'
 import type { SessionEvent } from '@cubus/session'
 import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
-import { LocalFs, LocalSubprocess } from '@cubus/tools'
+import { LocalSubprocess } from '@cubus/tools'
 
 export { CODING_AGENT_PROMPT } from '@cubus/recipe-repair-eval'
+export { REPAIR_EVAL_SUITE } from '@cubus/recipe-repair-eval'
 
 export interface RepairTaskOptions {
-  /** 被修复的仓库目录。 */
+  /** 被修复的仓库目录（同时是 Host 的工作区：fs 的根与 bash 的 cwd）。 */
   repoDir: string
   /** 会话日志目录（golden trajectory 存档处）。 */
   sessionsDir: string
   /** 适配器工厂：每任务独立实例。 */
   adapterFactory: () => LlmAdapter
-  /** 系统提示；默认 CODING_AGENT_PROMPT。 */
-  systemPrompt?: string
   /** 判分测试命令；默认 node --test test/。 */
   testCommand?: string
   generateId?: () => string
@@ -36,24 +35,31 @@ export interface EvalRunResult {
 /**
  * 跑一次修复任务：agent 修复 repoDir 里的失败测试，然后跑测试命令判分。
  * 会话日志全量留存 —— 通过的任务日志即 golden trajectory。
+ *
+ * 声明校验（B4）：本 harness 只给声明了 repair-eval 套件的 recipe 计分；
+ * 声明与计分套件不一致直接失败，避免"拿 A 套件给 B 产品打分"。
  */
 export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunResult> {
+  const declaredSuite = repairEvalRecipe.manifest.evaluation?.suite
+  if (declaredSuite !== REPAIR_EVAL_SUITE) {
+    throw new Error(
+      'repair-eval recipe declares suite ' + String(declaredSuite) + ' but the harness scores ' + REPAIR_EVAL_SUITE,
+    )
+  }
+
   const testCommand = opts.testCommand ?? "node --test 'test/*.test.ts'"
   const subprocess = new LocalSubprocess()
 
   const runtime = new SessionRuntime({
     rootDir: opts.sessionsDir,
     host: withToolApprovalHost(
-      createLocalAgentHost({ adapterFactory: opts.adapterFactory }),
+      createLocalAgentHost({ adapterFactory: opts.adapterFactory, workspaceDir: opts.repoDir }),
       createStaticToolApproval('allow', 'automated repair eval'),
     ),
     recipe: repairEvalRecipe,
-    recipeOptions: {
-      fs: new LocalFs(opts.repoDir),
-      subprocess,
-      workspaceDir: opts.repoDir,
-      ...(opts.systemPrompt === undefined ? {} : { systemPrompt: opts.systemPrompt }),
-    },
+    recipeOptions: undefined,
+    // 评测是 app：它把 manifest 的默认档覆盖为 allow，快照会记录 source: app。
+    permissionProfile: 'allow',
     ...(opts.generateId === undefined ? {} : { generateId: opts.generateId }),
   })
 

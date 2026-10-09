@@ -36,11 +36,25 @@ export const addNumbersTool: Tool = {
   },
 }
 
+/**
+ * 领域无关的最小产品：只声明模型与会话事实源，不碰文件系统、Shell 或仓库。
+ * 它没有副作用工具，因此审批档为 allow（也不需要 approval 能力）。
+ */
 export const referenceAgentRecipe: AgentRecipe<void> = {
   manifest: {
+    contractVersion: 1,
     id: 'reference-agent',
     version: '1.0.0',
     displayName: 'Reference Agent',
+    description: '领域无关的最小产品：验证模型/工具闭环。',
+    requires: [
+      { kind: 'llm', features: ['tool-calling'] },
+      { kind: 'session-log' },
+    ],
+    prompt: { fragmentId: 'reference-agent.role' },
+    tools: ['add_numbers'],
+    permission: { profile: 'allow' },
+    presentation: { label: 'Reference Agent' },
   },
   async mount(ctx) {
     await ctx.plugin(systemPromptContribution({

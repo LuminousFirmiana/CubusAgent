@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
@@ -23,6 +23,7 @@ test('creates one adapter and JSONL provider per session and rolls both back', a
   }
   let factoryCalls = 0
   const host = createLocalAgentHost({
+    workspaceDir: directory,
     adapterFactory() {
       factoryCalls += 1
       return adapter
@@ -46,4 +47,36 @@ test('creates one adapter and JSONL provider per session and rolls both back', a
   await hostFiber.dispose()
   expect(ctx.get('llm')).toBeUndefined()
   expect(ctx.get('sessionLog')).toBeUndefined()
+})
+
+test('declares four capabilities and only mounts the selected ones', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cubus-local-host-'))
+  directories.push(directory)
+  await writeFile(join(directory, 'note.txt'), 'hello\n', 'utf8')
+  const adapter: LlmAdapter = { provider: 'local-test', model: 'scripted', async *stream() {} }
+  const host = createLocalAgentHost({ workspaceDir: directory, adapterFactory: () => adapter })
+
+  expect(host.capabilities?.().map(offering => offering.kind + ':' + offering.provider)).toEqual([
+    'llm:local-adapter',
+    'session-log:jsonl',
+    'fs:local',
+    'subprocess:local',
+  ])
+
+  const ctx = new Context()
+  const fsOfferings = host.capabilities!().filter(offering => offering.kind === 'fs')
+  const hostFiber = ctx.plugin({
+    name: 'selected-host',
+    apply(hostContext: Context) {
+      return host.mount(hostContext, { id: 's1', directory, logPath: join(directory, 'session.jsonl') }, fsOfferings)
+    },
+  })
+  await hostFiber
+
+  // 只挂了选中的 fs：llm / session-log / subprocess 都不在。
+  expect(await ctx.get('fs')!.readText('note.txt')).toBe('hello\n')
+  expect(ctx.get('workspaceDir')).toBe(directory)
+  expect(ctx.get('llm')).toBeUndefined()
+  expect(ctx.get('sessionLog')).toBeUndefined()
+  expect(ctx.get('subprocess')).toBeUndefined()
 })

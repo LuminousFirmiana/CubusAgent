@@ -330,25 +330,24 @@ test('optional capabilities the host cannot provide are recorded in the snapshot
   expect(event?.type === 'session/mount' ? event.mount.optionalMissing : undefined).toEqual(['git', 'sandbox'])
 })
 
-test('legacy recipes keep the old behavior and record no mount event', async () => {
+test('a recipe that fails to mount leaves no snapshot and rolls back the host capabilities', async () => {
   const harness = makeHost()
   const ctx = new Context()
-  const legacy: AgentRecipe<void> = {
-    manifest: { id: 'legacy-agent', version: '1.0.0', displayName: 'Legacy' },
-    async mount(ctx) {
-      await ctx.plugin(systemPromptContribution({ id: 'role', text: 'Legacy.' }))
-    },
-  }
+  const recipe = declarativeRecipe({}, async () => {
+    throw new Error('recipe mount failed')
+  })
 
-  await ctx.plugin(createAgentRuntimePlugin({
+  await expect(ctx.plugin(createAgentRuntimePlugin({
     host: harness.host,
-    recipe: legacy,
+    recipe,
     recipeOptions: undefined,
     session: descriptor,
-  }))
+  }))).rejects.toThrow('recipe mount failed')
 
-  // legacy 装配不协商：Host 按默认行为挂载全部能力
-  expect(harness.mounted).toEqual(['llm', 'session-log'])
+  // 没有快照 = 日志里没有"装配成功"的证据（快照存在 ⟺ 装配成功）。
   expect(harness.log.events).toEqual([])
-  expect(ctx.get('loop')).toBeDefined()
+  // cordis 回卷：已经挂上的 Host 能力与内核服务全部卸载。
+  expect(ctx.get('llm')).toBeUndefined()
+  expect(ctx.get('sessionLog')).toBeUndefined()
+  expect(ctx.get('loop')).toBeUndefined()
 })

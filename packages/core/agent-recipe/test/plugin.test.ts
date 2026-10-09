@@ -5,8 +5,8 @@ import type { SessionEvent, SessionLog, SessionLogReadResult } from '@cubus/sess
 import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
 import type { Tool } from '@cubus/tool-registry'
-import { createAgentRuntimePlugin } from '../src/index.ts'
-import type { AgentHost, AgentRecipe } from '../src/index.ts'
+import { createAgentRuntimePlugin, RecipeManifestError } from '../src/index.ts'
+import type { AgentHost, AgentRecipe, HostCapabilityOffering } from '../src/index.ts'
 
 class MemorySessionLog implements SessionLog {
   readonly events: SessionEvent[] = []
@@ -20,8 +20,42 @@ class MemorySessionLog implements SessionLog {
   }
 }
 
-test('mounts Host then Recipe and runs with the Recipe capability snapshot', async () => {
+/** 测试 Host：声明 llm + session-log 两项能力。 */
+function makeHost(adapter: LlmAdapter): { host: AgentHost, log: MemorySessionLog, order: string[] } {
+  const log = new MemorySessionLog()
   const order: string[] = []
+  const offerings: readonly HostCapabilityOffering[] = [
+    {
+      kind: 'llm',
+      provider: 'test-adapter',
+      features: ['tool-calling'],
+      mount(ctx) {
+        ctx.provide('llm', adapter)
+      },
+    },
+    {
+      kind: 'session-log',
+      provider: 'memory',
+      features: [],
+      mount(ctx) {
+        ctx.provide('sessionLog', log)
+      },
+    },
+  ]
+  return {
+    log,
+    order,
+    host: {
+      capabilities: () => offerings,
+      async mount(ctx, session, selection) {
+        order.push('host')
+        for (const offering of selection ?? offerings) await offering.mount(ctx, session)
+      },
+    },
+  }
+}
+
+test('mounts Host then Recipe and runs with the Recipe capability snapshot', async () => {
   const requests: LlmRequest[] = []
   let modelCall = 0
   const adapter: LlmAdapter = {
@@ -37,14 +71,7 @@ test('mounts Host then Recipe and runs with the Recipe capability snapshot', asy
       yield { delta: 'The sum is 5.' }
     },
   }
-  const log = new MemorySessionLog()
-  const host: AgentHost = {
-    mount(ctx) {
-      order.push('host')
-      ctx.provide('llm', adapter)
-      ctx.provide('sessionLog', log)
-    },
-  }
+  const harness = makeHost(adapter)
   const addNumbers: Tool = {
     name: 'add_numbers',
     description: 'Add two numbers.',
@@ -55,9 +82,18 @@ test('mounts Host then Recipe and runs with the Recipe capability snapshot', asy
     },
   }
   const recipe: AgentRecipe<void> = {
-    manifest: { id: 'reference-agent', version: '1.0.0', displayName: 'Reference Agent' },
+    manifest: {
+      contractVersion: 1,
+      id: 'reference-agent',
+      version: '1.0.0',
+      displayName: 'Reference Agent',
+      requires: [{ kind: 'llm', features: ['tool-calling'] }, { kind: 'session-log' }],
+      prompt: { fragmentId: 'role' },
+      tools: ['add_numbers'],
+      permission: { profile: 'ask' },
+    },
     async mount(ctx) {
-      order.push('recipe')
+      harness.order.push('recipe')
       await ctx.plugin(systemPromptContribution({ id: 'role', text: 'Use general-purpose tools.' }))
       await ctx.plugin(toolContribution(addNumbers))
     },
@@ -65,23 +101,33 @@ test('mounts Host then Recipe and runs with the Recipe capability snapshot', asy
   const ctx = new Context()
 
   await ctx.plugin(createAgentRuntimePlugin({
-    host,
+    host: harness.host,
     recipe,
     recipeOptions: undefined,
     session: Object.freeze({ id: 's1', directory: '/sessions/s1', logPath: '/sessions/s1/session.jsonl' }),
   }))
   await ctx.get('loop')!.submit([{ type: 'text', text: 'Add 2 and 3.' }])
 
-  expect(order).toEqual(['host', 'recipe'])
+  expect(harness.order).toEqual(['host', 'recipe'])
   expect(requests[0]?.systemPrompt).toBe('Use general-purpose tools.')
   expect(requests[0]?.tools?.map(tool => tool.name)).toEqual(['add_numbers'])
-  expect(log.events.find(event => event.type === 'tool/result')).toMatchObject({
+  expect(harness.log.events.find(event => event.type === 'tool/result')).toMatchObject({
     type: 'tool/result',
     id: 'sum-1',
     ok: true,
     output: { text: '5' },
   })
-  expect(log.events.findLast(event => event.type === 'assistant/message')?.content[0]?.text).toBe('The sum is 5.')
+  expect(harness.log.events.findLast(event => event.type === 'assistant/message')?.content[0]?.text).toBe('The sum is 5.')
+  // 装配快照是日志第一条，且记录协商结果。
+  expect(harness.log.events[0]).toMatchObject({
+    type: 'session/mount',
+    mount: {
+      capabilities: [
+        { kind: 'llm', provider: 'test-adapter' },
+        { kind: 'session-log', provider: 'memory' },
+      ],
+    },
+  })
 })
 
 test('disposing the composition root removes Host, Recipe, services, and Loop', async () => {
@@ -90,21 +136,25 @@ test('disposing the composition root removes Host, Recipe, services, and Loop', 
     model: 'none',
     async *stream() {},
   }
-  const host: AgentHost = {
-    mount(ctx) {
-      ctx.provide('llm', adapter)
-      ctx.provide('sessionLog', new MemorySessionLog())
-    },
-  }
+  const harness = makeHost(adapter)
   const recipe: AgentRecipe<void> = {
-    manifest: { id: 'disposable', version: '1.0.0', displayName: 'Disposable' },
+    manifest: {
+      contractVersion: 1,
+      id: 'disposable',
+      version: '1.0.0',
+      displayName: 'Disposable',
+      requires: [{ kind: 'llm' }, { kind: 'session-log' }],
+      prompt: { fragmentId: 'role' },
+      tools: [],
+      permission: { profile: 'allow' },
+    },
     async mount(ctx) {
       await ctx.plugin(systemPromptContribution({ id: 'role', text: 'Temporary.' }))
     },
   }
   const ctx = new Context()
   const runtime = ctx.plugin(createAgentRuntimePlugin({
-    host,
+    host: harness.host,
     recipe,
     recipeOptions: undefined,
     session: { id: 's1', directory: '/tmp/s1', logPath: '/tmp/s1/session.jsonl' },
@@ -128,15 +178,26 @@ test('disposing the composition root removes Host, Recipe, services, and Loop', 
 
 test('rejects an incomplete Recipe manifest before mounting any effects', () => {
   const recipe: AgentRecipe<void> = {
-    manifest: { id: '', version: '1.0.0', displayName: 'Broken' },
+    manifest: {
+      contractVersion: 1,
+      id: '',
+      version: '1.0.0',
+      displayName: 'Broken',
+      requires: [{ kind: 'llm' }],
+      prompt: { fragmentId: 'role' },
+      tools: [],
+      permission: { profile: 'ask' },
+    },
     mount() {},
   }
-  const host: AgentHost = { mount() {} }
+  const adapter: LlmAdapter = { provider: 'x', model: 'y', async *stream() {} }
+  const harness = makeHost(adapter)
 
   expect(() => createAgentRuntimePlugin({
-    host,
+    host: harness.host,
     recipe,
     recipeOptions: undefined,
     session: { id: 's1', directory: '/tmp/s1', logPath: '/tmp/s1/session.jsonl' },
-  })).toThrow('manifest.id must be a non-empty string')
+  })).toThrow(RecipeManifestError)
+  expect(harness.order).toEqual([])
 })

@@ -1,21 +1,20 @@
-import { createCodingAgentRecipe } from '@cubus/recipe-coding-agent'
-import type { CodingAgentRecipeOptions } from '@cubus/recipe-coding-agent'
+import { CODING_AGENT_PROMPT, createCodingAgentRecipe } from '@cubus/recipe-coding-agent'
 
-export const CODING_AGENT_PROMPT = [
-  '你是一个修 bug 的编码 agent。',
-  '可用工具：read_file（读文件）、edit_file（字符串替换编辑）、write_file（整写）、bash（跑命令）。',
-  '任务：找到测试失败的原因，修改代码修复，然后用 bash 跑测试确认全部通过。',
-  'edit_file 要求 old_string 在文件中唯一出现；失败时带着更多上下文重试。',
-  '完成后用一句话报告你改了什么。',
-].join('\n')
+// 评测 harness 与用例从这里取提示词，保持"同一份提示词"的单一来源。
+export { CODING_AGENT_PROMPT }
 
-export type RepairEvalRecipeOptions = CodingAgentRecipeOptions
+/** 修复评测套件 id：recipe 的 evaluation.suite 与评测 harness 共享它。 */
+export const REPAIR_EVAL_SUITE = 'repair-eval-v1'
 
+/**
+ * 修复评测产品：与 coding-agent 同一套工具面，但按修复任务计分。
+ * 默认审批档保持 'ask'；评测 harness 作为 app 覆盖为 'allow'（快照记录 source: app）。
+ */
 export const repairEvalRecipe = createCodingAgentRecipe({
-  manifest: {
-    id: 'repair-eval',
-    version: '1.0.0',
-    displayName: 'Repair Eval Agent',
-  },
+  id: 'repair-eval',
+  version: '1.0.0',
+  displayName: 'Repair Eval Agent',
+  description: '按隐藏测试计分的 Coding Agent 变体，用于修复任务评测。',
   defaultSystemPrompt: CODING_AGENT_PROMPT,
+  evaluationSuite: REPAIR_EVAL_SUITE,
 })

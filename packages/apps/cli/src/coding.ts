@@ -9,7 +9,7 @@ import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
 import { withToolApprovalHost } from '@cubus/tool-approval'
-import { LocalFs, LocalSubprocess } from '@cubus/tools'
+import { LocalSubprocess } from '@cubus/tools'
 import { createCliToolApproval } from './approval.ts'
 import type { CliApprovalMode, ToolApprovalPrompter } from './approval.ts'
 import { resolveCliPath } from './config.ts'
@@ -74,7 +74,8 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let workspace: string | undefined
   let task: string | undefined
   let sessionsDir: string | undefined
-  let approval: CliApprovalMode = 'ask'
+  // 默认档由 recipe manifest 声明（B4）；只有显式给了 --approval 才记作 app 覆盖。
+  let approval: CliApprovalMode | undefined
   let maxModelAttempts = 3
   let trustWorkspace = false
 
@@ -133,7 +134,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       workspace,
       task,
       trustWorkspace,
-      approval,
+      ...(approval === undefined ? {} : { approval }),
       maxModelAttempts,
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
@@ -192,17 +193,23 @@ export async function runCodingCommand(
     : await dependencies.prepareAdapterFactory()
   dependencies.signal?.throwIfAborted()
   if (adapterFactory === undefined) throw new Error('adapter factory is required')
-  const approval = createCliToolApproval(options.approval ?? 'ask', dependencies.approvalPrompter)
+  // 有效审批档：app 覆盖 > manifest 默认；最终值与来源会进装配快照。
+  const approvalProfile = options.approval ?? codingAgentRecipe.manifest.permission.profile
+  if (approvalProfile !== 'ask' && approvalProfile !== 'allow' && approvalProfile !== 'deny') {
+    throw new CliUsageError('unsupported approval profile: ' + approvalProfile)
+  }
+  const approval = createCliToolApproval(approvalProfile, dependencies.approvalPrompter)
 
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
-    host: withToolApprovalHost(createLocalAgentHost({ adapterFactory }), approval),
+    // 环境能力（模型、日志、文件系统、子进程）全部由 Host 提供；CLI 只给部署参数。
+    host: withToolApprovalHost(
+      createLocalAgentHost({ adapterFactory, workspaceDir: workspace }),
+      approval,
+    ),
     recipe: codingAgentRecipe,
-    recipeOptions: {
-      fs: new LocalFs(workspace),
-      subprocess: new LocalSubprocess(),
-      workspaceDir: workspace,
-    },
+    recipeOptions: undefined,
+    ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(dependencies.generateId === undefined ? {} : { generateId: dependencies.generateId }),
   })
   const session = await runtime.create()

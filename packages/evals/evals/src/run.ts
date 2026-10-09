@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { DeepSeekAdapter } from '@cubus/llm'
 import { withLlmRetry } from '@cubus/llm-retry'
 import { loadFixtures } from './fixtures.ts'
-import { CODING_AGENT_PROMPT, runRepairTask } from './harness.ts'
+import { runRepairTask } from './harness.ts'
 
 // 加载仓库根的 .env：本文件位于 packages/evals/evals/src，
 // 上溯四级（src -> evals -> evals 组 -> packages -> 仓库根）。
@@ -76,7 +76,6 @@ for (const fixture of selected) {
       }),
       { maxAttempts: 3 },
     ),
-    systemPrompt: CODING_AGENT_PROMPT,
     testCommand: fixture.spec.testCommand,
   })
   const durationMs = Date.now() - startedAt

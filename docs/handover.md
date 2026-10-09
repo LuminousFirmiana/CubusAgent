@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：C6 有界并发与队列完成（C 阶段 / P5 共享安全层收尾）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：D1 评测契约与恢复语义 ADR（Draft，待确认 §7 五项决定）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -47,11 +47,12 @@
 | B 阶段收尾验证 | 完成 | 真模型 add-bug PASS 10.6s + 机械核对（recipe 无 provider 构造、loop 无能力词汇依赖、提交未碰内核文件） |
 | C1 沙箱/凭据 ADR | 完成（Accepted） | docs/design/sandbox-seam.md：威胁模型 + sandbox/credentials 能力形状 + Docker provider 契约 + 预算与并发边界 + 拒绝测试清单 |
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
+| D1 评测/恢复 ADR | 完成（Draft） | docs/design/eval-suite-and-resume.md：Eval Suite 一等制品 + 行为指纹与回归门禁 + 恢复与结算规则表 + sidecar 格式版本 + usage 字段 |
 | C6 有界并发与队列 | 完成 | SDK 新增 ConcurrencyGate：跨会话并发上限（默认 4）+ FIFO 排队 + 等待超时（0 = 不排队）+ abort 出队；名额交接不经过空闲窗口；runtime.concurrency() 暴露名额与排队位置 |
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 D1：评测契约与恢复语义 ADR（roadmap D 阶段） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 D2：Eval Suite 实现（显式任务清单 + 套件注册校验 + 机器可读结果） |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
@@ -69,7 +70,8 @@
 5. packages/seams/llm/src/types.ts —— llm seam 的接口定义；
 6. docs/design/coding-agent-product.md —— Coding Agent 用户、信任边界与阶段验收；
 7. docs/design/recipe-capabilities.md —— B 阶段设计：recipe 声明面、能力协商、装配期校验（Accepted）；
-7b. docs/design/sandbox-seam.md —— C 阶段设计：沙箱与凭据能力、Docker provider 契约、拒绝测试清单（Draft）；
+7b. docs/design/sandbox-seam.md —— C 阶段设计：沙箱与凭据能力、Docker provider 契约、拒绝测试清单（Accepted）；
+7c. docs/design/eval-suite-and-resume.md —— D 阶段设计：Eval Suite 契约、行为指纹门禁、恢复与结算、格式版本（Draft）；
 8. docs/design/tool-cancellation.md —— Tool signal、进程终止与事实日志结算；
 9. packages/apps/cli/src/coding.ts —— 当前产品入口的校验、装配与结果输出；
 10. docs/roadmap.md —— 四条产品声明对应的阶段计划与验收证据清单。
@@ -201,6 +203,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 预算不进 Loop | 预算 = 观察会话日志的策略插件，超限调用 loop.cancel() 走既有取消与结算；不新增事件类型，trip 原因经 budget 服务暴露给 app |
+| 恢复是继续、不是回滚（Draft） | 已记录的副作用绝不重放；崩溃留下的半成品不回滚；未闭合区间用结算事件补齐（孤儿工具调用必须补结果，否则协议配对失败） |
+| 门禁只比行为投影（Draft） | golden 不含文本、参数、行数与时间戳；只比判分、事件类型序列、工具序列与工作区文件集 |
 | 预算是逐字段合并 | manifest.budget 提供产品默认（coding 系 40 步 / 60 次工具 / 10 分钟），app 只覆盖它关心的字段；合并后的生效值进快照 |
 | sandbox 是可选但必须记录的需求 | 三个 recipe 都声明 { kind: sandbox, required: false }：不强制隔离档，但 Host 的隔离事实（含 unconfined）一定进装配快照 |
 | 隔离状态在运行前就告知 | CLI 从装配快照读 sandbox 能力并打印：local-unconfined - NO ISOLATION；docker host 则打印 features 清单 |
@@ -279,17 +283,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：D1 评测契约与恢复语义 ADR（roadmap D1）
+## 10. 下一步：D2 Eval Suite 实现（roadmap D2）
 
-C 阶段（P5 共享安全层）收尾：沙箱、凭据、预算、并发四件都以拒绝测试为证据。下一步进 D 阶段，先写设计：
+D1 只写设计（docs/design/eval-suite-and-resume.md，Draft）。D2 落最小可用的一步：
 
-1. Eval Suite 作为产品契约：suite id / 任务集 / 判定方式 / golden trajectory 的定义，以及它与 manifest.evaluation 的关系；
-2. 回归门禁：改 prompt/工具导致行为回退时如何变红（golden 对比的粒度与容差）；
-3. 会话恢复语义：哪些副作用可重放、哪些不可；未闭合 turn 的结算（settlement）与 resume 的边界；
-4. 日志格式版本：SESSION_FORMAT_VERSION 信封与迁移（C1 决定 4 把 usage 也留到这里）；
-5. 明确与 B 阶段「装配快照」的关系：恢复时如何重建装配。
+1. suite 清单文件（id/version/judge/显式任务列表 + 每任务门禁档位），放在 evals 包；
+2. 评测运行时校验 recipe.manifest.evaluation.suite 已注册（关闭「套件只靠 assert 对齐」这条技术债）；
+3. 结果落两份：EVALS.md（人读，追加）+ evals-latest.json（机器可读，供 D4 门禁）；
+4. 无 key 假模型门禁与 grader 保持不变（回放参考修复）；真模型分数表复用现有入口。
 
-D2 之后才是实现（Eval Suite + resume + 结算）。D 与 C 的剩余小项（容器数量上限）互不阻塞。
+D3 是恢复与结算（含 kill -9 崩溃恢复测试）；D4 是 30–50 任务 + 行为指纹回归门禁。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

@@ -78,7 +78,7 @@ A(P4收尾) ──> B(契约声明式化) ──> C(P5共享安全层) ──> E
 
 | 步 | 目标 | 交付 | 验收证据 |
 |---|---|---|---|
-| D1 | **ADR**：Eval Suite 作为产品契约 + 恢复语义 | `docs/design/eval-suite-and-resume.md` | suite 格式、判定、golden trajectory、可重放/不可重放副作用的区分 |
+| D1 ✅ | **ADR**：Eval Suite 作为产品契约 + 恢复语义 | `docs/design/eval-suite-and-resume.md` | suite 格式、判定、golden trajectory、可重放/不可重放副作用的区分 |
 | D2 | Eval Suite 实现 | recipe 引用 suite；runner 跑全套；结果落日志 | CI 无 key 门禁（假模型）+ 夜跑真模型 |
 | D3 | 会话 resume 与未闭合 turn 结算 | 从日志恢复；settlement 语义 | kill 进程 -> 重启 -> 状态与日志一致（崩溃恢复测试） |
 | D4 | 评测集扩至 30-50 任务 + 回归对比 | golden trajectory diff 门禁 | 改 prompt/工具导致回退时门禁变红（自证有效） |

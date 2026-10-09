@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ScriptedAdapter } from '@cubus/llm'
 import { SessionLogFile } from '@cubus/session-jsonl'
+import { LocalSubprocess } from '@cubus/tools'
 import {
   CliUsageError,
   parseCodingCommand,
@@ -12,6 +13,31 @@ import {
 } from '../src/index.ts'
 
 let dir: string
+
+const gitSubprocess = new LocalSubprocess()
+/** 测试里的 git 命令不参与取消；用常驻信号满足 seam 的必填参数。 */
+const idleSignal = new AbortController().signal
+
+async function gitExec(cwd: string, command: string): Promise<void> {
+  const result = await gitSubprocess.run(command, { cwd, signal: idleSignal, timeoutMs: 30_000 })
+  if (result.exitCode !== 0) {
+    throw new Error('git command failed: ' + command + ' :: ' + result.stdout + result.stderr)
+  }
+}
+
+async function initRepo(path: string): Promise<void> {
+  await mkdir(path, { recursive: true })
+  await gitExec(path, 'git init -q -b main')
+  await gitExec(path, 'git config user.email cubus@example.com')
+  await gitExec(path, 'git config user.name Cubus Test')
+  await gitExec(path, 'git config commit.gpgsign false')
+  await gitExec(path, 'git config core.hooksPath /dev/null')
+}
+
+async function commitAll(path: string, message: string): Promise<void> {
+  await gitExec(path, 'git add -A')
+  await gitExec(path, 'git -c commit.gpgsign=false commit -q -m ' + JSON.stringify(message))
+}
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'cubus-cli-'))
@@ -199,4 +225,104 @@ test('refuses to place the session fact source inside the tool-writable workspac
     },
   })).rejects.toThrow('sessions directory must be outside')
   expect(adapterCreated).toBe(false)
+})
+
+test('reports the files this run changed relative to the git baseline', async () => {
+  const workspace = join(dir, 'git-repo')
+  const sessionsDir = join(dir, 'git-sessions')
+  await initRepo(workspace)
+  await writeFile(join(workspace, 'note.txt'), 'before\n', 'utf8')
+  await commitAll(workspace, 'init')
+
+  const result = await runCodingCommand({
+    workspace,
+    task: 'Update the note and add a file.',
+    trustWorkspace: true,
+    approval: 'allow',
+    sessionsDir,
+  }, {
+    adapterFactory: () => new ScriptedAdapter([
+      { steps: [{ chunk: { toolCalls: [
+        { id: 'edit-1', name: 'edit_file', args: { path: 'note.txt', old_string: 'before', new_string: 'after' } },
+      ] } }] },
+      { steps: [{ chunk: { toolCalls: [
+        { id: 'write-1', name: 'write_file', args: { path: 'extra.txt', content: 'a\nb\n' } },
+      ] } }] },
+      { steps: [{ chunk: { delta: 'Done.' } }] },
+    ]),
+    generateId: () => 'git-session',
+  })
+
+  expect(result.changes.isRepository).toBe(true)
+  expect(result.changes.changed).toEqual([
+    { path: 'extra.txt', kind: 'created', addedLines: 2, removedLines: 0 },
+    { path: 'note.txt', kind: 'modified', addedLines: 1, removedLines: 1 },
+  ])
+  expect(result.changes.preexisting).toEqual([])
+
+  const lines: string[] = []
+  renderCodingResult(result, { write: line => lines.push(line) })
+  expect(lines).toContain('changed: 2')
+  expect(lines).toContain('  created extra.txt (+2/-0)')
+  expect(lines).toContain('  modified note.txt (+1/-1)')
+})
+
+test('keeps pre-existing user edits out of the run report', async () => {
+  const workspace = join(dir, 'git-dirty-repo')
+  const sessionsDir = join(dir, 'git-dirty-sessions')
+  await initRepo(workspace)
+  await writeFile(join(workspace, 'note.txt'), 'committed\n', 'utf8')
+  await writeFile(join(workspace, 'target.txt'), 'one\n', 'utf8')
+  await commitAll(workspace, 'init')
+  // 用户在运行前就改了 note.txt，但从未提交
+  await writeFile(join(workspace, 'note.txt'), 'user edit\n', 'utf8')
+
+  const result = await runCodingCommand({
+    workspace,
+    task: 'Only touch target.txt.',
+    trustWorkspace: true,
+    approval: 'allow',
+    sessionsDir,
+  }, {
+    adapterFactory: () => new ScriptedAdapter([
+      { steps: [{ chunk: { toolCalls: [
+        { id: 'edit-1', name: 'edit_file', args: { path: 'target.txt', old_string: 'one', new_string: 'two' } },
+      ] } }] },
+      { steps: [{ chunk: { delta: 'Only target.txt changed.' } }] },
+    ]),
+    generateId: () => 'git-dirty-session',
+  })
+
+  expect(result.changes.preexisting).toEqual(['note.txt'])
+  expect(result.changes.changed).toEqual([
+    { path: 'target.txt', kind: 'modified', addedLines: 1, removedLines: 1 },
+  ])
+
+  const lines: string[] = []
+  renderCodingResult(result, { write: line => lines.push(line) })
+  expect(lines).toContain('preexisting (not touched by this run): 1')
+  expect(lines).toContain('  note.txt')
+})
+
+test('reports a non-git workspace without failing the run', async () => {
+  const workspace = join(dir, 'plain-repo')
+  const sessionsDir = join(dir, 'plain-sessions')
+  await mkdir(workspace)
+
+  const result = await runCodingCommand({
+    workspace,
+    task: 'Nothing to do.',
+    trustWorkspace: true,
+    approval: 'allow',
+    sessionsDir,
+  }, {
+    adapterFactory: () => new ScriptedAdapter([{ steps: [{ chunk: { delta: 'Done.' } }] }]),
+    generateId: () => 'plain-session',
+  })
+
+  expect(result.changes).toMatchObject({ isRepository: false, changed: [], preexisting: [] })
+
+  const lines: string[] = []
+  renderCodingResult(result, { write: line => lines.push(line) })
+  expect(lines).toContain('git: not a repository')
 })

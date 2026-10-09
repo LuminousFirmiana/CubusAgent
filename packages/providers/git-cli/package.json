@@ -1,0 +1,19 @@
+{
+  "name": "@cubus/git-cli",
+  "version": "0.0.0",
+  "description": "Read-only git workspace provider over the subprocess seam",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/git": "workspace:*",
+    "@cubus/tools": "workspace:*"
+  }
+}

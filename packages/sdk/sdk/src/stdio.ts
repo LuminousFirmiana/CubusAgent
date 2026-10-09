@@ -1,6 +1,5 @@
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
-import type { RpcTransport } from './transport.ts'
 
 /**
  * stdio 传输：stdin 逐行读请求，stdout 逐行写响应（一行一个 JSON）。

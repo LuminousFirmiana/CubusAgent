@@ -53,7 +53,7 @@ test('a throwing method returns -32603 with its message', async () => {
 
 test('async methods are awaited before responding', async () => {
   const { transport } = makeServer({
-    slow: async params => {
+    slow: async _params => {
       await new Promise(r => setTimeout(r, 5))
       return 'done'
     },

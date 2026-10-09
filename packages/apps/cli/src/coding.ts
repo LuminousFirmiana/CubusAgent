@@ -1,6 +1,8 @@
 import { mkdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
+import type { GitChangeReport } from '@cubus/git'
+import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
 import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
@@ -37,6 +39,8 @@ export interface CodingCommandResult {
   cancelled: boolean
   assistantText?: string
   turnEvents: SessionEvent[]
+  /** 相对运行前基线的 Git 变更报告（只读；非 Git 目录以 isRepository: false 表达）。 */
+  changes: GitChangeReport
 }
 
 export interface CodingCommandOutput {
@@ -175,6 +179,11 @@ export async function runCodingCommand(
   if (isWithin(workspace, sessionsDir)) {
     throw new CliUsageError('sessions directory must be outside the tool-writable workspace')
   }
+  // 只读 Git 检查走独立 provider，不把 Git 语义写进 Loop。
+  // 基线在运行前记录，因此不要求工作区干净：用户原有改动留在 preexisting 一侧。
+  const git = new GitCliWorkspaceProvider(new LocalSubprocess())
+  const baseline = await git.baseline(workspace)
+
   const adapterFactory = dependencies.prepareAdapterFactory === undefined
     ? dependencies.adapterFactory
     : await dependencies.prepareAdapterFactory()
@@ -208,12 +217,16 @@ export async function runCodingCommand(
     dependencies.signal?.removeEventListener('abort', cancel)
   }
 
+  // 报告在结束或取消后都必须产出，因此不参与运行期取消。
+  const changes = await git.report(workspace, baseline)
+
   return {
     sessionId: session.id,
     logPath: session.logPath,
     cancelled,
     ...(run.assistantText === undefined ? {} : { assistantText: run.assistantText }),
     turnEvents: run.turnEvents,
+    changes,
   }
 }
 
@@ -225,6 +238,8 @@ export function renderCodingResult(result: CodingCommandResult, output: CodingCo
     const firstLine = event.output.text.split('\n')[0] ?? ''
     output.write(`tool ${event.id}: ${event.ok ? 'ok' : 'failed'}${firstLine ? ` - ${firstLine}` : ''}`)
   }
+  // 摘要文本由 Git provider 拥有，CLI 只负责逐行输出（不拼接 Git 语义）。
+  for (const line of result.changes.summary.split('\n')) output.write(line)
   if (result.cancelled) output.write('status: cancelled')
   else output.write(`assistant: ${result.assistantText ?? ''}`)
 }

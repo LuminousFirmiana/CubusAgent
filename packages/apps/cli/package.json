@@ -14,6 +14,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cubus/git": "workspace:*",
+    "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
     "@cubus/llm-retry": "workspace:*",

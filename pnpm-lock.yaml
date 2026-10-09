@@ -26,6 +26,12 @@ importers:
 
   packages/apps/cli:
     dependencies:
+      '@cubus/git':
+        specifier: workspace:*
+        version: link:../../seams/git
+      '@cubus/git-cli':
+        specifier: workspace:*
+        version: link:../../providers/git-cli
       '@cubus/host-local':
         specifier: workspace:*
         version: link:../../hosts/local
@@ -188,6 +194,15 @@ importers:
         specifier: workspace:*
         version: link:../../core/tool-registry
 
+  packages/providers/git-cli:
+    dependencies:
+      '@cubus/git':
+        specifier: workspace:*
+        version: link:../../seams/git
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
+
   packages/providers/session-jsonl:
     dependencies:
       '@cubus/cordis':
@@ -278,6 +293,8 @@ importers:
       '@cubus/tool-registry':
         specifier: workspace:*
         version: link:../../core/tool-registry
+
+  packages/seams/git: {}
 
   packages/seams/llm:
     dependencies:

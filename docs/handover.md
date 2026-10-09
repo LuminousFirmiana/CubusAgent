@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：S4.3b 工具执行取消完成。本文件是"接手这个项目的第一份读物"。
+> 最后更新：S4.4 Git 变更报告完成。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -37,7 +37,8 @@
 | S4.2 工具审批 | 完成 | Host policy seam + Coding 工具统一包装 + CLI ask/allow/deny + 非交互默认拒绝 |
 | S4.3a 模型暂态容错 | 完成 | typed LLM 错误 + adapter 重试 wrapper + 有界指数退避 + abort-aware 等待 |
 | S4.3b 工具执行取消 | 完成 | Tool signal 上下文 + 审批取消 + 进程组终止 + 完整日志结算 + CLI/SDK 入口 |
-| P4 Coding Agent profile | 进行中 | 下一步 S4.4 Git 变更报告；其后实时输出与更多 fixtures |
+| S4.4 Git 变更报告 | 完成 | 只读 Git seam/provider（seams/git + providers/git-cli）+ 基线-报告边界 + CLI 输出 |
+| P4 Coding Agent profile | 进行中 | 下一步 S4.5 CLI 实时输出；其后评测 fixtures 扩充 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
@@ -70,6 +71,7 @@
 策略层  @cubus/tool-approval Host 提供审批 policy；工具 wrapper 紧贴副作用执行
         @cubus/llm-retry    adapter wrapper；只重试尚未产出 chunk 的 typed 暂态错误
 能力层  @cubus/tools        可取消的 fs/subprocess + read/edit/write/bash（编码 profile 的候选能力）
+检查层  @cubus/git         只读工作区版本状态 seam；@cubus/git-cli 经 subprocess seam 实现
 产品层  @cubus/recipe-*     reference / coding / repair-eval；只选择 prompt、tools 与领域插件
 门面层  @cubus/sdk          JSON-RPC 2.0 + typed Host/Recipe 会话运行时 + session.cancel
 应用层  @cubus/cli          参数/信任校验 + 产品装配 + Ctrl-C 结算 + headless 输出
@@ -98,8 +100,10 @@ packages/policies/llm-retry/      provider-neutral 模型有界重试 wrapper
 packages/recipes/reference-agent/ 领域无关参考 Agent（add_numbers，无 fs/shell/repo）
 packages/recipes/coding-agent/   正式 Coding Agent Recipe（受信工作区 + 四工具）
 packages/recipes/repair-eval/     由 Coding Recipe 工厂派生的修复评测变体
-packages/apps/cli/                Coding Agent headless CLI 应用入口
+packages/apps/cli/                Coding Agent headless CLI 应用入口（含运行前后只读 Git 变更报告）
 packages/seams/llm/               模型接缝（接口 + 两个 provider）
+packages/seams/git/               只读 Git 工作区状态 seam（Service Definition）
+packages/providers/git-cli/       git CLI 只读 provider（走 subprocess seam）
 packages/plugins/tools/           真工具（fs/subprocess seam + 四工具）
 packages/sdk/sdk/                 SDK（协议/传输/服务端/会话运行时）
 packages/evals/evals/             评测（harness + fixtures + 真模型入口）
@@ -161,6 +165,9 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 取消也必须完整结算 | 已记录的每个 `tool/call` 都写对应结果；当前调用记 `cancelled`，后续调用记 `cancelled before execution`，随后关闭 step/turn 且不再请求模型 |
 | 子进程按进程组终止 | Unix Shell 使用独立进程组；取消先 SIGTERM 再 SIGKILL，超时也杀整组。Windows 直接子进程限制与真正隔离留给 Docker provider |
 | 取消入口属于应用/门面 | SDK 暴露 `session.cancel`，CLI 将首次 Ctrl-C 转为协作式取消并以 130 退出；Loop 只认识 AbortSignal，不认识终端或 RPC |
+| Git 报告只读且与取消解耦 | 基线在运行前记录、报告在结束或取消后必须产出，因此报告不接收运行期 AbortSignal；否则取消会让报告直接抛错 |
+| 变更分类按基线哈希，行数按 HEAD | 哪些文件被动过由基线内容哈希判定（保留用户既有改动边界）；行数只能相对 HEAD（不修改仓库就取不到基线内容快照），该限制写在 seam 类型文档里 |
+| Git 摘要由 provider 拥有 | CLI 只逐行输出 provider 的 `summary`；格式与排序在 provider 内确定性生成，避免各入口各写一套 Git 语义 |
 
 ## 7. Reference 项目的借鉴边界
 
@@ -210,7 +217,8 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 
 - run.ts 真模型评测：已有最多 3 次模型尝试，但无总预算/工具步数上限（跑飞了只能手动 Ctrl-C）；失败后需人工读日志。
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
-- Coding Agent CLI：已有一次性任务、Ctrl-C 取消和日志结算，但仍是运行结束后汇总输出；无实时 chunk/tool 渲染、交互式多轮、session resume 和 Git diff 展示。
+- Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算与只读 Git 变更报告，但仍是运行结束后汇总输出；无实时 chunk/tool 渲染、交互式多轮、session resume，也不产出 patch 级 diff（当前是文件级状态 + 行数统计）。
+- Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
 - LLM provider：DeepSeek 已有 typed 错误和有界重试；其他供应商尚未接入，thinking 字段归一化表（vLLM/Qwen 等）未做。
 - 会话日志：无 SQLite/索引，查询靠全量读；无 SESSION_FORMAT_VERSION 信封。
 - fixture 只有一个（add-bug）；评测集需要攒到 30-50 个 + golden trajectory 回归机制。
@@ -219,16 +227,14 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：S4.4 Git 变更报告
+## 10. 下一步：S4.5 CLI 实时事件渲染
 
-Coding Agent 已能受控执行和取消，但运行结束后用户只能从工具摘要猜测改了哪些文件。下一锁提供只读、确定性的 Git 变更报告：
+S4.4 已让运行结束后的变更有据可查（只读基线-报告）。下一步把运行过程本身变得可见：
 
-1. 启动前确认工作区是否为 Git 仓库并记录基线状态，不要求工作区必须干净；
-2. 结束或取消后输出相对基线的文件状态与 diff 摘要，保留用户原有未提交改动的边界；
-3. Git 检查走独立 provider/service，不让 CLI 拼接输出、不把 Git 语义写进通用 Loop；
-4. 测试覆盖干净仓库、用户已有改动、Agent 新增/修改文件和非 Git 目录；本步不自动提交、回滚或生成 PR。
-
-P3 毕业证据：更换 Recipe 能改变提示词和工具，但不修改 session、loop、Host 或 SDK 协议内核；卸载组合根无残留；两种 Recipe 均通过自己的行为测试与同协议切换验收。
+1. 会话事件流式驱动 CLI 输出（chunk 打字、工具卡片、取消提示），替代当前的结束后汇总；
+2. 事件流只消费会话日志投影，不引入新的状态源；
+3. 既有取消与日志结算语义不变，测试断言输出顺序与退出码；
+4. 本步不引入 Web 入口，也不改变 Loop。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

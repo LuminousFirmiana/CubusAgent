@@ -365,9 +365,12 @@ test('the mount snapshot records the manifest default profile, and an app overri
     'approval:tool-approval',
     'fs:local',
     'llm:local-adapter',
+    'sandbox:local-unconfined',
     'session-log:jsonl',
     'subprocess:local',
   ])
+  // C2：本地运行必须如实标注"没有隔离"。
+  expect(fromManifest?.capabilities.find(capability => capability.kind === 'sandbox')?.features).toEqual(['unconfined'])
 
   // 给了 --approval：app 覆盖 manifest，来源记 app。
   const fromApp = await run('deny')
@@ -401,6 +404,10 @@ test('streams model text and tool cards live while the run is still in flight', 
     ]),
     generateId: () => 'live-session',
   })
+
+  // 运行前先如实说明执行边界（C2）：第一行就是沙箱状态，且早于任何模型输出。
+  await vi.waitFor(() => expect(lines.length).toBeGreaterThan(0))
+  expect(lines[0]).toBe('sandbox: local-unconfined — NO ISOLATION: commands run on this host as the current user')
 
   // 模型流被 hold 卡住：此刻已经出现实时输出，说明是流式而不是结束后的汇总。
   await vi.waitFor(() => expect(lines).toContain('  starting'))

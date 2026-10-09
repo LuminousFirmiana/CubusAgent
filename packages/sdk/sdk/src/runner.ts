@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createAgentRuntimePlugin } from '@cubus/agent-recipe'
 import type { AgentHost, AgentRecipe, AgentSessionDescriptor, CapabilityPins } from '@cubus/agent-recipe'
 import { Context } from '@cubus/cordis'
-import type { SessionEvent } from '@cubus/session'
+import type { MountSnapshot, SessionEvent } from '@cubus/session'
 import { RpcInvalidParamsError } from './server.ts'
 import type { RpcMethod } from './server.ts'
 
@@ -104,6 +104,21 @@ export class SessionRuntime<RecipeOptions = void> {
     // A failed run rejects only its caller; later queued runs still get their turn.
     session.runTail = operation.then(() => undefined, () => undefined)
     return operation
+  }
+
+  /**
+   * 读取该会话的装配快照（日志第一条 `session/mount`）。
+   *
+   * 供 app 侧如实告知"这次运行有没有隔离"；日志里没有快照（异常或旧日志）时返回 undefined。
+   */
+  async mountSnapshot(sessionId: string): Promise<MountSnapshot | undefined> {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('session not found: ' + sessionId)
+    const log = session.ctx.get('sessionLog')
+    if (log === undefined) return undefined
+    const { events } = await log.read()
+    const mount = events.find(event => event.type === 'session/mount')
+    return mount?.type === 'session/mount' ? mount.mount : undefined
   }
 
   /**

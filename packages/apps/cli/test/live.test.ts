@@ -1,5 +1,32 @@
 import { expect, test } from 'vitest'
+import type { MountSnapshot } from '@cubus/session'
+import { describeSandbox } from '../src/coding.ts'
 import { createLiveRenderer, summarizeToolArgs } from '../src/live.ts'
+
+function snapshot(capabilities: MountSnapshot['capabilities']): MountSnapshot {
+  return {
+    recipe: { id: 'demo', version: '1.0.0', contractVersion: 1 },
+    capabilities,
+    optionalMissing: [],
+    permission: { profile: 'ask', source: 'manifest' },
+    config: null,
+  }
+}
+
+test('describeSandbox spells out the missing isolation instead of hiding it', () => {
+  expect(describeSandbox(snapshot([
+    { kind: 'sandbox', provider: 'local-unconfined', features: ['unconfined'] },
+  ]))).toBe('sandbox: local-unconfined — NO ISOLATION: commands run on this host as the current user')
+
+  expect(describeSandbox(snapshot([
+    { kind: 'sandbox', provider: 'docker', features: ['fs-isolation', 'network-deny'] },
+  ]))).toBe('sandbox: docker [fs-isolation, network-deny]')
+
+  expect(describeSandbox(snapshot([])))
+    .toBe('sandbox: unknown — no sandbox capability was recorded for this run')
+  expect(describeSandbox(undefined))
+    .toBe('sandbox: unknown — no sandbox capability was recorded for this run')
+})
 
 function collect() {
   const lines: string[] = []

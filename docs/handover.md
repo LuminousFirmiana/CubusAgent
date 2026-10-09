@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：B4 三个 recipe 迁移到声明式契约、环境能力归属 Host（B 阶段收尾）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：C2 sandbox seam 与本地 local-unconfined provider 完成（C1 ADR 已 Accepted）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -44,12 +44,15 @@
 | B2 manifest + 协商纯函数 | 完成 | CapabilityKind/MountSnapshot 进 core/session；manifest 声明字段（可选，legacy 兼容）+ resolveCapabilities + validateManifest + verifyDeclarations + 三类类型化错误（19 条单测） |
 | B3 能力协商接线 | 完成 | AgentHost.capabilities() + 只挂选中 offerings + 装配期声明校验 + session/mount 成为日志第一条（第 11 种事件）+ 真实 JSONL 端到端验证 |
 | B4 recipe 迁移与能力归属 | 完成 | manifest 声明必填、legacy 路径删除；fs/subprocess 迁入 Host（workspaceDir 为环境事实）；approval 成为 offering；三个 recipe 声明式化（179 测试） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | B 阶段完成；下一步 C1：沙箱 seam 与凭据最小暴露模型 ADR（roadmap C 阶段） |
+| B 阶段收尾验证 | 完成 | 真模型 add-bug PASS 10.6s + 机械核对（recipe 无 provider 构造、loop 无能力词汇依赖、提交未碰内核文件） |
+| C1 沙箱/凭据 ADR | 完成（Accepted） | docs/design/sandbox-seam.md：威胁模型 + sandbox/credentials 能力形状 + Docker provider 契约 + 预算与并发边界 + 拒绝测试清单 |
+| C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 C3：credentials provider + 子进程环境变量白名单化 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：179 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：188 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -61,7 +64,8 @@
 4. packages/core/agent-loop/src/loop.ts —— 循环驱动（turn/step 语义，约 200 行，必读）；
 5. packages/seams/llm/src/types.ts —— llm seam 的接口定义；
 6. docs/design/coding-agent-product.md —— Coding Agent 用户、信任边界与阶段验收；
-7. docs/design/recipe-capabilities.md —— B 阶段设计：recipe 声明面、能力协商、装配期校验（Draft）；
+7. docs/design/recipe-capabilities.md —— B 阶段设计：recipe 声明面、能力协商、装配期校验（Accepted）；
+7b. docs/design/sandbox-seam.md —— C 阶段设计：沙箱与凭据能力、Docker provider 契约、拒绝测试清单（Draft）；
 8. docs/design/tool-cancellation.md —— Tool signal、进程终止与事实日志结算；
 9. packages/apps/cli/src/coding.ts —— 当前产品入口的校验、装配与结果输出；
 10. docs/roadmap.md —— 四条产品声明对应的阶段计划与验收证据清单。
@@ -188,6 +192,12 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 环境能力归 Host，产品面归 Recipe | B4 起 Recipe 不接收任何 provider：fs/subprocess/workspaceDir 由 Host 提供，Recipe 只声明 requires 并在 mount 时读取；三个 recipe 的 recipeOptions 都是 undefined |
 | 装饰器只转发自己拥有的 offerings | withToolApprovalHost 把 approval 追加进 capabilities()，但转发给内层 Host 前必须过滤掉不属于它的项；否则同一服务被注册两次（踩过一次） |
 | git 报告保持 app 级只读探测 | 基线必须在会话创建前拍，而 Host 能力只在会话 ctx 里；工作区路径本就是 app 的部署输入，所以报告不进能力协商（容器化后见 D1） |
+| 无隔离必须是显式特性 | 本地 sandbox provider 只声明 unconfined；需要 fs-isolation 的 recipe 在本地 Host 上装配期失败，不静默降级 |
+| 沙箱与 fs/subprocess 叠加而非替换 | sandbox 描述强制边界，fs/subprocess 描述边界内怎么读写与执行；三者在同一 Host 内必须自洽 |
+| sandbox 是可选但必须记录的需求 | 三个 recipe 都声明 { kind: sandbox, required: false }：不强制隔离档，但 Host 的隔离事实（含 unconfined）一定进装配快照 |
+| 隔离状态在运行前就告知 | CLI 从装配快照读 sandbox 能力并打印：local-unconfined - NO ISOLATION；docker host 则打印 features 清单 |
+| 凭据是引用而非明文 | 明文只在 Host 内部，注入发生在执行边界；明文永不进日志、快照与工具结果（拒绝测试断言） |
+| 审批不等于沙箱 | 审批是人（可被说服、会疲劳），沙箱是机器强制；两者都要有，但不可互相替代 |
 
 ## 7. Reference 项目的借鉴边界
 
@@ -253,17 +263,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：C1 沙箱 seam 与凭据最小暴露 ADR（roadmap C1）
+## 10. 下一步：C3 credentials provider 与子进程环境变量白名单化（roadmap C3）
 
-B 阶段收尾：三个产品共用同一套 Host 能力与声明式契约，装配快照可从日志追溯。下一步进 P5 共享安全层，先写设计：
+C2 让「有没有隔离」变成可查事实；C3 处理凭据这一侧（仍然不需要 Docker）：
 
-1. 沙箱 seam 的形状：sandbox 能力如何声明 features（fs-isolation / network-deny / resource-limits），与现有 fs/subprocess 能力的关系（替换还是叠加）；
-2. 凭据最小暴露：credentials 能力的引用语义（引用而非明文）、注入集合、审计事件；
-3. 本地「无隔离」provider 必须显式声明自己不隔离（不假装安全）；
-4. Docker provider 的会话容器、工作区挂载边界、网络默认关闭、资源上限；
-5. 验收形态：越界写 / 外网访问 / 逃逸尝试的拒绝测试，同 recipe 在 local 与 docker 下行为一致。
+1. credentials seam 的 Service Definition：引用（名字 + env/file）+ 租约（issue/release）；
+2. 本地 provider：从显式白名单（配置文件 / 环境变量名清单）发放引用；
+3. 把 LocalSubprocess 的环境从「名字黑名单」改成「白名单」：当前 SENSITIVE_ENV_NAME 正则只是尽力而为（换个名字就漏，已用真实实验验证），白名单才是真正的边界；
+4. 拒绝测试：宿主凭据在子进程里不可见；日志 / 快照 / 工具结果全文搜不到明文；装配快照只记引用名。
 
-C 与 D（评测契约与 resume）可并行；本步只写设计，不动内核。
+Docker provider 是 C4；预算 C5、有界并发 C6。D（评测契约与 resume）可与 C 并行。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

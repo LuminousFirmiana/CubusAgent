@@ -16,6 +16,7 @@
     "@cubus/agent-recipe": "workspace:*",
     "@cubus/cordis": "workspace:*",
     "@cubus/llm": "workspace:*",
+    "@cubus/sandbox": "workspace:*",
     "@cubus/session-jsonl": "workspace:*",
     "@cubus/tools": "workspace:*"
   }

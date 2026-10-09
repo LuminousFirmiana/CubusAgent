@@ -15,13 +15,20 @@ export const CODING_AGENT_PROMPT = [
 /** 本产品的工具面：声明与实现共享同一份名单（装配期校验集合相等）。 */
 export const CODING_AGENT_TOOLS = ['read_file', 'edit_file', 'write_file', 'bash'] as const
 
-/** 能力需求：模型、会话事实源、工作区读写、命令执行、逐工具审批。 */
+/**
+ * 能力需求：模型、会话事实源、工作区读写、命令执行、逐工具审批。
+ *
+ * sandbox 声明为**可选**：本产品不强制隔离（本地开发档），但 Host 提供的隔离信息
+ * 会原样进装配快照 —— 这样"这次到底有没有隔离"永远可从日志回答。
+ * 无人值守 / 陌生仓库档应当把 sandbox 声明为必需并带 features（见设计文档 §4）。
+ */
 export const CODING_AGENT_REQUIREMENTS = [
   { kind: 'llm', features: ['tool-calling'] },
   { kind: 'session-log' },
   { kind: 'fs', features: ['read', 'write'] },
   { kind: 'subprocess', features: ['cancellation'] },
   { kind: 'approval' },
+  { kind: 'sandbox', required: false },
 ] as const
 
 export interface CodingAgentRecipeDefinition {

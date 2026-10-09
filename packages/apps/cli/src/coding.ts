@@ -2,6 +2,7 @@ import { mkdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import type { GitChangeReport } from '@cubus/git'
+import type { MountSnapshot } from '@cubus/session'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
@@ -34,6 +35,21 @@ export interface CodingCommandDependencies {
   generateId?: () => string
   approvalPrompter?: ToolApprovalPrompter
   signal?: AbortSignal
+}
+
+/**
+ * 由装配快照推导的沙箱提示（设计文档 §2 决定 7：无隔离必须说清）。
+ * CLI 在**运行前**打印它，让使用者在模型动手之前就知道这次有没有边界。
+ */
+export function describeSandbox(mount: MountSnapshot | undefined): string {
+  const sandbox = mount?.capabilities.find(capability => capability.kind === 'sandbox')
+  if (sandbox === undefined) {
+    return 'sandbox: unknown — no sandbox capability was recorded for this run'
+  }
+  if (sandbox.features.includes('fs-isolation')) {
+    return 'sandbox: ' + sandbox.provider + ' [' + sandbox.features.join(', ') + ']'
+  }
+  return 'sandbox: ' + sandbox.provider + ' — NO ISOLATION: commands run on this host as the current user'
 }
 
 export interface CodingCommandResult {
@@ -214,6 +230,10 @@ export async function runCodingCommand(
   })
   const session = await runtime.create()
   dependencies.signal?.throwIfAborted()
+  // 诚实性（C2）：模型动手之前，先如实说明这次的执行边界。
+  // 事实来自装配快照（日志第一条），不来自任何猜测。
+  const mount = await runtime.mountSnapshot(session.id)
+  dependencies.output?.write(describeSandbox(mount))
   // 实时渲染：订阅会话日志的落盘事件（不引入第二个状态源）。
   const renderer = dependencies.output === undefined ? undefined : createLiveRenderer(dependencies.output)
   const unsubscribe = renderer === undefined

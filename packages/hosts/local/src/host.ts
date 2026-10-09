@@ -1,6 +1,7 @@
 import type { AgentHost, HostCapabilityOffering } from '@cubus/agent-recipe'
 import type { Context } from '@cubus/cordis'
 import type { LlmAdapter } from '@cubus/llm'
+import { UnconfinedSandbox } from '@cubus/sandbox'
 import { jsonlSessionPlugin } from '@cubus/session-jsonl'
 import { LocalFs, LocalSubprocess } from '@cubus/tools'
 
@@ -53,6 +54,16 @@ export function createLocalAgentHost(options: LocalAgentHostOptions): AgentHost 
       features: ['cancellation', 'process-group-kill'],
       mount(ctx: Context) {
         ctx.provide('subprocess', subprocess)
+      },
+    },
+    {
+      // 诚实声明：本地没有隔离。需要 sandbox[fs-isolation] 的 recipe
+      // 因此会在装配期失败，而不是静默降级（见 docs/design/sandbox-seam.md §2）。
+      kind: 'sandbox',
+      provider: 'local-unconfined',
+      features: ['unconfined'],
+      mount(ctx: Context) {
+        ctx.provide('sandbox', new UnconfinedSandbox())
       },
     },
   ]

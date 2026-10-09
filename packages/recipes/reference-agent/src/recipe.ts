@@ -50,6 +50,8 @@ export const referenceAgentRecipe: AgentRecipe<void> = {
     requires: [
       { kind: 'llm', features: ['tool-calling'] },
       { kind: 'session-log' },
+      // 可选：只把 Host 的隔离信息记录进快照，不强制任何隔离档。
+      { kind: 'sandbox', required: false },
     ],
     prompt: { fragmentId: 'reference-agent.role' },
     tools: ['add_numbers'],

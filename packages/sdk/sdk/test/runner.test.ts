@@ -277,7 +277,12 @@ const declarativeTestRecipe: AgentRecipe<void> = {
     version: '3.0.0',
     displayName: 'SDK Declarative Agent',
     contractVersion: 1,
-    requires: [{ kind: 'llm', features: ['tool-calling'] }, { kind: 'session-log' }],
+    requires: [
+      { kind: 'llm', features: ['tool-calling'] },
+      { kind: 'session-log' },
+      // 与真实产品一致：隔离信息可选但必须记录进快照。
+      { kind: 'sandbox', required: false },
+    ],
     prompt: { fragmentId: 'sdk/persona' },
     tools: [],
     permission: { profile: 'ask' },
@@ -311,6 +316,7 @@ test('a declarative recipe records its assembly snapshot as the first log line',
     recipe: { id: 'sdk-declarative', version: '3.0.0', contractVersion: 1 },
     capabilities: [
       { kind: 'llm', provider: 'local-adapter', features: ['streaming', 'tool-calling'] },
+      { kind: 'sandbox', provider: 'local-unconfined', features: ['unconfined'] },
       { kind: 'session-log', provider: 'jsonl', features: ['live-subscribe'] },
     ],
     optionalMissing: [],
@@ -334,6 +340,33 @@ async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<vo
   }
   throw new Error('waitFor timed out')
 }
+
+test('mountSnapshot exposes the assembly snapshot and rejects unknown sessions', async () => {
+  const runtime = new SessionRuntime({
+    rootDir: dir,
+    host: createLocalAgentHost({
+      workspaceDir: dir,
+      adapterFactory: () => new ScriptedAdapter([{ steps: [{ chunk: { delta: 'ok' } }] }]),
+    }),
+    recipe: declarativeTestRecipe,
+    recipeOptions: undefined,
+    generateId: makeIdGen('m'),
+  })
+
+  const session = await runtime.create()
+  const mount = await runtime.mountSnapshot(session.id)
+
+  expect(mount?.recipe.id).toBe('sdk-declarative')
+  expect(mount?.permission).toEqual({ profile: 'ask', source: 'manifest' })
+  // 本地 Host 的隔离状态如实可查：这就是 C2 的"装配期可见"。
+  expect(mount?.capabilities).toContainEqual({
+    kind: 'sandbox',
+    provider: 'local-unconfined',
+    features: ['unconfined'],
+  })
+
+  await expect(runtime.mountSnapshot('missing-session')).rejects.toThrow('session not found')
+})
 
 test('subscribe streams events while the run is still in flight', async () => {
   const gate = deferred()

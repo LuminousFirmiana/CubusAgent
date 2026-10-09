@@ -166,6 +166,9 @@ importers:
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm
+      '@cubus/sandbox':
+        specifier: workspace:*
+        version: link:../../seams/sandbox
       '@cubus/session-jsonl':
         specifier: workspace:*
         version: link:../../providers/session-jsonl
@@ -310,6 +313,12 @@ importers:
       '@cubus/session':
         specifier: workspace:*
         version: link:../../core/session
+
+  packages/seams/sandbox:
+    dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
 
   packages/support/cordis-smoke:
     dependencies:

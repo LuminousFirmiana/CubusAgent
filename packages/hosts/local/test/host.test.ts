@@ -61,6 +61,7 @@ test('declares four capabilities and only mounts the selected ones', async () =>
     'session-log:jsonl',
     'fs:local',
     'subprocess:local',
+    'sandbox:local-unconfined',
   ])
 
   const ctx = new Context()
@@ -73,10 +74,33 @@ test('declares four capabilities and only mounts the selected ones', async () =>
   })
   await hostFiber
 
-  // 只挂了选中的 fs：llm / session-log / subprocess 都不在。
+  // 只挂了选中的 fs：llm / session-log / subprocess / sandbox 都不在。
   expect(await ctx.get('fs')!.readText('note.txt')).toBe('hello\n')
   expect(ctx.get('workspaceDir')).toBe(directory)
   expect(ctx.get('llm')).toBeUndefined()
   expect(ctx.get('sessionLog')).toBeUndefined()
   expect(ctx.get('subprocess')).toBeUndefined()
+  expect(ctx.get('sandbox')).toBeUndefined()
+})
+
+test('mounting everything exposes an explicitly unconfined sandbox', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cubus-local-host-'))
+  directories.push(directory)
+  const adapter: LlmAdapter = { provider: 'local-test', model: 'scripted', async *stream() {} }
+  const host = createLocalAgentHost({ workspaceDir: directory, adapterFactory: () => adapter })
+  const ctx = new Context()
+  const fiber = ctx.plugin({
+    name: 'all-host',
+    apply(hostContext: Context) {
+      return host.mount(hostContext, { id: 's1', directory, logPath: join(directory, 'session.jsonl') })
+    },
+  })
+  await fiber
+
+  expect(ctx.sandbox.provider).toBe('local-unconfined')
+  expect(ctx.sandbox.features).toEqual(['unconfined'])
+  expect(ctx.sandbox.describe()).toContain('no isolation')
+
+  await fiber.dispose()
+  expect(ctx.get('sandbox')).toBeUndefined()
 })

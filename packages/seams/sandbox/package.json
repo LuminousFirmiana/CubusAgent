@@ -1,0 +1,18 @@
+{
+  "name": "@cubus/sandbox",
+  "version": "0.0.0",
+  "description": "sandbox seam: execution boundary description (Service Definition)",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/cordis": "workspace:*"
+  }
+}

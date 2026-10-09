@@ -307,6 +307,81 @@ test('a config that is not a plain JSON value is rejected before the snapshot is
   expect(harness.log.events).toEqual([])
 })
 
+test('a recipe that requires real isolation fails to assemble on an unconfined host', async () => {
+  const harness = makeHost({
+    extra: ({ mounted }) => [{
+      kind: 'sandbox',
+      provider: 'local-unconfined',
+      features: ['unconfined'],
+      mount() {
+        mounted.push('sandbox')
+      },
+    }],
+  })
+  const ctx = new Context()
+  const recipe = declarativeRecipe({
+    requires: [
+      { kind: 'llm', features: ['tool-calling'] },
+      { kind: 'session-log' },
+      { kind: 'sandbox', features: ['fs-isolation', 'network-deny'] },
+    ],
+  })
+
+  let caught: unknown
+  try {
+    await ctx.plugin(createAgentRuntimePlugin({
+      host: harness.host,
+      recipe,
+      recipeOptions: undefined,
+      session: descriptor,
+    }))
+  } catch (error) {
+    caught = error
+  }
+
+  const error = caught as CapabilityNegotiationError
+  expect(error).toBeInstanceOf(CapabilityNegotiationError)
+  expect(error.reason).toBe('missing')
+  expect(error.message).toContain('requires capability sandbox[fs-isolation,network-deny]')
+  expect(error.message).toContain('sandbox:local-unconfined[unconfined]')
+  // 关键：不静默降级 —— 什么都没挂、日志里也没有"装配成功"的证据。
+  expect(harness.mounted).toEqual([])
+  expect(harness.log.events).toEqual([])
+})
+
+test('an optional sandbox requirement records the unconfined provider in the snapshot', async () => {
+  const harness = makeHost({
+    extra: ({ mounted }) => [{
+      kind: 'sandbox',
+      provider: 'local-unconfined',
+      features: ['unconfined'],
+      mount() {
+        mounted.push('sandbox')
+      },
+    }],
+  })
+  const ctx = new Context()
+  const recipe = declarativeRecipe({
+    requires: [
+      { kind: 'llm', features: ['tool-calling'] },
+      { kind: 'session-log' },
+      { kind: 'sandbox', required: false },
+    ],
+  })
+
+  await ctx.plugin(createAgentRuntimePlugin({
+    host: harness.host,
+    recipe,
+    recipeOptions: undefined,
+    session: descriptor,
+  }))
+
+  const event = harness.log.events[0]
+  const capabilities = event?.type === 'session/mount' ? event.mount.capabilities : []
+  expect(capabilities).toContainEqual({ kind: 'sandbox', provider: 'local-unconfined', features: ['unconfined'] })
+  expect(event?.type === 'session/mount' ? event.mount.optionalMissing : []).toEqual([])
+})
+
 test('optional capabilities the host cannot provide are recorded in the snapshot', async () => {
   const harness = makeHost()
   const ctx = new Context()

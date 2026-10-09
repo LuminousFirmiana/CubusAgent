@@ -121,13 +121,19 @@ test('switching Recipe changes only prompt and tools on the same runtime and pro
   const repairMount = repair.events[0]
   expect(referenceMount?.type === 'session/mount' ? referenceMount.mount.capabilities.map(c => c.kind) : []).toEqual([
     'llm',
+    'sandbox',
     'session-log',
   ])
   expect(repairMount?.type === 'session/mount' ? repairMount.mount.capabilities.map(c => c.kind) : []).toEqual([
     'approval',
     'fs',
     'llm',
+    'sandbox',
     'session-log',
     'subprocess',
   ])
+  // C2：两个产品都如实记录了"本地没有隔离"。
+  expect(referenceMount?.type === 'session/mount'
+    ? referenceMount.mount.capabilities.find(c => c.kind === 'sandbox')?.provider
+    : undefined).toBe('local-unconfined')
 })

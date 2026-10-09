@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import { Context } from '@cubus/cordis'
 import type { LlmAdapter } from '@cubus/llm'
+import { LocalCredentials } from '@cubus/credentials'
 import { SessionLogFile } from '@cubus/session-jsonl'
 import { createLocalAgentHost } from '../src/index.ts'
 
@@ -81,6 +82,45 @@ test('declares four capabilities and only mounts the selected ones', async () =>
   expect(ctx.get('sessionLog')).toBeUndefined()
   expect(ctx.get('subprocess')).toBeUndefined()
   expect(ctx.get('sandbox')).toBeUndefined()
+})
+
+test('the credentials capability appears only when the app supplies a provider', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cubus-local-host-'))
+  directories.push(directory)
+  const adapter: LlmAdapter = { provider: 'local-test', model: 'scripted', async *stream() {} }
+
+  const without = createLocalAgentHost({ workspaceDir: directory, adapterFactory: () => adapter })
+  expect(without.capabilities?.().map(offering => offering.kind)).toEqual([
+    'llm', 'session-log', 'fs', 'subprocess', 'sandbox',
+  ])
+
+  const credentials = new LocalCredentials({ sources: { deepseek: () => 'sk-test-value' } })
+  const withCredentials = createLocalAgentHost({
+    workspaceDir: directory,
+    adapterFactory: () => adapter,
+    credentials,
+  })
+  const offering = withCredentials.capabilities?.().find(candidate => candidate.kind === 'credentials')
+  // 快照里只有名字白名单，没有任何值。
+  expect(offering?.provider).toBe('local-env')
+  expect(offering?.features).toEqual(['deepseek'])
+
+  const ctx = new Context()
+  const fiber = ctx.plugin({
+    name: 'credentials-host',
+    apply(hostContext: Context) {
+      return withCredentials.mount(
+        hostContext,
+        { id: 's1', directory, logPath: join(directory, 'session.jsonl') },
+        offering === undefined ? [] : [offering],
+      )
+    },
+  })
+  await fiber
+
+  expect(ctx.credentials.provider).toBe('local-env')
+  await fiber.dispose()
+  expect(ctx.get('credentials')).toBeUndefined()
 })
 
 test('mounting everything exposes an explicitly unconfined sandbox', async () => {

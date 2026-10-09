@@ -40,6 +40,18 @@ const emptyRequest: LlmRequest = {
   messages: [{ role: 'user', content: [{ type: 'text', text: '你好' }] }],
 }
 
+test('the adapter never exposes its api key through enumeration or serialization', () => {
+  const adapter = makeAdapter(fixtureTransport())
+
+  // C3 凭据最小暴露：适配器不能把明文带进日志、快照或任何 dump。
+  expect(JSON.stringify(adapter)).not.toContain('test-key')
+  expect(Object.keys(adapter)).not.toContain('config')
+  expect(JSON.stringify({ ...adapter })).not.toContain('test-key')
+  // 但请求仍然带上正确的 authorization（值只是不可枚举，不是不可用）。
+  expect(adapter.provider).toBe('deepseek')
+  expect(adapter.model).toBe('deepseek-chat')
+})
+
 test('parses content deltas and thinking deltas from the recorded SSE stream', async () => {
   const adapter = makeAdapter(fixtureTransport())
   const chunks = await collect(adapter, emptyRequest)

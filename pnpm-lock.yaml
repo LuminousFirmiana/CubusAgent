@@ -26,6 +26,9 @@ importers:
 
   packages/apps/cli:
     dependencies:
+      '@cubus/credentials':
+        specifier: workspace:*
+        version: link:../../seams/credentials
       '@cubus/git':
         specifier: workspace:*
         version: link:../../seams/git
@@ -163,6 +166,9 @@ importers:
       '@cubus/cordis':
         specifier: workspace:*
         version: link:../../../vendor/cordis
+      '@cubus/credentials':
+        specifier: workspace:*
+        version: link:../../seams/credentials
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm
@@ -305,6 +311,12 @@ importers:
       '@cubus/tool-registry':
         specifier: workspace:*
         version: link:../../core/tool-registry
+
+  packages/seams/credentials:
+    dependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
 
   packages/seams/git: {}
 

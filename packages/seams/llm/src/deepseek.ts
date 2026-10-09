@@ -126,16 +126,21 @@ export class DeepSeekAdapter implements LlmAdapter {
   readonly provider = 'deepseek'
   readonly model: string
 
-  private readonly config: DeepSeekConfig
+  /**
+   * ES 私有字段：配置里的 apiKey 不会成为可枚举属性，
+   * 因此 JSON.stringify(adapter) / 对象展开都带不出明文（C3 凭据最小暴露）。
+   * 不能用 TS 的 private —— 那只是编译期标注，运行期仍是可枚举属性。
+   */
+  readonly #config: DeepSeekConfig
 
   constructor(config: DeepSeekConfig) {
-    this.config = config
+    this.#config = config
     this.model = config.model
   }
 
   async *stream(request: LlmRequest, signal: AbortSignal): AsyncGenerator<LlmChunk, void, void> {
-    const transport = this.config.transport ?? fetch
-    const url = this.config.baseUrl.replace(/\/$/, '') + '/chat/completions'
+    const transport = this.#config.transport ?? fetch
+    const url = this.#config.baseUrl.replace(/\/$/, '') + '/chat/completions'
 
     let response: Response
     try {
@@ -143,7 +148,7 @@ export class DeepSeekAdapter implements LlmAdapter {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${this.config.apiKey}`,
+          authorization: `Bearer ${this.#config.apiKey}`,
         },
         body: JSON.stringify({
           model: request.model,

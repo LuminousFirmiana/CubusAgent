@@ -1,4 +1,5 @@
 import type { AgentHost, HostCapabilityOffering } from '@cubus/agent-recipe'
+import type { CredentialsProvider } from '@cubus/credentials'
 import type { Context } from '@cubus/cordis'
 import type { LlmAdapter } from '@cubus/llm'
 import { UnconfinedSandbox } from '@cubus/sandbox'
@@ -10,6 +11,11 @@ export interface LocalAgentHostOptions {
   adapterFactory: () => LlmAdapter
   /** 工作区绝对路径：fs 的根、bash 的 cwd。部署参数，由 app 提供。 */
   workspaceDir: string
+  /**
+   * 凭据来源（可选）：提供时本 Host 声明 credentials 能力，
+   * features 就是可发放的凭据名（只有名字，没有值）。
+   */
+  credentials?: CredentialsProvider
 }
 
 /**
@@ -22,6 +28,7 @@ export interface LocalAgentHostOptions {
  */
 export function createLocalAgentHost(options: LocalAgentHostOptions): AgentHost {
   const subprocess = new LocalSubprocess()
+  const credentials = options.credentials
   const offerings: readonly HostCapabilityOffering[] = [
     {
       kind: 'llm',
@@ -66,6 +73,15 @@ export function createLocalAgentHost(options: LocalAgentHostOptions): AgentHost 
         ctx.provide('sandbox', new UnconfinedSandbox())
       },
     },
+    ...(credentials === undefined ? [] : [{
+      // 凭据能力：features 是名字白名单（值永远不进快照）。
+      kind: 'credentials' as const,
+      provider: credentials.provider,
+      features: [...credentials.names],
+      mount(ctx: Context) {
+        ctx.provide('credentials', credentials)
+      },
+    }]),
   ]
 
   return {

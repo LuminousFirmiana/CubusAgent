@@ -19,17 +19,48 @@ export interface SubprocessResult {
   timedOut: boolean
 }
 
-const SENSITIVE_ENV_NAME = /(KEY|SECRET|TOKEN|PASSWORD)/i
+/**
+ * 子进程环境白名单（C3）。
+ *
+ * 之前是「名字黑名单」（KEY|SECRET|TOKEN|PASSWORD）—— 换个名字就漏：
+ * 真实实验里 HARMLESS_CREDENTIAL 原样传给了子进程。
+ * 现在默认只继承运行命令所需的最小集合，凭据必须显式经过 credentials seam 注入。
+ */
+const BASE_ENV_ALLOWLIST = [
+  'PATH',
+  'HOME',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'LANG',
+  'LC_ALL',
+  'SHELL',
+  'USER',
+  'LOGNAME',
+] as const
 
-/** Keep ordinary command configuration while withholding harness credentials. */
-function subprocessEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !SENSITIVE_ENV_NAME.test(name)),
-  )
+export interface LocalSubprocessOptions {
+  /** 额外允许继承的宿主环境变量名（默认只有最小集合）。 */
+  readonly allowEnv?: readonly string[]
 }
 
-/** 本地 provider：在进程文件系统里 spawn shell。 */
+function subprocessEnv(allow: readonly string[]): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const name of allow) {
+    const value = process.env[name]
+    if (value !== undefined) env[name] = value
+  }
+  return env
+}
+
+/** 本地 provider：在进程文件系统里 spawn shell（环境走白名单）。 */
 export class LocalSubprocess implements SubprocessProvider {
+  private readonly allowEnv: readonly string[]
+
+  constructor(options: LocalSubprocessOptions = {}) {
+    this.allowEnv = [...BASE_ENV_ALLOWLIST, ...(options.allowEnv ?? [])]
+  }
+
   async run(command: string, options: {
     cwd: string
     signal: AbortSignal
@@ -41,7 +72,7 @@ export class LocalSubprocess implements SubprocessProvider {
     const child = spawn(command, {
       cwd: options.cwd,
       detached: process.platform !== 'win32',
-      env: subprocessEnv(),
+      env: subprocessEnv(this.allowEnv),
       shell,
       stdio: ['ignore', 'pipe', 'pipe'],
     })

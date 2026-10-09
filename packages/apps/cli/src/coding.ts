@@ -1,6 +1,7 @@
 import { mkdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
+import type { CredentialsProvider } from '@cubus/credentials'
 import type { GitChangeReport } from '@cubus/git'
 import type { MountSnapshot } from '@cubus/session'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
@@ -29,6 +30,8 @@ export interface CodingCommandDependencies {
   adapterFactory?: () => LlmAdapter
   /** 提供时以实时事件流渲染运行过程；不提供则只在结束后汇总（既有行为）。 */
   output?: CodingCommandOutput
+  /** app 提供的凭据来源（可选）：进 Host 的 credentials 能力，只有名字进快照。 */
+  credentials?: CredentialsProvider
   /** Used by the real CLI to load credentials only after workspace trust is validated. */
   prepareAdapterFactory?: () => Promise<() => LlmAdapter>
   cwd?: string
@@ -220,7 +223,11 @@ export async function runCodingCommand(
     rootDir: sessionsDir,
     // 环境能力（模型、日志、文件系统、子进程）全部由 Host 提供；CLI 只给部署参数。
     host: withToolApprovalHost(
-      createLocalAgentHost({ adapterFactory, workspaceDir: workspace }),
+      createLocalAgentHost({
+        adapterFactory,
+        workspaceDir: workspace,
+        ...(dependencies.credentials === undefined ? {} : { credentials: dependencies.credentials }),
+      }),
       approval,
     ),
     recipe: codingAgentRecipe,

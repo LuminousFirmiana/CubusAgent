@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：C2 sandbox seam 与本地 local-unconfined provider 完成（C1 ADR 已 Accepted）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：C3 credentials seam + 子进程环境白名单化完成。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -47,12 +47,13 @@
 | B 阶段收尾验证 | 完成 | 真模型 add-bug PASS 10.6s + 机械核对（recipe 无 provider 构造、loop 无能力词汇依赖、提交未碰内核文件） |
 | C1 沙箱/凭据 ADR | 完成（Accepted） | docs/design/sandbox-seam.md：威胁模型 + sandbox/credentials 能力形状 + Docker provider 契约 + 预算与并发边界 + 拒绝测试清单 |
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 C3：credentials provider + 子进程环境变量白名单化 |
+| C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 C4：Docker sandbox provider（容器 + 工作区挂载 + 网络默认关 + 资源上限） |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：188 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：198 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -244,6 +245,8 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 21. 本地 `pnpm run check` 通过不等于阶段已锁定；每个小步必须提交、push，并等待该 commit 的 GitHub Actions 全绿后才能进入下一步。S2.3-P4 曾长期堆在本地，现已把此顺序写入 `AGENTS.md`。
 22. 给别处模块做 declaration merging 时，本文件必须显式 import 被增强的模块（副作用导入即可）；否则 TypeScript 把它当成新的模块声明，破坏其它包已有的 Context 合并 —— 表现为别处的 ctx.provide 突然「不存在」。（B4 踩过一次）
 23. Host 装饰器在协商路径下必须只转发自己拥有的 offerings：把不属于自己的项一起传给内层 Host，会让同一服务（ctx.provide 同名键）注册两次并在装配期抛错。（B4 被测试抓到）
+24. 子进程环境必须用白名单，不能用名字黑名单：黑名单（KEY|SECRET|TOKEN|PASSWORD）会被「换个名字」绕过 —— 真实实验里 HARMLESS_CREDENTIAL 原样传给了子进程。白名单 + 显式凭据注入才是边界。（C3 修复）
+25. TS 的 private 只是编译期标注，运行期仍是可枚举属性：持有 apiKey 的字段若用 private，JSON.stringify(adapter) 会带出明文。持密字段要用 ES 私有字段（#field）。（C3 修复）
 
 ## 9. 已知问题 / 技术债（接手后可以处理）
 
@@ -251,6 +254,7 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
 - Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
+- 本地文件系统仍无边界：fs 工具钉在工作区，但 bash 能读工作区外的文件（C3 只关掉了环境变量这条泄漏路径）；文件/网络边界要等 C4 的 Docker provider。
 - 装配快照记录 recipe 身份/能力/策略档，但工作区路径不在其中（它是 Host 的环境事实，不是 recipe 配置）；要追溯「哪次评测跑了哪个目录」目前靠 EVALS.md 与临时目录名，等 D1 的格式版本一起加环境字段。
 - manifest 的 evaluation 声明目前只在评测 harness 侧校验（断言套件 id 一致），运行时不做跨包套件注册表检查。
 - 评测：真模型分数表记录通过率与耗时，但不记录 token/费用（adapter 与日志都还没有 usage 字段）——要报成本先补 usage 落日志。
@@ -263,16 +267,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：C3 credentials provider 与子进程环境变量白名单化（roadmap C3）
+## 10. 下一步：C4 Docker sandbox provider（roadmap C4）
 
-C2 让「有没有隔离」变成可查事实；C3 处理凭据这一侧（仍然不需要 Docker）：
+C3 关掉了环境变量这条泄漏路径；仍然没有文件/网络边界（本地 bash 能读工作区外文件）。C4 补上真正的边界：
 
-1. credentials seam 的 Service Definition：引用（名字 + env/file）+ 租约（issue/release）；
-2. 本地 provider：从显式白名单（配置文件 / 环境变量名清单）发放引用；
-3. 把 LocalSubprocess 的环境从「名字黑名单」改成「白名单」：当前 SENSITIVE_ENV_NAME 正则只是尽力而为（换个名字就漏，已用真实实验验证），白名单才是真正的边界；
-4. 拒绝测试：宿主凭据在子进程里不可见；日志 / 快照 / 工具结果全文搜不到明文；装配快照只记引用名。
+1. Docker provider：每会话一个容器、工作区 bind mount 到 /workspace、--network none、资源上限、非 root、cap-drop ALL、no-new-privileges、不挂 docker.sock；
+2. 容器化的 fs/subprocess 实现（docker exec），取消语义沿用 S4.3b 的进程组测试形态；
+3. 镜像按 digest 固定并进快照；容器销毁失败必须报错而不是静默留下容器；
+4. 验收：越界写 / 网络 / 逃逸尝试 / 资源上限的**拒绝测试**；同 recipe 在 local-unconfined（装配期失败）与 docker 下行为一致。
 
-Docker provider 是 C4；预算 C5、有界并发 C6。D（评测契约与 resume）可与 C 并行。
+Docker 不可用时：契约测试用假 provider 必跑，真实 Docker 测试显式 skip 并打印原因（不静默通过）。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

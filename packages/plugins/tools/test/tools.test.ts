@@ -132,29 +132,62 @@ test('LocalFs and LocalSubprocess work against the real filesystem', async () =>
   expect(result.exitCode).toBe(0)
 })
 
-test('LocalSubprocess withholds ambient credentials but preserves ordinary environment', async () => {
-  const secretName = 'CUBUS_SUBPROCESS_TEST_SECRET'
-  const visibleName = 'CUBUS_SUBPROCESS_TEST_VISIBLE'
-  const previousSecret = process.env[secretName]
-  const previousVisible = process.env[visibleName]
-  process.env[secretName] = 'must-not-leak'
-  process.env[visibleName] = 'still-visible'
-
+/** 白名单语义（C3）：继承与否跟"名字取得巧不巧"无关，只看是否显式允许。 */
+async function withEnv<T>(
+  values: Readonly<Record<string, string>>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = new Map(Object.keys(values).map(name => [name, process.env[name]]))
+  for (const [name, value] of Object.entries(values)) process.env[name] = value
   try {
-    const script = `process.stdout.write(JSON.stringify({ secret: process.env.${secretName}, visible: process.env.${visibleName} }))`
-    const result = await new LocalSubprocess().run(
-      `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`,
-      { cwd: dir, signal: activeSignal },
-    )
-
-    expect(result.exitCode).toBe(0)
-    expect(JSON.parse(result.stdout)).toEqual({ visible: 'still-visible' })
+    return await run()
   } finally {
-    if (previousSecret === undefined) delete process.env[secretName]
-    else process.env[secretName] = previousSecret
-    if (previousVisible === undefined) delete process.env[visibleName]
-    else process.env[visibleName] = previousVisible
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
   }
+}
+
+function readEnvScript(names: readonly string[]): string {
+  const expression = names
+    .map(name => JSON.stringify(name) + ': process.env[' + JSON.stringify(name) + '] ?? null')
+    .join(', ')
+  return 'process.stdout.write(JSON.stringify({' + expression + '}))'
+}
+
+test('a subprocess inherits only the minimal environment, whatever the variable is called', async () => {
+  const secretName = 'CUBUS_SUBPROCESS_TEST_SECRET'
+  const ordinaryName = 'CUBUS_SUBPROCESS_TEST_ORDINARY'
+
+  const result = await withEnv(
+    { [secretName]: 'must-not-leak', [ordinaryName]: 'also-not-inherited' },
+    () => new LocalSubprocess().run(
+      `${JSON.stringify(process.execPath)} -e ${JSON.stringify(readEnvScript([secretName, ordinaryName, 'PATH']))}`,
+      { cwd: dir, signal: activeSignal },
+    ),
+  )
+
+  expect(result.exitCode).toBe(0)
+  const observed = JSON.parse(result.stdout) as Record<string, string | null>
+  // 名字像密钥的、名字无害的，一样都不继承；PATH 这类运行必需品保留。
+  expect(observed[secretName]).toBe(null)
+  expect(observed[ordinaryName]).toBe(null)
+  expect(typeof observed['PATH']).toBe('string')
+})
+
+test('an explicitly allowlisted variable is inherited on request', async () => {
+  const allowedName = 'CUBUS_SUBPROCESS_TEST_ALLOWED'
+
+  const result = await withEnv({ [allowedName]: 'visible-on-request' }, () => new LocalSubprocess({
+    allowEnv: [allowedName],
+  }).run(
+    `${JSON.stringify(process.execPath)} -e ${JSON.stringify(readEnvScript([allowedName]))}`,
+    { cwd: dir, signal: activeSignal },
+  ))
+
+  expect(result.exitCode).toBe(0)
+  expect(JSON.parse(result.stdout)).toEqual({ [allowedName]: 'visible-on-request' })
 })
 
 test.runIf(process.platform !== 'win32')('LocalSubprocess aborts the shell process group', async () => {

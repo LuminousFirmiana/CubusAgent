@@ -37,6 +37,8 @@ export const CODING_AGENT_BUDGET: BudgetLimits = {
   maxSteps: 40,
   maxToolCalls: 60,
   maxDurationMs: 600_000,
+  // D3b：累计 token 上限（读 assistant/message.usage）。
+  maxTokens: 200_000,
 }
 
 export interface CodingAgentRecipeDefinition {

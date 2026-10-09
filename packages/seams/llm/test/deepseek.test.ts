@@ -40,6 +40,40 @@ const emptyRequest: LlmRequest = {
   messages: [{ role: 'user', content: [{ type: 'text', text: '你好' }] }],
 }
 
+test('requests usage and surfaces it as a chunk (D3b)', async () => {
+  let body: Record<string, unknown> | undefined
+  const transport: Transport = async (_url, init) => {
+    body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    return new Response(await readFile(join(import.meta.dirname, 'fixtures', 'deepseek-usage.txt'), 'utf8'), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }
+  const adapter = new DeepSeekAdapter({
+    baseUrl: 'https://api.deepseek.com',
+    apiKey: 'test-key',
+    model: 'deepseek-chat',
+    transport,
+  })
+
+  const chunks = await collect(adapter, emptyRequest)
+  const usageChunk = chunks.find(chunk => chunk.usage !== undefined)
+
+  // 请求里必须带上 include_usage，否则 provider 不会回 usage
+  expect(body?.['stream_options']).toEqual({ include_usage: true })
+  expect(usageChunk?.usage).toEqual({
+    promptTokens: 120,
+    completionTokens: 8,
+    totalTokens: 128,
+    cachedTokens: 64,
+  })
+})
+
+test('a stream without a usage frame simply yields no usage', async () => {
+  const chunks = await collect(makeAdapter(fixtureTransport()), emptyRequest)
+  expect(chunks.some(chunk => chunk.usage !== undefined)).toBe(false)
+})
+
 test('the adapter never exposes its api key through enumeration or serialization', () => {
   const adapter = makeAdapter(fixtureTransport())
 

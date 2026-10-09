@@ -1,0 +1,6 @@
+data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":120,"completion_tokens":8,"total_tokens":128,"prompt_cache_hit_tokens":64}}
+
+data: [DONE]
+

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmToolCall } from '@cubus/llm'
 import { deriveRequest } from '@cubus/session'
-import type { ContentBlock, SessionLog } from '@cubus/session'
+import type { ContentBlock, LlmUsage, SessionLog } from '@cubus/session'
 import type { InboxItem, LoopConfig, StepCapabilities, Tool } from './types.ts'
 
 interface ResolvedStepCapabilities {
@@ -121,6 +121,7 @@ export class Loop {
 
     let text = ''
     let thinkingText = ''
+    let usage: LlmUsage | undefined
     const toolCalls: LlmToolCall[] = []
     let aborted = false
 
@@ -139,6 +140,8 @@ export class Loop {
           await this.log.append({ type: 'assistant/chunk', stepId, thinkingDelta: chunk.thinkingDelta })
         }
         if (chunk.toolCalls) toolCalls.push(...chunk.toolCalls)
+        // D3b：usage 是响应事实，落进 assistant/message（不参与消息投影）
+        if (chunk.usage) usage = chunk.usage
       }
     } catch (error) {
       if (this.abort!.signal.aborted) {
@@ -158,6 +161,7 @@ export class Loop {
           stepId,
           content: text ? [{ type: 'text', text }] : [],
           ...(thinkingText ? { thinking: thinkingText } : {}),
+          ...(usage === undefined ? {} : { usage }),
           interrupted: true,
         })
       }
@@ -172,6 +176,7 @@ export class Loop {
       stepId,
       content: text ? [{ type: 'text', text }] : [],
       ...(thinkingText ? { thinking: thinkingText } : {}),
+      ...(usage === undefined ? {} : { usage }),
     })
     for (const call of toolCalls) {
       await this.log.append({ type: 'tool/call', id: call.id, stepId, name: call.name, args: call.args })

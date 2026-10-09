@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ScriptedAdapter } from '@cubus/llm'
 import type { LlmAdapter, LlmChunk, LlmRequest } from '@cubus/llm'
-import { deriveRequest } from '@cubus/session'
+import { deriveMessages, deriveRequest } from '@cubus/session'
 import type { SessionEvent } from '@cubus/session'
 import { SessionLogFile } from '@cubus/session-jsonl'
 import type { Tool } from '@cubus/tool-registry'
@@ -182,6 +182,28 @@ test('cancel during tool execution settles every recorded call and stops the tur
   expect(events.slice(-2)).toEqual([
     { type: 'step/end', stepId: 'id3' },
     { type: 'turn/end', turnId: 'id2' },
+  ])
+})
+
+test('token usage from the stream lands on the assistant message and stays out of the projection', async () => {
+  const { events } = await runWith([
+    { steps: [
+      { chunk: { delta: '你好' } },
+      { chunk: { usage: { promptTokens: 100, completionTokens: 5, totalTokens: 105, cachedTokens: 40 } } },
+    ] },
+  ])
+
+  const message = events.find(event => event.type === 'assistant/message')
+  expect(message?.type === 'assistant/message' ? message.usage : undefined).toEqual({
+    promptTokens: 100,
+    completionTokens: 5,
+    totalTokens: 105,
+    cachedTokens: 40,
+  })
+  // usage 是响应事实，不是模型可见内容：投影里没有它，消息形状保持不变
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '你好' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '你好' }] },
   ])
 })
 

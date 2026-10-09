@@ -1,11 +1,13 @@
 import type { BudgetLimits, SessionEvent } from '@cubus/session'
 
-export type BudgetTripReason = 'max-steps' | 'max-tool-calls' | 'max-duration'
+export type BudgetTripReason = 'max-steps' | 'max-tool-calls' | 'max-duration' | 'max-tokens'
 
 export interface BudgetState {
   readonly steps: number
   readonly toolCalls: number
   readonly elapsedMs: number
+  /** 累计 token（读 assistant/message.usage；provider 未提供时不增长）。 */
+  readonly tokens: number
   /** 首次超限的原因；未超限为 undefined。 */
   readonly tripped?: BudgetTripReason
 }
@@ -28,6 +30,7 @@ export class BudgetPolicy {
   private readonly startedAt: number
   private steps = 0
   private toolCalls = 0
+  private tokens = 0
   private trippedReason: BudgetTripReason | undefined
 
   constructor(options: {
@@ -41,7 +44,11 @@ export class BudgetPolicy {
     if (limits.maxSteps !== undefined) assertPositiveInteger(limits.maxSteps, 'maxSteps')
     if (limits.maxToolCalls !== undefined) assertPositiveInteger(limits.maxToolCalls, 'maxToolCalls')
     if (limits.maxDurationMs !== undefined) assertPositiveInteger(limits.maxDurationMs, 'maxDurationMs')
-    if (limits.maxSteps === undefined && limits.maxToolCalls === undefined && limits.maxDurationMs === undefined) {
+    if (limits.maxTokens !== undefined) assertPositiveInteger(limits.maxTokens, 'maxTokens')
+    if (
+      limits.maxSteps === undefined && limits.maxToolCalls === undefined &&
+      limits.maxDurationMs === undefined && limits.maxTokens === undefined
+    ) {
       throw new TypeError('budget must define at least one limit')
     }
     this.limits = limits
@@ -54,6 +61,9 @@ export class BudgetPolicy {
   private count(event: SessionEvent): void {
     if (event.type === 'step/start') this.steps += 1
     if (event.type === 'tool/call') this.toolCalls += 1
+    if (event.type === 'assistant/message' && event.usage !== undefined) {
+      this.tokens += event.usage.totalTokens
+    }
   }
 
   /** 观察一条已落盘的事件（插件订阅日志而来）。 */
@@ -72,10 +82,11 @@ export class BudgetPolicy {
   }
 
   private evaluate(now: number): BudgetTripReason | undefined {
-    const { maxSteps, maxToolCalls, maxDurationMs } = this.limits
+    const { maxSteps, maxToolCalls, maxDurationMs, maxTokens } = this.limits
     if (maxSteps !== undefined && this.steps > maxSteps) return 'max-steps'
     if (maxToolCalls !== undefined && this.toolCalls > maxToolCalls) return 'max-tool-calls'
     if (maxDurationMs !== undefined && now - this.startedAt > maxDurationMs) return 'max-duration'
+    if (maxTokens !== undefined && this.tokens > maxTokens) return 'max-tokens'
     return undefined
   }
 
@@ -83,6 +94,7 @@ export class BudgetPolicy {
     return {
       steps: this.steps,
       toolCalls: this.toolCalls,
+      tokens: this.tokens,
       elapsedMs: Math.max(0, now - this.startedAt),
       ...(this.trippedReason === undefined ? {} : { tripped: this.trippedReason }),
     }

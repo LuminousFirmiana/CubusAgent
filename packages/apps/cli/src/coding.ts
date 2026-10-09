@@ -25,10 +25,11 @@ export interface CodingCommandOptions {
   sessionsDir?: string
   approval?: CliApprovalMode
   maxModelAttempts?: number
-  /** 预算覆盖（C5）：与 manifest 默认逐字段合并，app 优先。 */
+  /** 预算覆盖（C5/D3b）：与 manifest 默认逐字段合并，app 优先。 */
   maxSteps?: number
   maxToolCalls?: number
   maxDurationMs?: number
+  maxTokens?: number
 }
 
 export interface CodingCommandDependencies {
@@ -65,6 +66,7 @@ export function describeBudget(state: BudgetState, limits: BudgetLimits | undefi
   const limit = (value: number | undefined): string => (value === undefined ? '-' : String(value))
   return 'budget: ' + String(state.steps) + '/' + limit(limits?.maxSteps) + ' steps, ' +
     String(state.toolCalls) + '/' + limit(limits?.maxToolCalls) + ' tool calls, ' +
+    String(state.tokens) + '/' + limit(limits?.maxTokens) + ' tokens, ' +
     (state.elapsedMs / 1000).toFixed(1) + 's/' +
     (limits?.maxDurationMs === undefined ? '-' : String(limits.maxDurationMs / 1000) + 's') +
     (state.tripped === undefined ? '' : ' (tripped: ' + state.tripped + ')')
@@ -116,6 +118,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let maxSteps: number | undefined
   let maxToolCalls: number | undefined
   let maxDurationMs: number | undefined
+  let maxTokens: number | undefined
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -149,7 +152,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       index += 1
       continue
     }
-    if (arg === '--max-steps' || arg === '--max-tool-calls' || arg === '--max-duration') {
+    if (arg === '--max-steps' || arg === '--max-tool-calls' || arg === '--max-duration' || arg === '--max-tokens') {
       const value = optionValue(args, index, arg)
       const parsed = Number(value)
       if (!Number.isInteger(parsed) || parsed < 1) {
@@ -158,6 +161,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       if (arg === '--max-steps') maxSteps = parsed
       if (arg === '--max-tool-calls') maxToolCalls = parsed
       if (arg === '--max-duration') maxDurationMs = parsed * 1000
+      if (arg === '--max-tokens') maxTokens = parsed
       index += 1
       continue
     }
@@ -190,6 +194,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       ...(maxSteps === undefined ? {} : { maxSteps }),
       ...(maxToolCalls === undefined ? {} : { maxToolCalls }),
       ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
+      ...(maxTokens === undefined ? {} : { maxTokens }),
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
   }
@@ -258,6 +263,7 @@ export async function runCodingCommand(
     ...(options.maxSteps === undefined ? {} : { maxSteps: options.maxSteps }),
     ...(options.maxToolCalls === undefined ? {} : { maxToolCalls: options.maxToolCalls }),
     ...(options.maxDurationMs === undefined ? {} : { maxDurationMs: options.maxDurationMs }),
+    ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
   }
   const mergedBudget: BudgetLimits = { ...codingAgentRecipe.manifest.budget, ...appBudget }
   const budget = Object.keys(mergedBudget).length === 0 ? undefined : mergedBudget

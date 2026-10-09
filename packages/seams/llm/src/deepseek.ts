@@ -1,3 +1,4 @@
+import type { LlmUsage } from '@cubus/session'
 import type { LlmAdapter, LlmChunk, LlmRequest, LlmToolCall } from './types.ts'
 import { LlmError } from './errors.ts'
 
@@ -48,8 +49,34 @@ interface SseChoice {
   finish_reason?: string | null
 }
 
+/** OpenAI 兼容的 usage 载荷（DeepSeek 在流末帧给出；缓存字段是 DeepSeek 特有）。 */
+interface SseUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  prompt_cache_hit_tokens?: number
+}
+
 interface SsePayload {
   choices?: SseChoice[]
+  usage?: SseUsage | null
+}
+
+function toLlmUsage(usage: SseUsage): LlmUsage | undefined {
+  const promptTokens = usage.prompt_tokens
+  const completionTokens = usage.completion_tokens
+  const totalTokens = usage.total_tokens
+  if (typeof promptTokens !== 'number' || typeof completionTokens !== 'number' || typeof totalTokens !== 'number') {
+    return undefined
+  }
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    ...(typeof usage.prompt_cache_hit_tokens === 'number'
+      ? { cachedTokens: usage.prompt_cache_hit_tokens }
+      : {}),
+  }
 }
 
 async function* parseSse(
@@ -154,6 +181,8 @@ export class DeepSeekAdapter implements LlmAdapter {
           model: request.model,
           messages: toOpenAiMessages(request),
           stream: true,
+          // D3b：让 provider 在流末帧带上 usage（OpenAI 兼容参数）
+          stream_options: { include_usage: true },
           ...(request.tools === undefined
             ? {}
             : {
@@ -226,7 +255,13 @@ export class DeepSeekAdapter implements LlmAdapter {
           chunk.toolCalls = calls
         }
 
-        if (chunk.delta || chunk.thinkingDelta || chunk.toolCalls) yield chunk
+        // usage 出现在流末帧（choices 为空）：单独作为一个碎片交给循环落盘。
+        if (payload.usage) {
+          const usage = toLlmUsage(payload.usage)
+          if (usage !== undefined) chunk.usage = usage
+        }
+
+        if (chunk.delta || chunk.thinkingDelta || chunk.toolCalls || chunk.usage) yield chunk
       }
     } catch (error) {
       if (isAbort(error, signal) || error instanceof LlmError) throw error

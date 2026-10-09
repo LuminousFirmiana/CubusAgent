@@ -1,4 +1,4 @@
-import type { ProjectedRequest, RequestToolSpec } from '@cubus/session'
+import type { LlmUsage, ProjectedRequest, RequestToolSpec } from '@cubus/session'
 
 /**
  * llm seam 的 Service Definition：模型适配器接口。
@@ -23,12 +23,14 @@ export type LlmRequest = ProjectedRequest
  * 模型流的一个碎片。
  * - delta / thinkingDelta：正文与思考的增量（分开发，不混合）；
  * - toolCalls：模型请求的工具调用，出现在流的末尾碎片上；
- *   有 toolCalls 的碎片可以同时没有 delta（纯工具调用步）。
+ *   有 toolCalls 的碎片可以同时没有 delta（纯工具调用步）；
+ * - usage：token 用量，provider 在流末帧给出（D3b）；不支持时缺省。
  */
 export interface LlmChunk {
   delta?: string
   thinkingDelta?: string
   toolCalls?: LlmToolCall[]
+  usage?: LlmUsage
 }
 
 /** 模型请求的一次工具调用。 */

@@ -62,6 +62,29 @@ test('tool-call and duration limits trip independently', () => {
   expect(timePolicy.state(1_001).elapsedMs).toBe(1_001)
 })
 
+test('token usage accumulates from assistant messages and trips the token limit', () => {
+  const trips: BudgetTripReason[] = []
+  const policy = new BudgetPolicy({ limits: { maxTokens: 100 }, onTrip: reason => trips.push(reason), now: 0 })
+
+  policy.observe(
+    { type: 'assistant/message', messageId: 'm1', stepId: 's1', content: [], usage: { promptTokens: 60, completionTokens: 10, totalTokens: 70 } },
+    1,
+  )
+  expect(policy.state(1).tokens).toBe(70)
+  expect(trips).toEqual([])
+
+  policy.observe(
+    { type: 'assistant/message', messageId: 'm2', stepId: 's1', content: [], usage: { promptTokens: 30, completionTokens: 5, totalTokens: 35 } },
+    2,
+  )
+  expect(policy.state(2).tokens).toBe(105)
+  expect(trips).toEqual(['max-tokens'])
+
+  // provider 没给 usage（例如旧日志或本地假模型）时不增长，也不报错
+  policy.observe({ type: 'assistant/message', messageId: 'm3', stepId: 's2', content: [] }, 3)
+  expect(policy.state(3).tokens).toBe(105)
+})
+
 test('history seeding continues the count across a crash without tripping on its own', () => {
   const trips: BudgetTripReason[] = []
   const history: SessionEvent[] = [

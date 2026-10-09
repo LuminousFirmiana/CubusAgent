@@ -76,8 +76,8 @@ test('parses the explicit trusted-workspace command surface', () => {
 
   // 预算覆盖（C5）：字段可选，--max-duration 以秒为单位转成毫秒
   expect(parseCodingCommand([
-    '--workspace', './repo', '--task', 'x', '--max-steps', '5', '--max-duration', '30',
-  ]).options).toMatchObject({ maxSteps: 5, maxDurationMs: 30_000 })
+    '--workspace', './repo', '--task', 'x', '--max-steps', '5', '--max-duration', '30', '--max-tokens', '4096',
+  ]).options).toMatchObject({ maxSteps: 5, maxDurationMs: 30_000, maxTokens: 4096 })
   expect(() => parseCodingCommand([
     '--workspace', './repo', '--task', 'x', '--max-steps', '0',
   ])).toThrow('--max-steps must be a positive integer')
@@ -383,6 +383,7 @@ test('a per-run budget cancels a runaway run, settles the log and reports the re
     maxSteps: 1,
     maxToolCalls: 60,
     maxDurationMs: 600_000,
+    maxTokens: 200_000,
   })
 })
 

@@ -43,6 +43,34 @@ export interface MountedCapability {
 }
 
 /**
+ * 一次模型响应的 token 用量（D3b；D1 决定 4）。
+ *
+ * 它是**响应事实**，不是模型可见内容：不参与消息投影（投影只读 content/thinking/toolCalls），
+ * 但同样满足"可以从日志重建"——预算与费用统计都读它。
+ */
+export interface LlmUsage {
+  readonly promptTokens: number
+  readonly completionTokens: number
+  readonly totalTokens: number
+  /** 命中缓存的 prompt token 数（provider 支持时）。 */
+  readonly cachedTokens?: number
+}
+
+/**
+ * 一次模型响应的 token 用量（D3b；D1 决定 4）。
+ *
+ * 它是**响应事实**，不是模型可见内容：不参与消息投影（投影只读 content/thinking/toolCalls），
+ * 但同样满足"可以从日志重建"——预算与费用统计都读它。
+ */
+export interface LlmUsage {
+  readonly promptTokens: number
+  readonly completionTokens: number
+  readonly totalTokens: number
+  /** 命中缓存的 prompt token 数（provider 支持时）。 */
+  readonly cachedTokens?: number
+}
+
+/**
  * 一次会话的资源上限（预算，C5）。缺省字段 = 不限制。
  * 它是"策略 + 装配事实"：由 app 传入或 manifest 声明，实际生效值进装配快照。
  */
@@ -50,6 +78,8 @@ export interface BudgetLimits {
   readonly maxSteps?: number
   readonly maxToolCalls?: number
   readonly maxDurationMs?: number
+  /** 累计 token 上限（D3b）：读 assistant/message.usage。 */
+  readonly maxTokens?: number
 }
 
 /**
@@ -142,6 +172,8 @@ export type SessionEvent =
       content: ContentBlock[]
       /** 本次回复的完整思考文本；后续请求按 provider 协议原样回传。 */
       thinking?: string
+      /** 本次回复的 token 用量（D3b）：响应事实，不进消息投影。 */
+      usage?: LlmUsage
       /**
        * 取消语义（吸收 dsh rc.8）：回合被中途取消时，把已送达的
        * 正文/思考前缀作为本条事件落盘并带 interrupted: true；

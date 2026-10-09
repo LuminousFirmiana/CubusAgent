@@ -9,10 +9,11 @@
  * 结果写两份：EVALS.md（人读，追加）+ evals-latest.json（机器可读，供 D4 门禁与工作台）。
  * 无 key 的假模型门禁在 CI 每次 push 运行，见 test/fixtures.test.ts。
  */
-import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
+import { copyFixtureRepo } from './fixtures.ts'
 import { compareFingerprints, goldenPathFor, parseGolden } from './fingerprint.ts'
 import { runRepairTask } from './harness.ts'
 import { createAdapterFactory, loadEnvFile, modelName, optionValue, requireApiKey, scriptArgs } from './model.ts'
@@ -71,7 +72,8 @@ interface FixtureOutcome {
 const outcomes: FixtureOutcome[] = []
 for (const fixture of selected) {
   const workDir = mkdtempSync(join(tmpdir(), 'cubus-eval-' + fixture.spec.id + '-'))
-  cpSync(fixture.dir, join(workDir, 'repo'), { recursive: true })
+  // 复制时排除评分元数据（fixture.json/golden.json）：工作区里不该有答案
+  await copyFixtureRepo(fixture, join(workDir, 'repo'))
   const startedAt = Date.now()
   const result = await runRepairTask({
     repoDir: join(workDir, 'repo'),

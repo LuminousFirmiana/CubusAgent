@@ -1,6 +1,22 @@
-import { readFile, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { cp, readFile, readdir } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import type { Scene } from '@cubus/llm'
+
+/**
+ * 属于"评分元数据"、**不属于被修复仓库**的文件。
+ * 参考修复（fixture.json）与 golden 指纹（golden.json）是 harness 的东西：
+ * 让 agent 看到它们等于把答案递过去，评测立刻失效。
+ * （E5 期间实测发现：真模型会主动去读 fixture.json/golden.json。）
+ */
+export const FIXTURE_METADATA_FILES: readonly string[] = ['fixture.json', 'golden.json']
+
+/** 把夹具仓库复制成任务工作区：**排除评分元数据**。任务永远只跑副本。 */
+export async function copyFixtureRepo(fixture: Fixture, target: string): Promise<void> {
+  await cp(fixture.dir, target, {
+    recursive: true,
+    filter: source => !FIXTURE_METADATA_FILES.includes(basename(source)),
+  })
+}
 
 /** 一个修复任务 fixture 的自描述（fixture.json）。 */
 export interface FixtureSpec {

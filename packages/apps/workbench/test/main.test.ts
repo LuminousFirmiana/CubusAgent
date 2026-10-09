@@ -12,7 +12,14 @@ test('the workbench requires an explicit workspace and approval level', () => {
   expect(() => parseWorkbenchCommand(['--workspace', '/tmp/x']))
     .toThrow('workbench requires an explicit --approval allow|deny')
   expect(() => parseWorkbenchCommand(['--workspace', '/tmp/x', '--approval', 'maybe']))
-    .toThrow('--approval must be allow or deny')
+    .toThrow('--approval must be ask, allow or deny')
+  // ask 档 + 超时（秒 -> 毫秒），默认 120s
+  expect(parseWorkbenchCommand(['--workspace', '/tmp/x', '--approval', 'ask']).options)
+    .toMatchObject({ approval: 'ask', approvalTimeoutMs: 120_000 })
+  expect(parseWorkbenchCommand(['--workspace', '/tmp/x', '--approval', 'ask', '--approval-timeout', '30']).options)
+    .toMatchObject({ approval: 'ask', approvalTimeoutMs: 30_000 })
+  expect(() => parseWorkbenchCommand(['--workspace', '/tmp/x', '--approval', 'ask', '--approval-timeout', '0']))
+    .toThrow('--approval-timeout must be a positive integer')
   expect(() => parseWorkbenchCommand(['--workspace', '/tmp/x', '--approval', 'allow', '--nope']))
     .toThrow('unknown option: --nope')
   expect(() => parseWorkbenchCommand(['--workspace'])).toThrow('--workspace requires a value')
@@ -23,7 +30,8 @@ test('the workbench requires an explicit workspace and approval level', () => {
   expect(parsed.options).toMatchObject({ workspace: '/tmp/x', approval: 'deny', port: 4180, maxAttempts: 5 })
   // 默认会话目录在临时目录里（工作区之外）
   expect(parsed.options?.sessionsDir.startsWith(tmpdir())).toBe(true)
-  expect(WORKBENCH_COMMAND_HELP).toContain('--approval allow|deny')
+  expect(WORKBENCH_COMMAND_HELP).toContain('--approval ask|allow|deny')
+  expect(WORKBENCH_COMMAND_HELP).toContain('--approval-timeout')
 })
 
 test('isWithin decides whether a sessions directory sits inside the tool-writable workspace', () => {

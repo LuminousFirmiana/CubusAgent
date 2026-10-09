@@ -1,10 +1,11 @@
-import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { ScriptedAdapter } from '@cubus/llm'
 import { SessionLogFile } from '@cubus/session-jsonl'
 import { LocalSubprocess } from '@cubus/tools'
+import { copyFixtureRepo } from '../src/fixtures.ts'
 import { compareFingerprints } from '../src/fingerprint.ts'
 import { runRepairTask } from '../src/harness.ts'
 
@@ -20,7 +21,8 @@ function makeIdGen() {
 
 async function copyFixture(): Promise<string> {
   const target = join(dir, 'repo')
-  await cp(fixtureDir, target, { recursive: true })
+  // 与 run.ts/golden.ts/无 key 门禁同一条复制路径（排除评分元数据）
+  await copyFixtureRepo({ spec: { id: 'add-bug', title: '', bugKind: '', testCommand: '', referenceFix: [] }, dir: fixtureDir }, target)
   return target
 }
 

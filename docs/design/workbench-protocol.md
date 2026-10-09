@@ -35,6 +35,8 @@ POST /api/sessions/:id/run      { task } -> 202（异步；事件走 SSE）
 GET  /api/sessions/:id/events   SSE 事件流（见 §4）
 GET  /api/sessions/:id/changes  本次运行的改动报告（只读 Git，见 §9）
 POST /api/sessions/:id/resume   恢复（D3 语义）-> 200 { formatVersion, settled, settlementEvents }
+GET  /api/approvals              待回答的审批（ask 档，见 §10）
+POST /api/approvals/:id          {"decision":"allow"|"deny"}
 ```
 
 **状态码语义**（客户端据此区分"该重试还是该放弃"）：
@@ -95,6 +97,26 @@ GET /api/sessions/:id/changes 返回本次运行的改动（只读 Git 报告）
 - 非 git 工作区返回 isRepository: false（诚实表达不知道，而不是给一份空报告）。
 
 与 CLI 同源：两者都用 A1 的 GitCliWorkspaceProvider 与同一段 summary 渲染，因此输出格式一致。
+
+## 10. 审批交互（E5）
+
+ask 档下，工具调用在页面上等人回答（`GET /api/approvals` 是**持久视图**，控制帧易失）：
+
+| 事件 | 传输 |
+|---|---|
+| 用户回答 | `POST /api/approvals/:id` `{"decision":"allow"\|"deny", "reason"?}` |
+| 待回答项出现 / 被回答 | SSE 控制帧 `approval`（`requested` / `resolved`） |
+
+规则（三条已确认的决定）：
+
+1. **超时 = 拒绝**：等待上限从请求创建算起（排队时间也算），默认 120s，可用 `--approval-timeout` 调整；
+   超时的原因文案会随 `ToolApprovalDeniedError` 落进日志；
+2. **拒绝与执行失败可区分**：拒绝 -> `tool denied by approval policy: <tool> (<reason>)`；
+   批准后执行失败 -> `tool approved but execution failed: <tool> (...)`；
+3. **全局 FIFO 排队**：同时等待回答的审批默认上限 8，超出的排队并在 `queuePosition` 里显示名次。
+
+已知限制：`ToolExecutionContext` 只有 `signal`，审批项**不带会话归属**；并发多会话时页面只能按工具名与参数区分
+（把 sessionId 加进执行上下文是后续小步）。审批事件推给所有在线页面（单用户本地工具的前提）。
 
 ## 7. 不做的事（非目标）
 

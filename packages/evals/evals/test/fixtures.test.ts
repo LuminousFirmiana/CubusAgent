@@ -1,10 +1,10 @@
-import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { ScriptedAdapter } from '@cubus/llm'
 import { LocalSubprocess } from '@cubus/tools'
-import { loadFixtures, scenesForFixture } from '../src/fixtures.ts'
+import { copyFixtureRepo, loadFixtures, scenesForFixture } from '../src/fixtures.ts'
 import type { Fixture } from '../src/fixtures.ts'
 import { runRepairTask } from '../src/harness.ts'
 
@@ -25,7 +25,8 @@ async function withCopy<T>(fixture: Fixture, run: (repoDir: string, scratchDir: 
   const scratchDir = await mkdtemp(join(tmpdir(), 'cubus-fixture-'))
   try {
     const repoDir = join(scratchDir, 'repo')
-    await cp(fixture.dir, repoDir, { recursive: true })
+    // 与 run.ts/golden.ts 同一个复制路径：排除评分元数据
+    await copyFixtureRepo(fixture, repoDir)
     return await run(repoDir, scratchDir)
   } finally {
     await rm(scratchDir, { recursive: true, force: true })
@@ -62,6 +63,22 @@ for (const fixture of fixtures) {
     )
   })
 }
+
+test('the task workspace never contains the scoring metadata', async () => {
+  // 参考修复与 golden 指纹是 harness 的东西：进了工作区就等于把答案交给 agent（评测失效）。
+  // E5 期间真模型确实主动去读 fixture.json/golden.json，因此这里钉死。
+  for (const fixture of fixtures) {
+    await withCopy(fixture, async repoDir => {
+      const entries = await readdir(repoDir)
+      expect(entries, fixture.spec.id).not.toContain('fixture.json')
+      expect(entries, fixture.spec.id).not.toContain('golden.json')
+      // 仓库本体必须完整复制过来
+      expect(entries, fixture.spec.id).toContain('package.json')
+      expect(entries, fixture.spec.id).toContain('src')
+      expect(entries, fixture.spec.id).toContain('test')
+    })
+  }
+})
 
 test(fixtures.length + ' fixtures stay pristine after the whole gate ran', async () => {
   expect(fixtures.length).toBeGreaterThanOrEqual(5)

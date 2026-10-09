@@ -6,11 +6,11 @@
  * 1. 任务判分必须通过，否则拒绝生成 —— 不能把"回归后的行为"固化成 golden；
  * 2. 覆盖旧 golden 时打印 diff，供人审（避免"顺手刷新"把回归掩盖掉）。
  */
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
-import { loadFixtures } from './fixtures.ts'
+import { copyFixtureRepo, loadFixtures } from './fixtures.ts'
 import {
   compareFingerprints,
   goldenPathFor,
@@ -51,7 +51,8 @@ if (fixture === undefined) {
 }
 
 const workDir = mkdtempSync(join(tmpdir(), 'cubus-golden-' + taskId + '-'))
-cpSync(fixture.dir, join(workDir, 'repo'), { recursive: true })
+// 同 run.ts：工作区里不能出现评分元数据
+await copyFixtureRepo(fixture, join(workDir, 'repo'))
 const result = await runRepairTask({
   repoDir: join(workDir, 'repo'),
   sessionsDir: join(workDir, 'sessions'),

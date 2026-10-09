@@ -16,14 +16,16 @@ import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
-import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
+import { createInteractiveToolApproval, createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
+import type { InteractiveApproval } from '@cubus/tool-approval'
 import { createModelAdapterFactory, loadEnvFile, MODEL_CREDENTIAL_NAME, readDeepSeekEnvironment } from './config.ts'
 import { startWorkbenchServer } from './server.ts'
 
 export interface WorkbenchCommandOptions {
   readonly workspace: string
   readonly sessionsDir: string
-  readonly approval: 'allow' | 'deny'
+  readonly approval: 'ask' | 'allow' | 'deny'
+  readonly approvalTimeoutMs: number
   readonly port: number
   readonly maxAttempts: number
 }
@@ -56,7 +58,8 @@ export function parseWorkbenchCommand(argv: readonly string[]): {
   const args = argv[0] === '--' ? argv.slice(1) : argv
   let workspace: string | undefined
   let sessionsDir: string | undefined
-  let approval: 'allow' | 'deny' | undefined
+  let approval: 'ask' | 'allow' | 'deny' | undefined
+  let approvalTimeoutMs = 120_000
   let port = 4173
   let maxAttempts = 3
 
@@ -75,10 +78,19 @@ export function parseWorkbenchCommand(argv: readonly string[]): {
     }
     if (arg === '--approval') {
       const value = optionValue(args, index, arg)
-      if (value !== 'allow' && value !== 'deny') {
-        throw new WorkbenchUsageError('--approval must be allow or deny')
+      if (value !== 'ask' && value !== 'allow' && value !== 'deny') {
+        throw new WorkbenchUsageError('--approval must be ask, allow or deny')
       }
       approval = value
+      index += 1
+      continue
+    }
+    if (arg === '--approval-timeout') {
+      const seconds = Number(optionValue(args, index, arg))
+      if (!Number.isInteger(seconds) || seconds < 1) {
+        throw new WorkbenchUsageError('--approval-timeout must be a positive integer (seconds)')
+      }
+      approvalTimeoutMs = seconds * 1000
       index += 1
       continue
     }
@@ -108,6 +120,7 @@ export function parseWorkbenchCommand(argv: readonly string[]): {
       workspace,
       sessionsDir: sessionsDir ?? join(tmpdir(), 'cubus-workbench-sessions'),
       approval,
+      approvalTimeoutMs,
       port,
       maxAttempts,
     },
@@ -115,11 +128,12 @@ export function parseWorkbenchCommand(argv: readonly string[]): {
 }
 
 export const WORKBENCH_COMMAND_HELP = `Usage:
-  pnpm run workbench -- --workspace <path> --approval allow|deny [--port 4173] [--sessions-dir <path>] [--max-attempts 3]
+  pnpm run workbench -- --workspace <path> --approval ask|allow|deny [--approval-timeout <seconds>] [--port 4173] [--sessions-dir <path>] [--max-attempts 3]
 
 Safety:
-  --approval is required: "allow" lets the agent read and write inside the workspace; "deny" records tool
-  calls but blocks execution. Interactive approval is not implemented yet (E5).
+  --approval is required: "ask" waits for Allow/Deny on the page (unanswered calls are denied after
+  --approval-timeout seconds, default 120); "allow" lets the agent read and write in the workspace;
+  "deny" records tool calls but blocks execution.
   The sessions directory defaults to a temp dir and must stay outside the workspace.
   The server binds 127.0.0.1 only and has no authentication (ADR workbench-protocol.md §6).`
 
@@ -158,22 +172,34 @@ async function main(args: readonly string[]): Promise<number> {
     throw error
   }
 
+  // 审批策略：ask 是交互式（页面上回答，超时默认拒绝）；allow/deny 是静态档。
+  const approval = options.approval === 'ask'
+    ? createInteractiveToolApproval({ profile: 'ask', timeoutMs: options.approvalTimeoutMs })
+    : createStaticToolApproval(options.approval, 'workbench --approval ' + options.approval)
+
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
     host: withToolApprovalHost(
       createLocalAgentHost({ adapterFactory, workspaceDir: workspace, credentials }),
-      createStaticToolApproval(options.approval, 'workbench --approval ' + options.approval),
+      approval,
     ),
     recipe: codingAgentRecipe,
     recipeOptions: undefined,
     permissionProfile: options.approval,
   })
 
-  const server = await startWorkbenchServer({ runtime, workspaceDir: workspace }, { port: options.port })
+  const server = await startWorkbenchServer({
+    runtime,
+    workspaceDir: workspace,
+    ...(options.approval === 'ask' ? { approval: approval as InteractiveApproval } : {}),
+  }, { port: options.port })
   process.stdout.write('workbench: ' + server.url + '\n')
   process.stdout.write('workspace: ' + workspace + '\n')
   process.stdout.write('sessions:  ' + sessionsDir + '\n')
-  process.stdout.write('approval:  ' + options.approval + '\n')
+  process.stdout.write(
+    'approval:  ' + options.approval +
+    (options.approval === 'ask' ? ' (timeout ' + String(options.approvalTimeoutMs / 1000) + 's -> deny)' : '') + '\n',
+  )
   process.stdout.write('model:     ' + (settings.DEEPSEEK_MODEL ?? 'deepseek-chat') + '\n')
 
   const shutdown = async (): Promise<void> => {

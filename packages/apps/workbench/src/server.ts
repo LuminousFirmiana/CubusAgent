@@ -8,6 +8,7 @@ import type { GitBaseline } from '@cubus/git'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { listSessions, readSessionSummary, SessionRuntime } from '@cubus/sdk'
 import { LocalSubprocess } from '@cubus/tools'
+import type { InteractiveApproval } from '@cubus/tool-approval'
 import { SessionFormatError } from '@cubus/session'
 import type { SessionEvent } from '@cubus/session'
 
@@ -28,6 +29,11 @@ export interface WorkbenchOptions<RecipeOptions> {
    * 与 Host 的工作区是同一个目录：这里只做**只读** Git 报告，复用 A1 的 provider。
    */
   readonly workspaceDir?: string
+  /**
+   * 交互式审批（E5）：给出时，工作台提供 GET /api/approvals 与 POST /api/approvals/:id，
+   * 并把待回答项作为控制帧推给所有在线页面。审批本身由 tool-approval 包实现，工作台只做搬运。
+   */
+  readonly approval?: InteractiveApproval
   /** SSE 心跳间隔（毫秒）；默认 15s，0 = 关闭。 */
   readonly heartbeatMs?: number
 }
@@ -97,6 +103,7 @@ function statusFor(error: unknown): number {
   if (error instanceof HttpError) return error.status
   const message = messageOf(error)
   if (message.includes('session not found')) return 404
+  if (message.includes('unknown or already answered approval')) return 404
   if (
     error instanceof SessionFormatError ||
     error instanceof AssemblyMismatchError ||
@@ -154,6 +161,23 @@ export async function startWorkbenchServer<RecipeOptions>(
       }
     }
   }
+
+  /** 审批事件推给**所有**在线页面：审批项不带会话归属（见 ADR §10 的已知限制）。 */
+  function publishToAll(frame: Frame): void {
+    for (const set of listeners.values()) {
+      for (const listener of set) {
+        try {
+          listener(frame)
+        } catch {
+          // 同上：UI 的失败不影响审批
+        }
+      }
+    }
+  }
+
+  const unsubscribeApproval = options.approval?.onEvent(event => {
+    publishToAll({ event: 'approval', data: event })
+  })
 
   // 只读 Git 报告（A1 的 provider）：与 CLI 的输出同源，不另写 diff 逻辑。
   const git = options.workspaceDir === undefined ? undefined : new GitCliWorkspaceProvider(new LocalSubprocess())
@@ -279,6 +303,8 @@ export async function startWorkbenchServer<RecipeOptions>(
         'CubusAgent workbench (API only)',
         '',
         'GET  /api/concurrency',
+        'GET  /api/approvals                待回答的审批（ask 档）',
+        'POST /api/approvals/:id            {"decision":"allow"|"deny"}',
         'GET  /api/sessions',
         'POST /api/sessions',
         'GET  /api/sessions/:id',
@@ -294,6 +320,34 @@ export async function startWorkbenchServer<RecipeOptions>(
     if (method === 'GET' && segments[0] === 'api' && segments[1] === 'concurrency' && segments.length === 2) {
       sendJson(res, 200, { concurrency: runtime.concurrency() })
       return
+    }
+
+    // 审批（E5）：列表是"持久视图"（控制帧易失，页面刷新后要靠它拿回待回答项）
+    if (segments[0] === 'api' && segments[1] === 'approvals') {
+      const approval = options.approval
+      if (approval === undefined) {
+        throw new HttpError(409, 'this workbench runs a static approval policy; no interactive approvals are available')
+      }
+      if (segments.length === 2 && method === 'GET') {
+        sendJson(res, 200, approval.list())
+        return
+      }
+      const approvalId = segments[2]
+      if (segments.length === 3 && approvalId !== undefined && method === 'POST') {
+        const body = await readJsonBody(req)
+        const decision = body['decision']
+        if (decision !== 'allow' && decision !== 'deny') {
+          throw new HttpError(400, 'POST /api/approvals/:id requires {"decision":"allow"|"deny"}')
+        }
+        const reason = body['reason']
+        if (reason !== undefined && typeof reason !== 'string') {
+          throw new HttpError(400, '"reason" must be a string when provided')
+        }
+        const resolved = approval.resolve(approvalId, decision, reason)
+        sendJson(res, 200, resolved)
+        return
+      }
+      throw new HttpError(404, 'no such endpoint: ' + method + ' ' + url.pathname)
     }
 
     if (segments[0] === 'api' && segments[1] === 'sessions' && segments.length === 2) {
@@ -408,6 +462,7 @@ export async function startWorkbenchServer<RecipeOptions>(
     port: boundPort,
     host,
     close: async () => {
+      unsubscribeApproval?.()
       for (const set of listeners.values()) set.clear()
       listeners.clear()
       await new Promise<void>((resolve, reject) => {

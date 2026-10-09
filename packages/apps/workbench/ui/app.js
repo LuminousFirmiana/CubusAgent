@@ -208,12 +208,19 @@ function openSession(id) {
   el('status').className = ''
   refreshSessions(id).catch(() => {})
   refreshDetail(id).catch(() => {})
+  // 控制帧易失：刷新后要靠列表把"还在等回答"的审批找回来
+  refreshApprovals().catch(() => {})
 
   // EventSource 自带重连与 Last-Event-ID：断线后从断点续传（协议见 ADR §4）
   source = new EventSource('/api/sessions/' + id + '/events')
   source.onopen = () => { el('status').textContent = '实时（' + id + '）'; el('status').className = 'live' }
   source.onerror = () => { el('status').textContent = '断线，重连中…'; el('status').className = 'offline' }
   source.addEventListener('session-event', message => render(JSON.parse(message.data)))
+  source.addEventListener('approval', message => {
+    const event = JSON.parse(message.data)
+    if (event.type === 'requested') approvalCard(event.approval)
+    else resolveApprovalCard(event.approval.id, event.outcome, event.reason, event.by)
+  })
   source.addEventListener('control', message => {
     const frame = JSON.parse(message.data)
     if (frame.running === true) {
@@ -227,6 +234,65 @@ function openSession(id) {
       refreshChanges(id).catch(() => {})
     }
   })
+}
+
+/** 审批卡片：allow/deny 按钮把决定 POST 回去；刷新后靠 GET /api/approvals 找回待回答项。 */
+function approvalCard(approval) {
+  const card = document.createElement('div')
+  card.className = 'row tool'
+  card.dataset.approvalId = approval.id
+  const name = document.createElement('div')
+  name.className = 'name'
+  name.textContent = '需要审批：' + approval.toolName +
+    (approval.queuePosition > 0 ? '（排队第 ' + approval.queuePosition + ' 位）' : '')
+  const args = document.createElement('pre')
+  args.textContent = JSON.stringify(approval.args)
+  const hint = document.createElement('pre')
+  hint.textContent = '未回答将在 ' + new Date(approval.expiresAt).toLocaleTimeString() + ' 之后按拒绝处理'
+  const buttons = document.createElement('div')
+  buttons.style.display = 'flex'
+  buttons.style.gap = '6px'
+  buttons.style.marginTop = '6px'
+  const answer = async decision => {
+    const response = await fetch('/api/approvals/' + approval.id, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ decision }),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: String(response.status) }))
+      marker('回答失败：' + body.error, 'error')
+    }
+  }
+  const allow = document.createElement('button')
+  allow.textContent = '允许'
+  allow.onclick = () => answer('allow')
+  const deny = document.createElement('button')
+  deny.textContent = '拒绝'
+  deny.onclick = () => answer('deny')
+  buttons.append(allow, deny)
+  card.append(name, args, hint, buttons)
+  transcript.append(card)
+  transcript.scrollTop = transcript.scrollHeight
+}
+
+function resolveApprovalCard(id, outcome, reason, by) {
+  const card = transcript.querySelector('[data-approval-id="' + id + '"]')
+  if (!card) return
+  const note = document.createElement('pre')
+  note.textContent = (outcome === 'allow' ? '已允许' : '已拒绝') +
+    (by === 'timeout' ? '（超时未回答，按默认拒绝）' : '') + (reason ? '：' + reason : '')
+  card.append(note)
+  for (const button of card.querySelectorAll('button')) button.disabled = true
+}
+
+async function refreshApprovals() {
+  const response = await fetch('/api/approvals')
+  if (!response.ok) return
+  const payload = await response.json()
+  for (const approval of payload.pending) {
+    if (!transcript.querySelector('[data-approval-id="' + approval.id + '"]')) approvalCard(approval)
+  }
 }
 
 el('run').onclick = async () => {

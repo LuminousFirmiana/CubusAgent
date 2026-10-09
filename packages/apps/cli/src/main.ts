@@ -33,6 +33,7 @@ async function main(args: readonly string[]): Promise<number> {
   try {
     result = await runCodingCommand(options, {
       approvalPrompter: createTerminalApprovalPrompter(),
+      output,
       signal: controller.signal,
       // runCodingCommand calls this only after argument, trust, and workspace checks pass.
       async prepareAdapterFactory() {

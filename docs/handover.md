@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：S4.4 Git 变更报告完成。本文件是"接手这个项目的第一份读物"。
+> 最后更新：S4.5 CLI 实时事件渲染完成。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -38,7 +38,8 @@
 | S4.3a 模型暂态容错 | 完成 | typed LLM 错误 + adapter 重试 wrapper + 有界指数退避 + abort-aware 等待 |
 | S4.3b 工具执行取消 | 完成 | Tool signal 上下文 + 审批取消 + 进程组终止 + 完整日志结算 + CLI/SDK 入口 |
 | S4.4 Git 变更报告 | 完成 | 只读 Git seam/provider（seams/git + providers/git-cli）+ 基线-报告边界 + CLI 输出 |
-| P4 Coding Agent profile | 进行中 | 下一步 S4.5 CLI 实时输出；其后评测 fixtures 扩充 |
+| S4.5 CLI 实时渲染 | 完成 | SessionLog 订阅 seam + SDK subscribe + CLI 实时输出（chunk 逐行、工具卡片、结果行） |
+| P4 Coding Agent profile | 进行中 | 下一步 S4.6 评测 fixtures 扩充（roadmap A3）；会话 resume 属 roadmap D3 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
@@ -66,14 +67,14 @@
 机制层  @cubus/agent-loop   通用 turn/step 循环、inbox、模型/工具取消、确定性回放
 装配层  @cubus/agent-recipe typed Host/Recipe 契约 + 单会话 Cordis 组合根
 接缝层  @cubus/llm          LlmAdapter 接口 + Scripted（假）+ DeepSeek（真）
-供应层  @cubus/session-jsonl append-only JSONL 持久化 + 末行截断恢复 + Cordis provider
+供应层  @cubus/session-jsonl append-only JSONL 持久化 + 末行截断恢复 + 落盘后实时订阅 + Cordis provider
 宿主层  @cubus/host-local   每会话独立模型实例 + 本地 JSONL 环境装配
 策略层  @cubus/tool-approval Host 提供审批 policy；工具 wrapper 紧贴副作用执行
         @cubus/llm-retry    adapter wrapper；只重试尚未产出 chunk 的 typed 暂态错误
 能力层  @cubus/tools        可取消的 fs/subprocess + read/edit/write/bash（编码 profile 的候选能力）
 检查层  @cubus/git         只读工作区版本状态 seam；@cubus/git-cli 经 subprocess seam 实现
 产品层  @cubus/recipe-*     reference / coding / repair-eval；只选择 prompt、tools 与领域插件
-门面层  @cubus/sdk          JSON-RPC 2.0 + typed Host/Recipe 会话运行时 + session.cancel
+门面层  @cubus/sdk          JSON-RPC 2.0 + typed Host/Recipe 会话运行时 + session.cancel + session.subscribe
 应用层  @cubus/cli          参数/信任校验 + 产品装配 + Ctrl-C 结算 + headless 输出
 验证层  @cubus/evals        修复任务 harness；验证通用内核，不定义内核用途
 ```
@@ -168,6 +169,9 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | Git 报告只读且与取消解耦 | 基线在运行前记录、报告在结束或取消后必须产出，因此报告不接收运行期 AbortSignal；否则取消会让报告直接抛错 |
 | 变更分类按基线哈希，行数按 HEAD | 哪些文件被动过由基线内容哈希判定（保留用户既有改动边界）；行数只能相对 HEAD（不修改仓库就取不到基线内容快照），该限制写在 seam 类型文档里 |
 | Git 摘要由 provider 拥有 | CLI 只逐行输出 provider 的 `summary`；格式与排序在 provider 内确定性生成，避免各入口各写一套 Git 语义 |
+| 实时流是日志的视图而非第二状态源 | `SessionLog` 增加可选 `subscribe`；provider 只在事件落盘后回调，回调参数与日志事件完全相同（「流上看到」蕴含「日志里已记录」），Loop 一行未改 |
+| 订阅者异常不影响落盘 | 广播时逐订阅者捕获异常：事件已持久化，回调失败不能看起来像落盘失败，也不能阻断其它订阅者 |
+| 实时渲染只做呈现、不持有状态 | CLI renderer 消费事件并成行输出：chunk 缓冲遇换行成行，工具调用/结果即时成行；思考增量暂不渲染但完整留在日志 |
 
 ## 7. Reference 项目的借鉴边界
 
@@ -217,7 +221,7 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 
 - run.ts 真模型评测：已有最多 3 次模型尝试，但无总预算/工具步数上限（跑飞了只能手动 Ctrl-C）；失败后需人工读日志。
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
-- Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算与只读 Git 变更报告，但仍是运行结束后汇总输出；无实时 chunk/tool 渲染、交互式多轮、session resume，也不产出 patch 级 diff（当前是文件级状态 + 行数统计）。
+- Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
 - LLM provider：DeepSeek 已有 typed 错误和有界重试；其他供应商尚未接入，thinking 字段归一化表（vLLM/Qwen 等）未做。
 - 会话日志：无 SQLite/索引，查询靠全量读；无 SESSION_FORMAT_VERSION 信封。
@@ -227,14 +231,14 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：S4.5 CLI 实时事件渲染
+## 10. 下一步：S4.6 评测 fixtures 扩充（roadmap A3）
 
-S4.4 已让运行结束后的变更有据可查（只读基线-报告）。下一步把运行过程本身变得可见：
+A2 已让运行过程可见。下一步把「改坏了自己知道」变成自动化：
 
-1. 会话事件流式驱动 CLI 输出（chunk 打字、工具卡片、取消提示），替代当前的结束后汇总；
-2. 事件流只消费会话日志投影，不引入新的状态源；
-3. 既有取消与日志结算语义不变，测试断言输出顺序与退出码；
-4. 本步不引入 Web 入口，也不改变 Loop。
+1. 修复任务 fixture 扩到 5-8 个（覆盖类型错误、边界条件、缺失分支、测试与实现不一致等 bug 类型）；
+2. 假模型门禁保持无 key、秒级，CI 每次 push 都跑；
+3. 真模型夜跑脚本产出分数表 `EVALS.md`，记录通过率与成本；
+4. 本步不改内核、不新增事件类型；会话 resume 与结算属 roadmap D3。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

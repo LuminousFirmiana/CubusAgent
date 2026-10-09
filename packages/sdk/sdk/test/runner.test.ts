@@ -247,3 +247,50 @@ test('concurrent runs on one session each wait for and return their own complete
   expect(firstResult.turnEvents.find(event => event.type === 'user/message')?.content[0]?.text).toBe('一')
   expect(secondResult.turnEvents.find(event => event.type === 'user/message')?.content[0]?.text).toBe('二')
 })
+
+/** 轮询等待条件成立（不用固定延迟猜时间）。 */
+async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise(r => setTimeout(r, 5))
+  }
+  throw new Error('waitFor timed out')
+}
+
+test('subscribe streams events while the run is still in flight', async () => {
+  const gate = deferred()
+  const { runtime } = await setup([
+    { steps: [{ chunk: { delta: 'first' }, hold: gate.promise }, { chunk: { delta: 'second' } }] },
+  ])
+  const session = await runtime.create()
+  const seen: string[] = []
+  const unsubscribe = runtime.subscribe(session.id, event => {
+    seen.push(event.type)
+  })
+
+  const operation = runtime.run(session.id, 'go')
+  await waitFor(() => seen.includes('assistant/chunk'))
+  // 模型流还卡在 hold 上：此刻已收到事件，说明是实时流而不是结束后的回放。
+  expect(seen).not.toContain('turn/end')
+
+  gate.resolve()
+  await operation
+  expect(seen).toContain('turn/end')
+  unsubscribe()
+})
+
+test('subscribe stops delivering after unsubscribe and rejects unknown sessions', async () => {
+  const { runtime } = await setup([{ steps: [{ chunk: { delta: 'ok' } }] }])
+  const session = await runtime.create()
+  const seen: string[] = []
+  const unsubscribe = runtime.subscribe(session.id, event => {
+    seen.push(event.type)
+  })
+  unsubscribe()
+
+  await runtime.run(session.id, 'go')
+  expect(seen).toEqual([])
+
+  expect(() => runtime.subscribe('missing-session', () => {})).toThrow('session not found')
+})

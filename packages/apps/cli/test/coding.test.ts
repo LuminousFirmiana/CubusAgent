@@ -39,6 +39,12 @@ async function commitAll(path: string, message: string): Promise<void> {
   await gitExec(path, 'git -c commit.gpgsign=false commit -q -m ' + JSON.stringify(message))
 }
 
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'cubus-cli-'))
 })
@@ -325,4 +331,48 @@ test('reports a non-git workspace without failing the run', async () => {
   const lines: string[] = []
   renderCodingResult(result, { write: line => lines.push(line) })
   expect(lines).toContain('git: not a repository')
+})
+
+test('streams model text and tool cards live while the run is still in flight', async () => {
+  const workspace = join(dir, 'live-repo')
+  const sessionsDir = join(dir, 'live-sessions')
+  await mkdir(workspace)
+  await writeFile(join(workspace, 'note.txt'), 'before\n', 'utf8')
+  const gate = deferred()
+  const lines: string[] = []
+
+  const operation = runCodingCommand({
+    workspace,
+    task: 'Update the note.',
+    trustWorkspace: true,
+    approval: 'allow',
+    sessionsDir,
+  }, {
+    output: { write: line => lines.push(line) },
+    adapterFactory: () => new ScriptedAdapter([
+      { steps: [
+        { chunk: { delta: 'starting\n' }, hold: gate.promise },
+        { chunk: { toolCalls: [
+          { id: 'edit-1', name: 'edit_file', args: { path: 'note.txt', old_string: 'before', new_string: 'after' } },
+        ] } },
+      ] },
+      { steps: [{ chunk: { delta: 'done' } }] },
+    ]),
+    generateId: () => 'live-session',
+  })
+
+  // 模型流被 hold 卡住：此刻已经出现实时输出，说明是流式而不是结束后的汇总。
+  await vi.waitFor(() => expect(lines).toContain('  starting'))
+  expect(lines.some(line => line.startsWith('assistant:'))).toBe(false)
+
+  gate.resolve()
+  const result = await operation
+
+  expect(lines).toContain('→ edit_file note.txt')
+  expect(lines).toContain('← ok edited note.txt (1 replacement)')
+  expect(lines).toContain('  done')
+  expect(result.assistantText).toBe('done')
+
+  renderCodingResult(result, { write: line => lines.push(line) })
+  expect(lines).toContain('assistant: done')
 })

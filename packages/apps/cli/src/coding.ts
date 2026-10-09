@@ -13,6 +13,7 @@ import { LocalFs, LocalSubprocess } from '@cubus/tools'
 import { createCliToolApproval } from './approval.ts'
 import type { CliApprovalMode, ToolApprovalPrompter } from './approval.ts'
 import { resolveCliPath } from './config.ts'
+import { createLiveRenderer } from './live.ts'
 
 export interface CodingCommandOptions {
   workspace: string
@@ -25,6 +26,8 @@ export interface CodingCommandOptions {
 
 export interface CodingCommandDependencies {
   adapterFactory?: () => LlmAdapter
+  /** 提供时以实时事件流渲染运行过程；不提供则只在结束后汇总（既有行为）。 */
+  output?: CodingCommandOutput
   /** Used by the real CLI to load credentials only after workspace trust is validated. */
   prepareAdapterFactory?: () => Promise<() => LlmAdapter>
   cwd?: string
@@ -204,6 +207,13 @@ export async function runCodingCommand(
   })
   const session = await runtime.create()
   dependencies.signal?.throwIfAborted()
+  // 实时渲染：订阅会话日志的落盘事件（不引入第二个状态源）。
+  const renderer = dependencies.output === undefined ? undefined : createLiveRenderer(dependencies.output)
+  const unsubscribe = renderer === undefined
+    ? undefined
+    : runtime.subscribe(session.id, event => {
+        renderer.onEvent(event)
+      })
   let cancelled = false
   const cancel = (): void => {
     cancelled = true
@@ -215,6 +225,8 @@ export async function runCodingCommand(
     run = await runtime.run(session.id, options.task)
   } finally {
     dependencies.signal?.removeEventListener('abort', cancel)
+    if (unsubscribe !== undefined) unsubscribe()
+    renderer?.flush()
   }
 
   // 报告在结束或取消后都必须产出，因此不参与运行期取消。

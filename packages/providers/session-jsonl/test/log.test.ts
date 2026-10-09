@@ -101,3 +101,41 @@ test('provider lifecycle exposes and removes the session seam', async () => {
   await provider.dispose()
   expect(ctx.get('sessionLog')).toBeUndefined()
 })
+
+test('subscribe delivers events only after they are durable, in append order', async () => {
+  const log = new SessionLogFile(logPath)
+  const seen: string[] = []
+
+  await log.append(ev('turn/start', { turnId: 'before-subscribe' }))
+  const unsubscribe = log.subscribe(event => {
+    // 回调时事件必须已经可以从日志里读到 —— 实时流不领先于事实源。
+    seen.push(event.type + ':' + String((event as { turnId?: string }).turnId ?? ''))
+  })
+  await log.append(ev('turn/start', { turnId: 't1' }))
+  await log.append(ev('step/start', { stepId: 's1', turnId: 't1' }))
+
+  expect(seen).toEqual(['turn/start:t1', 'step/start:t1'])
+  const { events } = await log.read()
+  expect(events.map(event => event.type)).toEqual(['turn/start', 'turn/start', 'step/start'])
+
+  unsubscribe()
+  await log.append(ev('turn/end', { turnId: 't1' }))
+  expect(seen).toEqual(['turn/start:t1', 'step/start:t1'])
+})
+
+test('a throwing subscriber cannot break durability or other subscribers', async () => {
+  const log = new SessionLogFile(logPath)
+  const seen: string[] = []
+  log.subscribe(() => {
+    throw new Error('subscriber exploded')
+  })
+  log.subscribe(event => {
+    seen.push(event.type)
+  })
+
+  await expect(log.append(ev('turn/start', { turnId: 't1' }))).resolves.toBeUndefined()
+
+  const { events } = await log.read()
+  expect(events).toHaveLength(1)
+  expect(seen).toEqual(['turn/start'])
+})

@@ -100,6 +100,18 @@ export class SessionRuntime<RecipeOptions = void> {
     return operation
   }
 
+  /**
+   * 订阅该会话后续落盘的事件（实时视图，顺序与日志一致，落盘后才回调）。
+   * 返回取消订阅函数；provider 不支持实时流时返回 no-op。
+   */
+  subscribe(sessionId: string, listener: (event: SessionEvent) => void): () => void {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('session not found: ' + sessionId)
+    const log = session.ctx.get('sessionLog')
+    if (log?.subscribe === undefined) return () => {}
+    return log.subscribe(listener)
+  }
+
   /** Cancel only the currently running turn; queued or future runs remain available. */
   cancel(sessionId: string): void {
     const session = this.sessions.get(sessionId)

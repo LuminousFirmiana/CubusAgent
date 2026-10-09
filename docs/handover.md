@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：E1a 工作台服务端完成（HTTP + SSE + 会话列表/恢复）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：E3 工作台真模型入口 + 单页 UI 完成（含“刷新等价”验收）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -49,6 +49,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| E3 真模型入口 + UI | 完成 | main.ts：凭据租约 -> DeepSeek 适配器、显式审批档（无默认）、会话目录必须在工作区外、只监听回环；ui/{index.html,app.js} 零构建单页：会话列表（待恢复/日志问题角标）+ 实时事件流（EventSource 自动续传）+ transcript 渲染 + token 用量 |
 | E1a 工作台服务端 | 完成 | 新包 @cubus/workbench：GET/POST /api/sessions、GET /api/sessions/:id（摘要+快照+预算+运行状态）、POST .../run（202 异步）、GET .../events（SSE，先回放再订阅）、POST .../resume、GET /api/concurrency；SDK 新增 listSessions/readSessionSummary/readSessionEvents（容错 JSONL）+ replay()/sessionsDir；错误语义化映射 400/404/409/500 |
 | D4b 评测集 30 任务 | 完成 | 夹具从 7 扩到 30（覆盖 boundary/logic/type-coercion/async/side-effect/error-handling/missing-branch 七类），suite 版本 1.1.0；套件清单与磁盘夹具集合由测试双向对齐；每个任务用真模型生成 golden |
 | D4a 行为指纹与门禁 | 完成 | fingerprint.ts：行为指纹（判分 / 事件序列 / 工具序列 / 工作区文件集，来自 A1 只读 Git 报告）+ compareFingerprints 四条规则；harness 把夹具副本变成真 git 仓库并产出指纹；eval:real 报告门禁结果并因回归退出非零；eval:golden 显式重算（打印 diff、拒绝从失败运行生成） |
@@ -60,7 +61,7 @@
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 E1b：工作台真模型入口（main.ts，凭据+审批档）与最小页面（看得见正在发生什么） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 E4：差异视图（复用 A1 的 git 报告），随后 E5 审批交互、E6 恢复视图 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
@@ -212,10 +213,14 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 界面无状态 = 刷新等价 | 前端不缓存任何状态：打开会话就是“订阅日志（先回放、后实时）”，因此刷新页面 = 重新回放同一份日志。真实验收：同一会话两条连接的事件帧逐帧一致（358 帧） |
+| 服务进程不 process.exit | 服务启动成功后必须让事件循环活着（由监听中的 HTTP 服务保持）；只有启动失败或收到 SIGINT/SIGTERM 才退出 —— 第一版在 main 返回后 exit(0)，服务启动即自杀（已记入坑列表） |
 | 工作台事件流用 SSE | 单向“日志 -> 浏览器”正好匹配；原生重连 + Last-Event-ID 续传；curl 就能调试。上行操作走普通 POST，不需要双向通道 |
 | 控制帧易失、日志才是事实源 | run-state / session-resumed 不落盘：连得晚的客户端从日志（turn/start…turn/end）或 GET 详情取状态，界面不得依赖控制帧 |
 | 工作台只做编排 | 它不碰内核、不造会话语义：所有状态来自会话日志与 SDK 既有能力（C6 并发、D3 恢复）。app 负责接线（模型/凭据/Host/权限档/recipe）—— 因此测试可以直接注入假模型的运行时 |
 | SSE 先回放再订阅 | 事件流先回放日志里已有的事件，再推实时事件：断线重连不会丢上下文，且日志始终是唯一事实源（工作台不维护影子状态） |
+| pnpm 的 -- 会原样进脚本 | pnpm run x -- --flag 会把 -- 也传进来（CLI/评测/工作台都踩过）：每个入口都要先剥掉开头的 -- |
+| 会话列表要跳过隐藏目录 | 扫 sessions 目录时 .git/.trash 之类不是会话；否则编辑器或工具的杂物会污染列表（已加测试） |
 | 环境相关的夹具必须自带环境 | timezone-day 在本地（Asia/Shanghai）能红、在 CI（UTC）却绿 —— 因为 bug 只在本地时区与 UTC 不同日时才可见。修法：夹具的 testCommand 自己钉死环境（`TZ=UTC-8`，POSIX 形式，不依赖 tzdata），并用「本地 00:30」这类必然跨日期的时刻。判据：同一夹具在 UTC/Asia/Shanghai/America/New_York 三种环境下的行为必须一致 |
 | 夹具与套件清单双向对齐 | 测试断言 suite.tasks 与磁盘上的 fixture 目录集合完全一致：清单漏夹具 = 任务不参与评测；夹具漏清单 = 任务集名不副实。每个夹具还必须「修前必失败、参考修复必通过」 |
 | golden 显式重算 | 重算命令打印与旧 golden 的 diff，且拒绝从判分失败的运行生成 —— 防止「顺手刷新」掩盖回归 |
@@ -304,16 +309,15 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：E3 Web UI 骨架 + E3 前的真模型入口（roadmap E）
+## 10. 下一步：E4 差异视图与 E5 审批交互（roadmap E）
 
-服务端与协议已就绪（E1/E2）。接下来把它接到人手上：
+工作台已经能看到“正在发生什么”（E1/E2/E3）。接下来两小步：
 
-1. **真模型入口**（`main.ts`）：凭据 -> DeepSeek 适配器（沿用 CLI 的 model 层）、显式审批档（默认 ask）、端口/工作区/会话目录参数；
-2. **单页 HTML**（无构建步骤）：会话列表 + 实时事件流（EventSource，带 Last-Event-ID 自动续传）+ 运行状态 + token 用量；
-3. **transcript 回放**：按日志投影渲染（user/assistant/tool 卡片，chunk 打字机效果可选）；
-4. **UI 无状态验收**（roadmap E3 的判据）：任务跑到一半刷新页面，渲染结果与刷新前一致 —— 因为界面只读日志。
+1. **E4 差异视图**：会话结束后展示本次改动（复用 A1 的只读 git 报告）—— 与 CLI 的输出同源，不另写 diff 逻辑；
+2. **E5 审批交互**：页面上回答 ask/allow/deny（含超时默认拒绝），把现在的静态档升级为交互档；
+3. **E6 恢复视图**：列表里对 `needsSettlement` 的会话给出“恢复”按钮，并把结算事件在 transcript 里显示成“恢复时补写的闭合”。
 
-之后 E4 差异视图（复用 A1 的 git 报告）、E5 审批交互、E6 恢复视图。
+之后进 F（个人交付：一键运行、配置、日志归档）。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

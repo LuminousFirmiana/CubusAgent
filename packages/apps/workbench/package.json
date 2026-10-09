@@ -11,17 +11,18 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "demo:api": "node --import tsx/esm examples/api-demo.ts"
+    "demo:api": "node --import tsx/esm examples/api-demo.ts",
+    "start": "node --import tsx/esm src/main.ts"
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
-    "@cubus/sdk": "workspace:*",
-    "@cubus/session": "workspace:*"
-  },
-  "devDependencies": {
+    "@cubus/credentials": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
+    "@cubus/llm-retry": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*",
+    "@cubus/sdk": "workspace:*",
+    "@cubus/session": "workspace:*",
     "@cubus/tool-approval": "workspace:*"
   }
 }

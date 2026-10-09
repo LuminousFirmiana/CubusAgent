@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { AssemblyMismatchError } from '@cubus/agent-recipe'
 import { listSessions, readSessionSummary, SessionRuntime } from '@cubus/sdk'
 import { SessionFormatError } from '@cubus/session'
@@ -32,6 +34,29 @@ export interface WorkbenchServer {
   readonly port: number
   readonly host: string
   close(): Promise<void>
+}
+
+/** 前端资源（零构建：直接读 ui/ 下的文件，路径不依赖 cwd）。 */
+const assets = new Map<string, { path: string; contentType: string }>([
+  ['index.html', { path: fileURLToPath(new URL('../ui/index.html', import.meta.url)), contentType: 'text/html; charset=utf-8' }],
+  ['app.js', { path: fileURLToPath(new URL('../ui/app.js', import.meta.url)), contentType: 'text/javascript; charset=utf-8' }],
+])
+
+function serveAsset(res: ServerResponse, name: string, fallbackType: string): void {
+  const asset = assets.get(name)
+  if (asset === undefined) {
+    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('not found: ' + name)
+    return
+  }
+  try {
+    const body = readFileSync(asset.path)
+    res.writeHead(200, { 'content-type': asset.contentType || fallbackType, 'content-length': body.length })
+    res.end(body)
+  } catch (error) {
+    res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('cannot read asset ' + name + ': ' + messageOf(error))
+  }
 }
 
 /** 带 HTTP 状态码的错误（app 自己的参数校验用）。 */
@@ -220,8 +245,18 @@ export async function startWorkbenchServer<RecipeOptions>(
     const segments = url.pathname.split('/').filter(segment => segment !== '')
     const method = req.method ?? 'GET'
 
-    // GET / —— 端点清单（页面在 E2；这里先让人 curl 得清楚）
+    // GET / —— 单页界面（零构建；它只读日志与 API，自己不保存状态）
     if (method === 'GET' && segments.length === 0) {
+      serveAsset(res, 'index.html', 'text/html; charset=utf-8')
+      return
+    }
+    if (method === 'GET' && segments.length === 1 && segments[0] === 'app.js') {
+      serveAsset(res, 'app.js', 'text/javascript; charset=utf-8')
+      return
+    }
+
+    // GET /api —— 端点清单（人在终端里 curl 得清楚）
+    if (method === 'GET' && segments.length === 1 && segments[0] === 'api') {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
       res.end([
         'CubusAgent workbench (API only)',

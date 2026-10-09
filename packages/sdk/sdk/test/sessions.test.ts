@@ -86,6 +86,10 @@ test('listSessions summarises live and crashed sessions, newest first', async ()
   const second = await runtime.create()
   await runtime.run(second.id, '任务二')
 
+  // 隐藏目录不是会话（否则编辑器/工具的杂物会污染列表）
+  const { mkdir: mkdirHidden } = await import('node:fs/promises')
+  await mkdirHidden(join(sessions, '.trash'), { recursive: true })
+
   const summaries = await listSessions(sessions)
   expect(summaries.map(summary => summary.id)).toEqual(['s2', 's1'])
   for (const summary of summaries) {

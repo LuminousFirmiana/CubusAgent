@@ -123,6 +123,8 @@ export async function listSessions(rootDir: string): Promise<SessionSummary[]> {
   const summaries: SessionSummary[] = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
+    // 隐藏目录（.git、编辑器杂物）不是会话
+    if (entry.name.startsWith('.')) continue
     summaries.push(await readSessionSummary(join(rootDir, entry.name)))
   }
   summaries.sort((left, right) => {

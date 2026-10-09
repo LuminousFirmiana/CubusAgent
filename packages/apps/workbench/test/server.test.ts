@@ -234,6 +234,54 @@ test('event frames carry log indexes and a reconnect resumes with Last-Event-ID:
   expect(secondIds).toEqual(expectedIds)
 }, 30_000)
 
+test('the UI is served as static assets and the API index stays available for curl', async () => {
+  const { server: wb } = await start()
+
+  const page = await fetch(wb.url + '/')
+  expect(page.headers.get('content-type')).toContain('text/html')
+  const html = await page.text()
+  // 页面引用脚本与工具栏是它与服务端的契约
+  expect(html).toContain('<script src="/app.js">')
+  expect(html).toContain('CubusAgent 工作台')
+  expect(html).toContain('id="transcript"')
+
+  const script = await fetch(wb.url + '/app.js')
+  expect(script.headers.get('content-type')).toContain('text/javascript')
+  const js = await script.text()
+  // 靠 EventSource 订阅日志（浏览器会自动带 Last-Event-ID 续传）
+  expect(js).toContain('new EventSource(')
+  expect(js).toContain("source.addEventListener('session-event'")
+  // 无状态原则写在代码里：前端不缓存，只按事件渲染
+  expect(js).toContain('无状态原则')
+
+  const index = await (await fetch(wb.url + '/api')).text()
+  expect(index).toContain('POST /api/sessions/:id/run')
+})
+
+test('replaying the same log twice yields identical frames: refreshing renders the same thing', async () => {
+  const { server: wb } = await start()
+  await fetch(wb.url + '/api/sessions', { method: 'POST' })
+  await fetch(wb.url + '/api/sessions/wb1/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ task: '看一下 note.txt' }),
+  })
+
+  const collect = async (): Promise<string[]> => {
+    const frames = await readIndexedStream(wb.url + '/api/sessions/wb1/events', list =>
+      list.some(frame => frame.event === 'session-event' && (frame.data as { type?: string }).type === 'turn/end'),
+    )
+    return frames
+      .filter(frame => frame.event === 'session-event')
+      .map(frame => String(frame.id) + ':' + JSON.stringify(frame.data))
+  }
+
+  // 两次独立的"打开页面"（= 两次全新连接）必须得到逐帧一致的结果 —— 界面只读日志，所以刷新等价
+  const first = await collect()
+  const second = await collect()
+  expect(second).toEqual(first)
+}, 30_000)
+
 test('resume refuses a session whose log has no assembly snapshot, and reports the reason', async () => {
   const { server: wb } = await start()
   const legacy = join(sessions, 'legacy')
@@ -272,8 +320,8 @@ test('input errors are reported as HTTP errors, not crashes', async () => {
   const unknownRoute = await fetch(wb.url + '/api/nope')
   expect(unknownRoute.status).toBe(404)
 
-  // 索引页列出端点（人能 curl 得清楚）
-  const index = await (await fetch(wb.url + '/')).text()
+  // 索引列出端点（人能 curl 得清楚）；根路径是界面
+  const index = await (await fetch(wb.url + '/api')).text()
   expect(index).toContain('POST /api/sessions/:id/run')
 })
 

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -107,14 +108,19 @@ test('subscribe delivers events only after they are durable, in append order', a
   const seen: string[] = []
 
   await log.append(ev('turn/start', { turnId: 'before-subscribe' }))
+
+  // 回调时事件必须已经可以从日志里读到 —— 实时流不领先于事实源。
+  const durableAtCallback: boolean[] = []
   const unsubscribe = log.subscribe(event => {
-    // 回调时事件必须已经可以从日志里读到 —— 实时流不领先于事实源。
+    durableAtCallback.push(readFileSync(logPath, 'utf8').includes(JSON.stringify(event)))
     seen.push(event.type + ':' + String((event as { turnId?: string }).turnId ?? ''))
   })
   await log.append(ev('turn/start', { turnId: 't1' }))
   await log.append(ev('step/start', { stepId: 's1', turnId: 't1' }))
 
   expect(seen).toEqual(['turn/start:t1', 'step/start:t1'])
+  // 每个回调发生时，该事件都已存在于日志文件里。
+  expect(durableAtCallback).toEqual([true, true])
   const { events } = await log.read()
   expect(events.map(event => event.type)).toEqual(['turn/start', 'turn/start', 'step/start'])
 

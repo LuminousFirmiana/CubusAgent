@@ -133,6 +133,12 @@ importers:
       '@cubus/agent-recipe':
         specifier: workspace:*
         version: link:../../core/agent-recipe
+      '@cubus/git':
+        specifier: workspace:*
+        version: link:../../seams/git
+      '@cubus/git-cli':
+        specifier: workspace:*
+        version: link:../../providers/git-cli
       '@cubus/host-local':
         specifier: workspace:*
         version: link:../../hosts/local

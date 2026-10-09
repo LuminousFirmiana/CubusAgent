@@ -11,6 +11,8 @@ export interface EvalTaskOutcome {
   readonly durationMs: number
   readonly logPath: string
   readonly gate?: EvalGateLevel
+  /** 与 golden 的回归门禁结果（没有 golden 的任务缺省）。 */
+  readonly regression?: { readonly ok: boolean; readonly differences: readonly string[] }
 }
 
 export interface EvalRunSummary {

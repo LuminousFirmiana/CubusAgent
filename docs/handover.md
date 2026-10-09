@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：D3b usage 落盘与 token 预算完成（真模型日志可算 token）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：D4a 行为指纹与回归门禁机制完成（并据实测修订了门禁默认档）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -47,6 +47,7 @@
 | B 阶段收尾验证 | 完成 | 真模型 add-bug PASS 10.6s + 机械核对（recipe 无 provider 构造、loop 无能力词汇依赖、提交未碰内核文件） |
 | C1 沙箱/凭据 ADR | 完成（Accepted） | docs/design/sandbox-seam.md：威胁模型 + sandbox/credentials 能力形状 + Docker provider 契约 + 预算与并发边界 + 拒绝测试清单 |
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
+| D4a 行为指纹与门禁 | 完成 | fingerprint.ts：行为指纹（判分 / 事件序列 / 工具序列 / 工作区文件集，来自 A1 只读 Git 报告）+ compareFingerprints 四条规则；harness 把夹具副本变成真 git 仓库并产出指纹；eval:real 报告门禁结果并因回归退出非零；eval:golden 显式重算（打印 diff、拒绝从失败运行生成） |
 | D3b usage 与 token 预算 | 完成 | LlmUsage 进会话词汇（assistant/message.usage?，不进投影）；DeepSeek 适配器带 stream_options.include_usage 并解析末帧（含 cachedTokens）；Loop 落盘 usage；预算新增 maxTokens（读 usage 累计）；CLI 新增 --max-tokens 并打印 token 用量 |
 | D3 恢复与结算 | 完成 | 词汇：turn/end.settled?、step/end.settled?；core/session 新增 settle.ts（纯函数规划 + 结算事件）与 meta.ts（SESSION_FORMAT_VERSION=2、sidecar 解析规则）；SDK 写 session.meta.json 并提供 resume()：身份校验 + 结算；预算跨崩溃续算 |
 | D2 Eval Suite 制品化 | 完成 | fixtures/suites/repair-eval-v1.json 显式任务清单（含门禁档位）；loadSuite/validateSuite/resolveSuiteTasks；harness 入口校验 recipe 声明的套件已注册；评测结果写 EVALS.md + evals-latest.json（机器可读） |
@@ -55,12 +56,12 @@
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 D4：评测集扩到 30–50 任务 + 行为指纹回归门禁（D1 §4） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 D4b：评测集从 7 个扩到 30+ 任务并逐个生成 golden |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：246 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：251 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -205,6 +206,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 沙箱与 fs/subprocess 叠加而非替换 | sandbox 描述强制边界，fs/subprocess 描述边界内怎么读写与执行；三者在同一 Host 内必须自洽 |
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
+| 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| golden 显式重算 | 重算命令打印与旧 golden 的 diff，且拒绝从判分失败的运行生成 —— 防止「顺手刷新」掩盖回归 |
 | usage 是响应事实、不进投影 | assistant/message.usage? 由 provider 流末帧给出；它可从日志重建（满足不变量）但不是模型可见内容：投影只读 content/thinking/toolCalls |
 | 预算不进 Loop | 预算 = 观察会话日志的策略插件，超限调用 loop.cancel() 走既有取消与结算；不新增事件类型，trip 原因经 budget 服务暴露给 app |
 | 恢复要先结算再继续 | 崩溃留下的未闭合区间由新进程补闭合（settled 标记）；孤儿工具调用补「结果未知」的结果 —— 不补的话下一轮请求的 tool_calls 没有配对，provider 直接报错 |
@@ -290,16 +293,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：D4 评测集扩充与行为指纹回归门禁（roadmap D4）
+## 10. 下一步：D4b 评测集扩充（roadmap D4 剩余部分）
 
-D 阶段收尾：把「能测」变成「测得动、测得准」。
+机制已就位（指纹 + 门禁 + golden 命令 + 自证测试）。剩下的是**量**：
 
-1. 评测集从 7 个扩到 30–50 个任务（多文件改动、依赖安装、真实仓库级任务；每个任务仍自带 fixture.json 与参考修复）；
-2. 行为指纹（D1 §4）：实现 BehaviorFingerprint 的计算（事件类型序列 + 工具序列 + 工作区文件集）与比较（judge 必须过；文件集相等；工具序列按 gate 档位；调用数 ≤ golden + 3）；
-3. golden 生成命令（显式重算 + 打印 diff），指纹文件随 fixture 提交；原始日志作为 CI artifact；
-4. 自证测试：故意削弱 prompt 让门禁变红；同一任务真模型跑两次门禁仍绿（不误报）。
+1. 任务集从 7 个扩到 30+：多文件改动、依赖、真实仓库级任务；每个任务自带 fixture.json 与参考修复；
+2. 每个新任务生成 golden（`pnpm run eval:golden -- --task <id>`，真模型，逐个提交指纹文件）；
+3. 无 key 门禁（fixtures.test.ts）自动覆盖新任务：夹具真的坏 + 参考修复能让它变绿 + 指纹可算；
+4. 可选：为「必须运行过测试」这类过程性要求引入任务级必需动作（ADR §4.4 末尾的候选工作）。
 
-完成 D4 后 roadmap 的 D 阶段收尾，接下来是 E（工作台）与 F（个人交付）。
+D 阶段收尾后进 E（工作台）与 F（个人交付）。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

@@ -10,12 +10,22 @@ import type { Fixture } from './fixtures.ts'
  * 现在 suite 是显式制品：命名 + 版本 + 判分方式 + 任务清单（含每任务的门禁档位）。
  */
 
-/** 回归门禁档位（D4 用）：strict = 工具序列完全一致；subsequence = golden 的工具按序出现；none = 只看判分。 */
-export type EvalGateLevel = 'strict' | 'subsequence' | 'none'
+/**
+ * 回归门禁档位（D4）。
+ *
+ * - `guardrails`（默认）：判分 + 文件集 + 调用预算三条硬规则，**不比工具身份**；
+ * - `strict`：额外要求工具序列完全一致（适合确定性回放的任务）；
+ * - `subsequence`：额外要求 golden 的工具按序出现（适合顺序本身有语义的任务）。
+ *
+ * 为什么默认不比工具身份：实测一次**判分通过、修复正确、文件集一致**的运行因为
+ * 「用 bash cat 读文件而不是 read_file」被判红。工具身份是**实现选择**，不是行为契约；
+ * 拿它做硬门禁只会制造假红灯（修订记录见 ADR §4.4）。
+ */
+export type EvalGateLevel = 'strict' | 'subsequence' | 'guardrails'
 
 export interface EvalTaskRef {
   readonly id: string
-  /** 缺省 'subsequence'。 */
+  /** 缺省 'guardrails'。 */
   readonly gate?: EvalGateLevel
 }
 
@@ -34,7 +44,7 @@ export class EvalSuiteError extends Error {
   }
 }
 
-const GATE_LEVELS: readonly EvalGateLevel[] = ['strict', 'subsequence', 'none']
+const GATE_LEVELS: readonly EvalGateLevel[] = ['strict', 'subsequence', 'guardrails']
 
 export function suitesRoot(): string {
   return join(import.meta.dirname, '..', 'fixtures', 'suites')

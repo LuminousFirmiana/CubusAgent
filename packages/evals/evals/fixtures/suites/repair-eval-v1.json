@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "judge": "hidden-tests",
   "tasks": [
-    { "id": "add-bug", "gate": "subsequence" },
-    { "id": "empty-input", "gate": "subsequence" },
-    { "id": "in-place-mutation", "gate": "subsequence" },
-    { "id": "missing-await", "gate": "subsequence" },
-    { "id": "off-by-one", "gate": "subsequence" },
-    { "id": "string-coercion", "gate": "subsequence" },
-    { "id": "swallowed-error", "gate": "subsequence" }
+    { "id": "add-bug", "gate": "guardrails" },
+    { "id": "empty-input", "gate": "guardrails" },
+    { "id": "in-place-mutation", "gate": "guardrails" },
+    { "id": "missing-await", "gate": "guardrails" },
+    { "id": "off-by-one", "gate": "guardrails" },
+    { "id": "string-coercion", "gate": "guardrails" },
+    { "id": "swallowed-error", "gate": "guardrails" }
   ]
 }

@@ -1,3 +1,5 @@
+import { GitCliWorkspaceProvider } from '@cubus/git-cli'
+import type { GitChangeReport } from '@cubus/git'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { SessionRuntime } from '@cubus/sdk'
 import type { LlmAdapter } from '@cubus/llm'
@@ -5,6 +7,8 @@ import { repairEvalRecipe, REPAIR_EVAL_SUITE } from '@cubus/recipe-repair-eval'
 import type { SessionEvent } from '@cubus/session'
 import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
 import { LocalSubprocess } from '@cubus/tools'
+import { behaviorFingerprint } from './fingerprint.ts'
+import type { BehaviorFingerprint } from './fingerprint.ts'
 import { assertSuiteRegistered } from './suites.ts'
 
 export { CODING_AGENT_PROMPT } from '@cubus/recipe-repair-eval'
@@ -31,6 +35,25 @@ export interface EvalRunResult {
   logPath: string
   /** 判分测试输出（截尾）。 */
   testOutput: string
+  /** 工作区变更（A1 只读 Git 报告）：行为指纹的文件集来源。 */
+  changes: GitChangeReport
+  /** 行为指纹（D4）：回归门禁的比较对象。 */
+  fingerprint: BehaviorFingerprint
+}
+
+/** 让夹具副本成为可提交的 git 仓库（指纹需要文件集；重复调用是幂等的）。 */
+async function gitInit(repoDir: string, subprocess: LocalSubprocess): Promise<void> {
+  const signal = new AbortController().signal
+  const run = (command: string): Promise<{ exitCode: number | null; stdout: string; stderr: string }> =>
+    subprocess.run(command, { cwd: repoDir, signal })
+  // 幂等：已经是仓库就直接返回
+  const probe = await run('git rev-parse --git-dir')
+  if (probe.exitCode === 0) return
+  await run('git init -q -b main')
+  await run('git config user.email eval@cubus.local')
+  await run('git config user.name cubus-eval')
+  await run('git add -A')
+  await run('git commit -q -m fixture')
 }
 
 /**
@@ -53,6 +76,12 @@ export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunRes
 
   const testCommand = opts.testCommand ?? "node --test 'test/*.test.ts'"
   const subprocess = new LocalSubprocess()
+
+  // 夹具副本变成真实 git 仓库：行为指纹要读工作区文件集（走 A1 的只读 Git provider，
+  // 而不是另写一个目录比对器）。基线在运行前记录，因此不要求副本干净。
+  await gitInit(opts.repoDir, subprocess)
+  const git = new GitCliWorkspaceProvider(subprocess)
+  const baseline = await git.baseline(opts.repoDir)
 
   const runtime = new SessionRuntime({
     rootDir: opts.sessionsDir,
@@ -78,9 +107,16 @@ export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunRes
     signal: new AbortController().signal,
   })
   const passed = testResult.exitCode === 0
+  const changes = await git.report(opts.repoDir, baseline)
 
   return {
     passed,
+    changes,
+    fingerprint: behaviorFingerprint({
+      events: run.turnEvents,
+      judge: passed ? 'pass' : 'fail',
+      changes,
+    }),
     ...(run.assistantText === undefined ? {} : { assistantText: run.assistantText }),
     turnEvents: run.turnEvents,
     logPath: session.logPath,

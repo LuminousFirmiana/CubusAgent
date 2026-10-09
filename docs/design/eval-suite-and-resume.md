@@ -47,8 +47,8 @@ interface EvalSuite {
 
 interface EvalTaskRef {
   id: string                 // fixture 目录名（含 testCommand / 参考修复）
-  /** 回归门禁的强度：strict = 工具序列必须完全一致；subsequence = golden 的工具按序出现即可；none = 只看判分 */
-  gate?: 'strict' | 'subsequence' | 'none'
+  /** 门禁强度：guardrails（默认）/ strict / subsequence —— 见 §4.2 与 §4.4 */
+  gate?: 'strict' | 'subsequence' | 'guardrails'
   golden?: BehaviorFingerprint   // §4；缺省表示该任务没有 golden
 }
 ```
@@ -91,7 +91,7 @@ interface BehaviorFingerprint {
 |---|---|---|
 | 1 | `judge === 'pass'` | 硬性：功能必须仍然正确 |
 | 2 | 文件集相等 | 路径与变更类别必须与 golden 一致（多改一个文件 = 越界，少改 = 没做完） |
-| 3 | 工具序列 | `strict`：完全一致；`subsequence`：golden 的工具按序出现，允许夹带其它工具；`none`：跳过 |
+| 3 | 工具序列 | **仅当档位为 `strict` / `subsequence` 时才比较**；默认档 `guardrails` 不比工具身份（§4.4） |
 | 4 | 调用预算 | 工具调用总数 ≤ golden + 3（挡住"退化成暴力重试"） |
 
 ### 4.3 存放与更新
@@ -99,6 +99,31 @@ interface BehaviorFingerprint {
 - 指纹文件随 fixture 提交进 git（`fixtures/bug-repos/<id>/golden.json`，小且可审）；
 - 原始会话日志不进 git（体积），作为 CI artifact 归档，供人复盘；
 - 更新 golden 必须**显式**（`pnpm run eval:golden -- <task>` 重算并打印 diff），避免"顺手刷新"把回归掩盖掉。
+
+## 4.4 修订记录（2026-10-09）：工具身份不做默认硬门禁
+
+**实测发现**。D4 首次用真模型跑门禁时，一次**判分通过、修复正确、工作区文件集与 golden 完全一致**的运行被判红：
+
+```
+golden: [bash, bash, bash, bash, read_file, read_file, bash, edit_file, bash]
+实际:   [bash, bash, bash, bash, bash,            edit_file, bash]
+gate FAIL: tools (subsequence): golden [...] is not covered in order by [...]
+```
+
+原因：这次模型用 `bash cat` 读文件而没有调用 `read_file` —— **行为等价，工具身份不同**。
+
+**结论**：工具身份是**实现选择**，不是行为契约。把它当硬门禁会制造假红灯，而假红灯的直接后果是「团队开始无视门禁」（§10 列出的头号风险）。
+
+**修订**：
+
+1. 门禁档位改为 `guardrails`（默认）/ `strict` / `subsequence`：
+   - `guardrails` = 规则 1（判分）+ 规则 2（文件集）+ 规则 4（调用预算），**不看工具序列**；
+   - `strict` / `subsequence` 保留给「顺序本身有语义」的任务，按任务显式开启。
+2. 工具序列仍然**记录**在指纹里，并在报告与 diff 里打印 —— 它是给人看的证据，不是自动判据。
+
+**这个门禁现在能抓什么**（都有测试）：判分回退、越界改动（多改/少改文件）、退化成暴力重试（调用数 > golden + 3）。
+
+**它抓不到什么**（诚实记录）：同样是修好但「不再自测」这类**过程性**退化。要抓它需要**任务级必需动作**（例如任务声明「必须运行过 node --test」），而不是全局序列匹配 —— 列为 D4 之后的候选工作。
 
 ## 5. 恢复与结算（D3 实现）
 

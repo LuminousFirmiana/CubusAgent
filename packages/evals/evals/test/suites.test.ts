@@ -34,7 +34,8 @@ test('the repair-eval suite is an explicit, versioned artifact', async () => {
     'string-coercion',
     'swallowed-error',
   ])
-  expect(suite.tasks.every(task => task.gate === 'subsequence')).toBe(true)
+  // 默认门禁档：guardrails（判分 + 文件集 + 调用预算，不比工具身份）
+  expect(suite.tasks.every(task => task.gate === 'guardrails')).toBe(true)
 })
 
 test('every fixture belongs to a suite so nothing silently falls out of the eval', async () => {
@@ -61,6 +62,7 @@ test('a suite that lists an unknown task, a duplicate task or a bad judge is rej
   expect(() => validateSuite({ ...validSuite, tasks: [] })).toThrow('at least one task')
   expect(() => validateSuite({ ...validSuite, tasks: [{ id: 'a', gate: 'loose' as never }] }))
     .toThrow('unsupported gate for a: loose')
+  expect(() => validateSuite({ ...validSuite, tasks: [{ id: 'a', gate: 'guardrails' }] })).not.toThrow()
 })
 
 test('suite task order drives the run order, and unknown suites fail with the available list', async () => {

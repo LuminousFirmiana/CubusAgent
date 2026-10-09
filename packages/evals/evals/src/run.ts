@@ -12,40 +12,17 @@
 import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DeepSeekAdapter } from '@cubus/llm'
-import { withLlmRetry } from '@cubus/llm-retry'
+import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
+import { compareFingerprints, goldenPathFor, parseGolden } from './fingerprint.ts'
 import { runRepairTask } from './harness.ts'
+import { createAdapterFactory, loadEnvFile, modelName, optionValue, requireApiKey, scriptArgs } from './model.ts'
 import { renderLatestResult } from './results.ts'
 import { loadSuiteTasks } from './suites.ts'
-import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
 
-// 加载仓库根的 .env：本文件位于 packages/evals/evals/src，
-// 上溯四级（src -> evals -> evals 组 -> packages -> 仓库根）。
-// 不依赖 cwd —— 无论从哪里启动本脚本都能找到。
-const rootDir = join(import.meta.dirname, '..', '..', '..', '..')
-try {
-  const raw = readFileSync(join(rootDir, '.env'), 'utf8')
-  for (const line of raw.split('\n')) {
-    const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    const name = match?.[1]
-    if (match && name !== undefined && process.env[name] === undefined) {
-      process.env[name] = match[2] ?? ''
-    }
-  }
-} catch {
-  // 没有 .env：让下面的 key 检查报出明确错误
-}
-
-const apiKey = process.env['DEEPSEEK_API_KEY']
-if (!apiKey) {
-  console.error('DEEPSEEK_API_KEY is required')
-  process.exit(2)
-}
-
-const model = process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat'
-// pnpm run 会把分隔符 -- 原样传给脚本（与 CLI 入口同一个坑），先剥掉。
-const args = process.argv.slice(2)
-if (args[0] === '--') args.shift()
+loadEnvFile()
+const apiKey = requireApiKey()
+const model = modelName()
+const args = scriptArgs()
 
 /**
  * 任务集来自 **suite 清单**（D2），不再靠扫目录：
@@ -53,19 +30,8 @@ if (args[0] === '--') args.shift()
  *   pnpm run eval:real --suite <id>         # 指定套件
  *   pnpm run eval:real --task <fixture-id>  # 只跑套件里的某一个任务
  */
-function optionValue(name: string): string | undefined {
-  const index = args.indexOf(name)
-  if (index < 0) return undefined
-  const value = args[index + 1]
-  if (value === undefined || value.startsWith('--')) {
-    console.error(name + ' requires a value')
-    process.exit(2)
-  }
-  return value
-}
-
 const declaredSuite = repairEvalRecipe.manifest.evaluation?.suite
-const suiteId = optionValue('--suite') ?? declaredSuite
+const suiteId = optionValue(args, '--suite') ?? declaredSuite
 if (suiteId === undefined) {
   console.error('repair-eval recipe does not declare an evaluation suite; pass --suite <id>')
   process.exit(2)
@@ -78,7 +44,7 @@ try {
   console.error(error instanceof Error ? error.message : String(error))
   process.exit(2)
 }
-const taskFilter = optionValue('--task')
+const taskFilter = optionValue(args, '--task')
 const selected = taskFilter === undefined
   ? suite.fixtures
   : suite.fixtures.filter(fixture => fixture.spec.id === taskFilter)
@@ -98,6 +64,8 @@ interface FixtureOutcome {
   passed: boolean
   durationMs: number
   logPath: string
+  /** 与 golden 的门禁对比（没有 golden 的任务缺省）。 */
+  regression?: { ok: boolean; differences: readonly string[] }
 }
 
 const outcomes: FixtureOutcome[] = []
@@ -108,17 +76,22 @@ for (const fixture of selected) {
   const result = await runRepairTask({
     repoDir: join(workDir, 'repo'),
     sessionsDir: join(workDir, 'sessions'),
-    adapterFactory: () => withLlmRetry(
-      new DeepSeekAdapter({
-        baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
-        apiKey,
-        model,
-      }),
-      { maxAttempts: 3 },
-    ),
+    adapterFactory: createAdapterFactory(apiKey, model),
     testCommand: fixture.spec.testCommand,
   })
   const durationMs = Date.now() - startedAt
+
+  // 回归门禁（D4）：有 golden 就比行为指纹（判分 / 文件集 / 工具序列 / 调用预算）。
+  const goldenPath = goldenPathFor(fixture.dir)
+  const gate = suite.suite.tasks.find(task => task.id === fixture.spec.id)?.gate ?? 'guardrails'
+  const regression = existsSync(goldenPath)
+    ? compareFingerprints(
+        parseGolden(readFileSync(goldenPath, 'utf8'), goldenPath),
+        result.fingerprint,
+        gate,
+      )
+    : undefined
+
   outcomes.push({
     id: fixture.spec.id,
     title: fixture.spec.title,
@@ -126,6 +99,7 @@ for (const fixture of selected) {
     passed: result.passed,
     durationMs,
     logPath: result.logPath,
+    ...(regression === undefined ? {} : { regression: { ok: regression.ok, differences: regression.differences } }),
   })
   console.log(
     (result.passed ? 'PASS' : 'FAIL') + '  ' +
@@ -133,6 +107,9 @@ for (const fixture of selected) {
     (durationMs / 1000).toFixed(1) + 's  ' +
     fixture.spec.title,
   )
+  if (regression !== undefined && !regression.ok) {
+    console.log('      gate FAIL: ' + regression.differences.join('; '))
+  }
 }
 
 const passed = outcomes.filter(outcome => outcome.passed).length
@@ -144,11 +121,12 @@ lines.push('## ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' U
   ' · ' + String(outcomes.length) + ' fixtures · ' + String(passed) + '/' + String(outcomes.length) +
   ' passed (' + String(percentage) + '%)')
 lines.push('')
-lines.push('| fixture | bug 类型 | 结果 | 耗时 | 会话日志 |')
-lines.push('|---|---|---|---|---|')
+lines.push('| fixture | bug 类型 | 结果 | 门禁 | 耗时 | 会话日志 |')
+lines.push('|---|---|---|---|---|---|')
 for (const outcome of outcomes) {
+  const gate = outcome.regression === undefined ? '—' : (outcome.regression.ok ? '✅' : '❌ ' + outcome.regression.differences.join('; '))
   lines.push('| ' + outcome.id + ' | ' + outcome.bugKind + ' | ' + (outcome.passed ? '✅' : '❌') +
-    ' | ' + (outcome.durationMs / 1000).toFixed(1) + 's | ' + outcome.logPath + ' |')
+    ' | ' + gate + ' | ' + (outcome.durationMs / 1000).toFixed(1) + 's | ' + outcome.logPath + ' |')
 }
 lines.push('')
 lines.push('总耗时 ' + totalSeconds + 's。未通过项需人工看日志定位（会话日志即完整轨迹）。')
@@ -187,12 +165,19 @@ writeFileSync(latestPath, renderLatestResult({
       durationMs: outcome.durationMs,
       logPath: outcome.logPath,
       ...(gate === undefined ? {} : { gate }),
+      ...(outcome.regression === undefined ? {} : { regression: outcome.regression }),
     }
   }),
 }), 'utf8')
 
 console.log('')
+const regressions = outcomes.filter(outcome => outcome.regression !== undefined && !outcome.regression.ok)
+console.log('')
 console.log(String(passed) + '/' + String(outcomes.length) + ' passed (' + String(percentage) + '%) · model ' + model)
+if (regressions.length > 0) {
+  console.log(String(regressions.length) + ' regression(s) against golden: ' + regressions.map(o => o.id).join(', '))
+}
 console.log('score table: ' + scorePath)
 console.log('machine-readable: ' + join(import.meta.dirname, '..', 'evals-latest.json'))
-process.exit(passed === outcomes.length ? 0 : 1)
+// 判分失败或门禁变红都算这次评测没过（回归门禁的意义就在这里）
+process.exit(passed === outcomes.length && regressions.length === 0 ? 0 : 1)

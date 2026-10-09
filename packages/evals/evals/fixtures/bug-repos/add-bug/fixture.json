@@ -1,0 +1,16 @@
+{
+  "id": "add-bug",
+  "title": "add() 用减法实现",
+  "bugKind": "logic",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/math.ts",
+        "old_string": "a - b",
+        "new_string": "a + b"
+      }
+    }
+  ]
+}

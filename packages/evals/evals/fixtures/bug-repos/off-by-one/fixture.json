@@ -1,0 +1,16 @@
+{
+  "id": "off-by-one",
+  "title": "head() 多取一个元素（循环边界）",
+  "bugKind": "boundary",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/head.ts",
+        "old_string": "i <= count",
+        "new_string": "i < count"
+      }
+    }
+  ]
+}

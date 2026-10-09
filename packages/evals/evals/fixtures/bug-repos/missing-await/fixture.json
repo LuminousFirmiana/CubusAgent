@@ -1,0 +1,24 @@
+{
+  "id": "missing-await",
+  "title": "describeFirst() 忘记 await 异步结果",
+  "bugKind": "async",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/first.ts",
+        "old_string": "export function describeFirst(values: number[]): string {",
+        "new_string": "export async function describeFirst(values: number[]): Promise<string> {"
+      }
+    },
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/first.ts",
+        "old_string": "const value = firstItem(values)",
+        "new_string": "const value = await firstItem(values)"
+      }
+    }
+  ]
+}

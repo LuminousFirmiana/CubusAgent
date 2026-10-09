@@ -1,0 +1,16 @@
+{
+  "id": "in-place-mutation",
+  "title": "sortedCopy() 原地修改调用方数组",
+  "bugKind": "side-effect",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/sorted.ts",
+        "old_string": "return values.sort((a, b) => a - b)",
+        "new_string": "return [...values].sort((a, b) => a - b)"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "string-coercion",
+  "title": "sumAll() 把字符串拼接当成求和",
+  "bugKind": "type-coercion",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/sum.ts",
+        "old_string": "total += value",
+        "new_string": "total += Number(value)"
+      }
+    }
+  ]
+}

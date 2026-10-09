@@ -1,0 +1,16 @@
+{
+  "id": "empty-input",
+  "title": "average() 在空数组上返回 NaN",
+  "bugKind": "missing-branch",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/average.ts",
+        "old_string": "  let total = 0",
+        "new_string": "  if (values.length === 0) return 0\n  let total = 0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "swallowed-error",
+  "title": "parseCount() 对非法输入静默返回 0",
+  "bugKind": "error-handling",
+  "testCommand": "node --test 'test/*.test.ts'",
+  "referenceFix": [
+    {
+      "tool": "edit_file",
+      "args": {
+        "path": "src/parse.ts",
+        "old_string": "if (Number.isNaN(value)) return 0",
+        "new_string": "if (Number.isNaN(value)) throw new Error('not a number: ' + text)"
+      }
+    }
+  ]
+}

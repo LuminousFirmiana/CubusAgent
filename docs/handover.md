@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：S4.5 CLI 实时事件渲染完成。本文件是"接手这个项目的第一份读物"。
+> 最后更新：S4.6 评测 fixtures 扩充完成。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -39,7 +39,8 @@
 | S4.3b 工具执行取消 | 完成 | Tool signal 上下文 + 审批取消 + 进程组终止 + 完整日志结算 + CLI/SDK 入口 |
 | S4.4 Git 变更报告 | 完成 | 只读 Git seam/provider（seams/git + providers/git-cli）+ 基线-报告边界 + CLI 输出 |
 | S4.5 CLI 实时渲染 | 完成 | SessionLog 订阅 seam + SDK subscribe + CLI 实时输出（chunk 逐行、工具卡片、结果行） |
-| P4 Coding Agent profile | 进行中 | 下一步 S4.6 评测 fixtures 扩充（roadmap A3）；会话 resume 属 roadmap D3 |
+| S4.6 评测 fixtures | 完成 | 7 个修复任务 fixture（7 类 bug）+ fixture.json 自描述 + 无 key 门禁 15 条 + 真模型分数表 EVALS.md |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步进 roadmap B1：Recipe 声明式契约与能力协商 ADR |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
@@ -104,6 +105,7 @@ packages/recipes/repair-eval/     由 Coding Recipe 工厂派生的修复评测�
 packages/apps/cli/                Coding Agent headless CLI 应用入口（含运行前后只读 Git 变更报告）
 packages/seams/llm/               模型接缝（接口 + 两个 provider）
 packages/seams/git/               只读 Git 工作区状态 seam（Service Definition）
+packages/evals/evals/             修复任务评测：fixtures/bug-repos/* 自描述夹具 + 无 key 门禁 + 真模型分数表
 packages/providers/git-cli/       git CLI 只读 provider（走 subprocess seam）
 packages/plugins/tools/           真工具（fs/subprocess seam + 四工具）
 packages/sdk/sdk/                 SDK（协议/传输/服务端/会话运行时）
@@ -210,7 +212,7 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 13. `Loop.submit()` 在已有 turn 运行时只负责入队，不代表该条输入已完成；需要逐调用结果的协议层必须自己拥有并串行化运行区间。
 14. pnpm 在非 TTY 环境重建 `node_modules` 会拒绝确认；需要同步锁文件时用 `CI=true pnpm install --no-frozen-lockfile`，随后必须用 frozen-lockfile 复验。
 15. 不要并行启动多个可能触发 pnpm 依赖状态自检的命令；`node_modules` 需要重建时会争抢清理。安装完成后再串行跑定向检查。
-16. pnpm 的 `run ... -- args` 会把分隔符保留进嵌套脚本 argv；CLI 入口要归一化一个前导 `--`，并用真实子进程测试退出码和 stdout/stderr。
+16. pnpm 的 `run ... -- args` 会把分隔符保留进嵌套脚本 argv；每个入口脚本都要归一化一个前导 `--`（CLI 入口踩过一次，2026-10-09 评测脚本又踩一次），并用真实子进程测试退出码和 stdout/stderr。
 17. macOS 的临时目录 `/var/...` 经 `realpath` 会变成 `/private/var/...`；涉及安全边界和路径归属的实现与断言都比较规范路径。
 18. 模型流一旦产出任何 chunk 就不能透明重试；此时 request/header 与模型输出前缀已进入事实日志，重发会制造重复正文或工具意图。
 19. 只调用 `child.kill()` 通常只杀 Shell，不会收束它启动的后台进程；Unix 本地 provider 必须使用独立进程组，并测试忽略 SIGTERM 的孙进程不会继续产生副作用。
@@ -223,9 +225,11 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
 - Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
+- 评测：真模型分数表记录通过率与耗时，但不记录 token/费用（adapter 与日志都还没有 usage 字段）——要报成本先补 usage 落日志。
+- 评测：真模型全量跑目前是手动命令（pnpm run eval:real）；做成夜跑 CI 需要把 DEEPSEEK_API_KEY 作为仓库 secret，属于凭据决策，未擅自添加。
 - LLM provider：DeepSeek 已有 typed 错误和有界重试；其他供应商尚未接入，thinking 字段归一化表（vLLM/Qwen 等）未做。
 - 会话日志：无 SQLite/索引，查询靠全量读；无 SESSION_FORMAT_VERSION 信封。
-- fixture 只有一个（add-bug）；评测集需要攒到 30-50 个 + golden trajectory 回归机制。
+- 评测集：已有 7 个 fixture（7 类 bug）+ 自描述 fixture.json + 无 key 门禁；仍需攒到 30-50 个，并补 golden trajectory 回归门禁（roadmap D4）与真实仓库级任务（多文件、依赖安装）。
 - 循环：模型与工具执行均可取消且能闭合日志；但已完成的文件副作用不回滚，模型重试耗尽或产出部分 chunk 后失败仍会留下未闭合 step；无自动 resume/settlement 和压缩。
 - subprocess：Unix 本地 provider 能终止进程组；Windows 首版只能终止直接子进程，可靠的跨平台进程树隔离留给 P5 Docker provider。
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。

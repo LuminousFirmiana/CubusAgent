@@ -25,6 +25,53 @@ test('projects user and assistant messages, skips boundary and chunk events', ()
   ])
 })
 
+test('the assembly snapshot is not model-visible and never enters the projection', () => {
+  const mountEvent: SessionEvent = {
+    type: 'session/mount',
+    mount: {
+      recipe: { id: 'declarative-agent', version: '2.0.0', contractVersion: 1 },
+      capabilities: [{ kind: 'llm', provider: 'local-adapter', features: ['tool-calling'] }],
+      optionalMissing: [],
+      permission: { profile: 'ask', source: 'manifest' },
+      config: null,
+    },
+  }
+  const events: SessionEvent[] = [
+    mountEvent,
+    ev('user/message', { messageId: 'm1', content: [{ type: 'text', text: '你好' }] }),
+    ev('step/start', { stepId: 's1', turnId: 't1' }),
+    ev('request/header', { stepId: 's1', header: { provider: 'test', model: 'm1' } }),
+    ev('assistant/message', { messageId: 'm2', stepId: 's1', content: [{ type: 'text', text: '你好' }] }),
+    ev('turn/end', { turnId: 't1' }),
+  ]
+
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '你好' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '你好' }] },
+  ])
+  expect(deriveRequest(events, 's1')?.messages).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '你好' }] },
+  ])
+})
+
+test('logs written before the mount event existed still project identically', () => {
+  // 旧日志（无 session/mount）没有格式变更：同一条对话的事件序列不变。
+  const events: SessionEvent[] = [
+    ev('turn/start', { turnId: 't1' }),
+    ev('user/message', { messageId: 'm1', content: [{ type: 'text', text: '旧日志' }] }),
+    ev('step/start', { stepId: 's1', turnId: 't1' }),
+    ev('request/header', { stepId: 's1', header: { provider: 'test', model: 'm1', systemPrompt: '旧提示' } }),
+    ev('assistant/message', { messageId: 'm2', stepId: 's1', content: [{ type: 'text', text: '照旧' }] }),
+    ev('turn/end', { turnId: 't1' }),
+  ]
+
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '旧日志' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '照旧' }] },
+  ])
+  expect(deriveRequest(events, 's1')).toMatchObject({ provider: 'test', model: 'm1', systemPrompt: '旧提示' })
+})
+
 test('pairs tool calls with results into tool-result messages', () => {
   const events: SessionEvent[] = [
     ev('user/message', { messageId: 'm1', content: [{ type: 'text', text: '读文件' }] }),

@@ -2,12 +2,23 @@ import { agentLoopPlugin } from '@cubus/agent-loop'
 import type { AgentLoopPluginConfig } from '@cubus/agent-loop'
 import type { Context } from '@cubus/cordis'
 import { systemPromptPlugin } from '@cubus/system-prompt'
+import type { SystemPromptService } from '@cubus/system-prompt'
 import { toolRegistryPlugin } from '@cubus/tool-registry'
+import type { ToolRegistryService } from '@cubus/tool-registry'
+import {
+  CapabilityNegotiationError,
+  resolveCapabilities,
+  validateManifest,
+  verifyDeclarations,
+} from './capabilities.ts'
+import type { ActualContributions, CapabilityPins } from './capabilities.ts'
+import { createMountSnapshot, MountSnapshotError } from './snapshot.ts'
 import type {
   AgentHost,
   AgentRecipe,
-  AgentRecipeManifest,
   AgentSessionDescriptor,
+  CapabilityRequirement,
+  HostCapabilityOffering,
 } from './types.ts'
 
 export interface AgentRuntimePluginConfig<RecipeOptions = void> {
@@ -16,45 +27,122 @@ export interface AgentRuntimePluginConfig<RecipeOptions = void> {
   recipeOptions: RecipeOptions
   session: AgentSessionDescriptor
   loop?: AgentLoopPluginConfig
+  /** app 级 pin：同一 kind 有多个候选时消解歧义（不 pin 即装配失败）。 */
+  capabilityPins?: CapabilityPins
+  /** app 级审批档覆盖；优先级 app > manifest.permission。 */
+  permissionProfile?: string
 }
 
-function validateManifest(manifest: AgentRecipeManifest): void {
-  const fields = [
-    ['id', manifest.id],
-    ['version', manifest.version],
-    ['displayName', manifest.displayName],
-  ] as const
-  for (const [name, value] of fields) {
-    if (value.trim() === '') throw new TypeError(`agent recipe manifest ${name} must not be empty`)
+/** 声明式装配的协商结果（legacy 装配为 undefined）。 */
+interface DeclarativeAssembly {
+  readonly selection: readonly HostCapabilityOffering[]
+  readonly optionalMissing: readonly CapabilityRequirement[]
+}
+
+/**
+ * 需求 x 供给协商：只在 recipe 声明了 requires 时走这条路。
+ * 缺必需能力 / 歧义 / pin 未知 / Host 不支持声明，都在这里失败（装配期）。
+ */
+function negotiate(
+  manifest: AgentRecipe['manifest'],
+  host: AgentHost,
+  pins: CapabilityPins | undefined,
+): DeclarativeAssembly | undefined {
+  const requirements = manifest.requires
+  if (requirements === undefined) return undefined
+
+  const offerings = host.capabilities?.()
+  if (offerings === undefined) {
+    throw new CapabilityNegotiationError({
+      recipeId: manifest.id,
+      reason: 'undeclared-host',
+      candidates: [],
+      available: [],
+    })
+  }
+
+  const resolution = resolveCapabilities({
+    recipeId: manifest.id,
+    requirements,
+    offerings,
+    ...(pins === undefined ? {} : { pins }),
+  })
+
+  // 协商结果只带描述；回填 Host 的 offering 对象以保留装配动作。
+  const selection = offerings.filter(offering =>
+    resolution.selection.some(chosen =>
+      chosen.kind === offering.kind && chosen.provider === offering.provider))
+
+  return { selection, optionalMissing: resolution.optionalMissing }
+}
+
+/** 从已挂载的服务读出"实际注册了什么"，用于声明/实现校验。 */
+function actualContributions(ctx: Context): ActualContributions {
+  const promptService = ctx.get('systemPrompt') as SystemPromptService | undefined
+  const toolService = ctx.get('tools') as ToolRegistryService | undefined
+  return {
+    promptFragmentIds: (promptService?.list() ?? []).map(fragment => fragment.id),
+    toolNames: (toolService?.snapshot() ?? []).map(tool => tool.name),
   }
 }
 
 /**
  * One session composition root. Child fibers preserve the Host/Recipe boundary while
  * making the complete assembly reversible through one parent fiber.
+ *
+ * B3 起：声明式装配走"协商 -> 只挂选中 -> 校验声明 -> 写装配快照"；
+ * legacy 装配（recipe 无 requires）保持原行为，不写快照。
  */
 export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePluginConfig<RecipeOptions>) {
-  validateManifest(config.recipe.manifest)
-  const recipeId = config.recipe.manifest.id
+  const manifest = config.recipe.manifest
+  validateManifest(manifest)
+  const recipeId = manifest.id
+  const assembly = negotiate(manifest, config.host, config.capabilityPins)
 
   return {
-    name: `agent-runtime:${recipeId}`,
+    name: 'agent-runtime:' + recipeId,
     async apply(ctx: Context) {
       await ctx.plugin(systemPromptPlugin)
       await ctx.plugin(toolRegistryPlugin)
       await ctx.plugin({
         name: 'agent-host',
         apply(hostContext: Context) {
-          return config.host.mount(hostContext, config.session)
+          return assembly === undefined
+            ? config.host.mount(hostContext, config.session)
+            : config.host.mount(hostContext, config.session, assembly.selection)
         },
       })
       await ctx.plugin({
-        name: `agent-recipe:${recipeId}`,
+        name: 'agent-recipe:' + recipeId,
         apply(recipeContext: Context) {
           return config.recipe.mount(recipeContext, config.recipeOptions)
         },
       })
       await ctx.plugin(agentLoopPlugin, config.loop ?? {})
+
+      // 声明式装配才记录快照：legacy 路径没有协商结果，写一份空清单会撒谎。
+      if (assembly === undefined) return
+
+      verifyDeclarations(manifest, actualContributions(ctx))
+
+      const permission = config.permissionProfile === undefined
+        ? { profile: manifest.permission?.profile ?? 'unspecified', source: 'manifest' as const }
+        : { profile: config.permissionProfile, source: 'app' as const }
+
+      const snapshot = createMountSnapshot({
+        manifest,
+        selection: assembly.selection,
+        optionalMissing: assembly.optionalMissing,
+        permission,
+        config: config.recipeOptions,
+      })
+
+      const log = ctx.get('sessionLog')
+      if (log === undefined) {
+        throw new MountSnapshotError(recipeId, 'cannot record session/mount: no session-log provider is mounted')
+      }
+      // 装配已全部成功；这条事件必须是日志第一条（此前没有任何写入者）。
+      await log.append({ type: 'session/mount', mount: snapshot })
     },
   }
 }

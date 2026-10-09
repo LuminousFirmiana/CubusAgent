@@ -1,5 +1,6 @@
 import type { Context } from '@cubus/cordis'
 import type { CapabilityKind } from '@cubus/session'
+import type { CapabilityOffering } from './capabilities.ts'
 
 /** 一项能力需求：kind 必填，features 做子集匹配，required 默认 true。 */
 export interface CapabilityRequirement {
@@ -54,7 +55,29 @@ export interface AgentSessionDescriptor {
   readonly logPath: string
 }
 
+/**
+ * Host 声明的一项能力：描述（kind/provider/features）+ 装配动作。
+ * 装配动作只在该 offering 被协商选中时执行。
+ */
+export interface HostCapabilityOffering extends CapabilityOffering {
+  mount(ctx: Context, session: AgentSessionDescriptor): Promise<void> | void
+}
+
 /** Environment providers. The Host does not choose prompt or product tools. */
 export interface AgentHost {
-  mount(ctx: Context, session: AgentSessionDescriptor): Promise<void> | void
+  /**
+   * 声明本 Host 能提供的能力（B3 起）。
+   * 缺省 = 本 Host 不支持声明式协商；此时声明了 requires 的 recipe 会在装配期失败。
+   */
+  capabilities?(): readonly HostCapabilityOffering[]
+  /**
+   * 挂载环境 provider。
+   * - 声明式装配（recipe 有 requires）：selection 是协商选中的 offerings，只挂这些；
+   * - legacy 装配（recipe 无声明）：不给 selection，Host 按自己的默认行为挂载。
+   */
+  mount(
+    ctx: Context,
+    session: AgentSessionDescriptor,
+    selection?: readonly HostCapabilityOffering[],
+  ): Promise<void> | void
 }

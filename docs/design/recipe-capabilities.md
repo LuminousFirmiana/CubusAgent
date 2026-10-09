@@ -78,6 +78,8 @@ interface CapabilityRequirement {
 | 默认审批档名、评测套件 id | 领域服务、记忆、检索等插件装配 |
 | 呈现意图（label/description/icon） | 任何条件分支、循环、IO |
 
+声明式 manifest 的必填子集（B3 起由 validateManifest 强制）：`contractVersion`、`requires`、`prompt`、`tools`、`permission` —— 缺任何一项装配期报 `RecipeManifestError`。`description`、`evaluation`、`presentation` 保持可选。理由：快照要完整记录产品面，半套声明会让快照出现"未指定"的洞。
+
 明确**不进** manifest：凭据值（只声明 `credentials` 需求）、Host/provider 选择（recipe 永不点名 host）、模型参数（属 app/部署决策；实际值由 `request/header` 记录）、YAML/JSON 编写方式。
 
 ## 5. 声明与实现的对应校验
@@ -89,7 +91,8 @@ interface CapabilityRequirement {
 | prompt 基座 | `prompt.fragmentId` 必须已被注册 | `RecipeDeclarationMismatchError` |
 | 工具集合 | 注册的工具名集合 **等于** `tools` 声明集合 | 同上，错误列出两侧差集 |
 | 评测套件 | `evaluation.suite` 必须在评测包已注册（仅评测运行时校验） | 同上 |
-| manifest 自身 | 字段合法性：契约版本可识别、kind 属于闭集、同名 kind 不重复、字符串非空 | `RecipeManifestError` |
+| manifest 自身 | 字段合法性：契约版本可识别、kind 属于闭集、同名 kind 不重复、字符串非空、必填子集齐全 | `RecipeManifestError` |
+| 装配快照 | config 必须是纯 JSON 值（拒绝类实例/函数）；会话必须有 session-log provider 才能记录快照 | `MountSnapshotError` |
 
 理由：声明若允许与实现不同，"声明式"就退化成注释。集合相等比包含更严格也更可预测（插件多注册一个工具必须显式声明）。
 
@@ -102,6 +105,7 @@ resolveCapabilities(requires, offerings, pins) -> { selection, optionalMissing }
 1. 对每个 requirement：候选 = offerings 中 kind 相同且 `requirement.features ⊆ offering.features` 的项；
 2. 候选 0 个：`required !== false` -> 抛 `CapabilityNegotiationError`（带 recipe id、缺失 kind/features、以及 host 实际能提供的清单）；可选 -> 记入 `optionalMissing`；
 3. 候选 > 1：app 未 pin（`pins[kind]`）则**失败**（歧义必须显式消解，不静默挑一个）；pin 指向不存在的 provider 也失败；
+3b. Host 未实现 `capabilities()` 而 recipe 声明了 requires：reason `undeclared-host`，文案直接说明。
 4. 每种 kind 至多选中一个；`selection` 按 kind 名排序（确定性）。
 
 `optionalMissing` 必须进装配快照，并在 CLI 输出一条 warning：可选能力缺失会改变产品行为，不能静默。
@@ -185,7 +189,8 @@ export interface MountedCapability {
 | 声明/实现不符 | 注册工具集合与 `tools` 不等 -> `RecipeDeclarationMismatchError`，含两侧差集 |
 | 同一 recipe 换 Host 零改动 | 同一 recipe 分别用 local Host 与假 Docker Host 装配：prompt/tools 一致，快照 provider 名不同；recipe 目录无 diff |
 | 新 recipe 零内核改动 | 测试内定义一个仅存在于测试文件的 recipe 并成功装配运行；内核包无 diff（评审清单项） |
-| 快照可复现装配 | `create()` 后日志第一条即快照，且与 recipe+host+config 推导出的值往返一致 |
+| 快照可复现装配 | `create()` 后日志第一条即快照，且与 recipe+host+config 推导出的值往返一致（B3 已在真实 JSONL 上验证） |
+| 只挂被选中的能力 | Host 声明 3 项、recipe 只要求 2 项时，未选中项的 mount 不被调用 |
 | 旧日志仍可读 | 无 `session/mount` 的既有日志照常投影与回放（回归测试） |
 | 装配失败不写日志 | 协商失败时 `create()` 抛错且会话目录内无 `session.jsonl` |
 

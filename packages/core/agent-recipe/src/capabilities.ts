@@ -32,7 +32,7 @@ export interface CapabilityResolutionInput {
   readonly pins?: CapabilityPins
 }
 
-export type CapabilityNegotiationReason = 'missing' | 'ambiguous' | 'unknown-pin'
+export type CapabilityNegotiationReason = 'missing' | 'ambiguous' | 'unknown-pin' | 'undeclared-host'
 
 function describeRequirement(requirement: CapabilityRequirement): string {
   const features = requirement.features ?? []
@@ -67,12 +67,21 @@ function covers(offering: CapabilityOffering, requirement: CapabilityRequirement
 function negotiationMessage(options: {
   recipeId: string
   reason: CapabilityNegotiationReason
-  requirement: CapabilityRequirement
+  requirement?: CapabilityRequirement
   candidates: readonly CapabilityOffering[]
   available: readonly CapabilityOffering[]
 }): string {
-  const wanted = describeRequirement(options.requirement)
   const available = describeOfferings(options.available)
+  if (options.reason === 'undeclared-host') {
+    return 'recipe ' + options.recipeId +
+      ' declares capability requirements but the host does not implement capabilities()'
+  }
+  const requirement = options.requirement
+  if (requirement === undefined) {
+    return 'recipe ' + options.recipeId + ' capability negotiation failed (' + options.reason +
+      '); host offers: ' + available
+  }
+  const wanted = describeRequirement(requirement)
   if (options.reason === 'missing') {
     return 'recipe ' + options.recipeId + ' requires capability ' + wanted +
       ' but the host offers no matching capability; host offers: ' + available
@@ -81,9 +90,9 @@ function negotiationMessage(options: {
     const providers = options.candidates.map(candidate => candidate.kind + ':' + candidate.provider).join(', ')
     return 'recipe ' + options.recipeId + ' requires ' + wanted + ' and the host offers ' +
       String(options.candidates.length) + ' candidates (' + providers +
-      '); pin one explicitly, e.g. { ' + options.requirement.kind + ": '<provider>' }"
+      '); pin one explicitly, e.g. { ' + requirement.kind + ": '<provider>' }"
   }
-  return 'recipe ' + options.recipeId + ' pinned ' + options.requirement.kind +
+  return 'recipe ' + options.recipeId + ' pinned ' + requirement.kind +
     ' to a provider the host does not offer; candidates: ' + describeOfferings(options.candidates) +
     '; host offers: ' + available
 }
@@ -92,14 +101,14 @@ function negotiationMessage(options: {
 export class CapabilityNegotiationError extends Error {
   readonly recipeId: string
   readonly reason: CapabilityNegotiationReason
-  readonly requirement: CapabilityRequirement
+  readonly requirement: CapabilityRequirement | undefined
   readonly candidates: readonly CapabilityOffering[]
   readonly available: readonly CapabilityOffering[]
 
   constructor(options: {
     recipeId: string
     reason: CapabilityNegotiationReason
-    requirement: CapabilityRequirement
+    requirement?: CapabilityRequirement
     candidates: readonly CapabilityOffering[]
     available: readonly CapabilityOffering[]
     message?: string
@@ -119,7 +128,7 @@ export class RecipeManifestError extends Error {
   readonly recipeId: string
 
   constructor(recipeId: string, message: string) {
-    super('recipe ' + recipeId + ': ' + message)
+    super('recipe ' + (recipeId === '' ? '(empty id)' : recipeId) + ': ' + message)
     this.name = 'RecipeManifestError'
     this.recipeId = recipeId
   }
@@ -165,6 +174,16 @@ export function validateManifest(manifest: AgentRecipeManifest): void {
   if (!hasDeclarations(manifest)) return
   if (manifest.contractVersion !== 1) {
     throw new RecipeManifestError(id, 'manifest.contractVersion must be 1 when declaration fields are present')
+  }
+  // 声明式 manifest 必须是完整契约：否则装配快照无法完整记录产品面。
+  if (manifest.prompt === undefined) {
+    throw new RecipeManifestError(id, 'manifest.prompt is required for a declarative manifest')
+  }
+  if (manifest.tools === undefined) {
+    throw new RecipeManifestError(id, 'manifest.tools is required for a declarative manifest')
+  }
+  if (manifest.permission === undefined) {
+    throw new RecipeManifestError(id, 'manifest.permission is required for a declarative manifest')
   }
 
   const seen = new Set<string>()

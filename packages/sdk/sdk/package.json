@@ -21,6 +21,7 @@
   "devDependencies": {
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
     "@cubus/tool-registry": "workspace:*"
   }
 }

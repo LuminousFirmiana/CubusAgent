@@ -81,9 +81,18 @@ export interface RequestHeader {
 
 /**
  * 会话事件的闭合联合（closed union）：
- * 十个事件类型覆盖 turn / step / request / user / assistant / tool 六个域。
+ * 十一个事件类型覆盖 mount / turn / step / request / user / assistant / tool 七个域。
  */
 export type SessionEvent =
+  | {
+      /**
+       * 装配快照：会话创建成功时记录一次，是日志的第一条事件（B 阶段新增）。
+       * 它不是模型可见内容 —— 投影忽略它，只用于回答"这套会话按什么装起来的"。
+       * 装配失败不写日志，因此它的存在等价于"装配成功"。
+       */
+      type: 'session/mount'
+      mount: MountSnapshot
+    }
   | { type: 'turn/start'; turnId: TurnId }
   | { type: 'turn/end'; turnId: TurnId }
   | { type: 'step/start'; stepId: StepId; turnId: TurnId }

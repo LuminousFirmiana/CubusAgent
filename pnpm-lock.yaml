@@ -290,6 +290,9 @@ importers:
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
       '@cubus/tool-registry':
         specifier: workspace:*
         version: link:../../core/tool-registry

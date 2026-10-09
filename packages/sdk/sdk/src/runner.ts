@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createAgentRuntimePlugin } from '@cubus/agent-recipe'
-import type { AgentHost, AgentRecipe, AgentSessionDescriptor } from '@cubus/agent-recipe'
+import type { AgentHost, AgentRecipe, AgentSessionDescriptor, CapabilityPins } from '@cubus/agent-recipe'
 import { Context } from '@cubus/cordis'
 import type { SessionEvent } from '@cubus/session'
 import { RpcInvalidParamsError } from './server.ts'
@@ -38,6 +38,10 @@ export interface SessionRuntimeOptions<RecipeOptions = void> {
   recipe: AgentRecipe<RecipeOptions>
   /** 绑定到所有新会话的 typed Recipe 配置。 */
   recipeOptions: RecipeOptions
+  /** app 级 pin：声明式装配下同一能力有多种候选时消解歧义。 */
+  capabilityPins?: CapabilityPins
+  /** app 级审批档覆盖；优先级高于 manifest.permission.profile。 */
+  permissionProfile?: string
   /** 会话 ID 生成器（测试注入计数器实现确定性）。 */
   generateId?: () => string
 }
@@ -70,6 +74,8 @@ export class SessionRuntime<RecipeOptions = void> {
       recipe: this.opts.recipe,
       recipeOptions: this.opts.recipeOptions,
       session: descriptor,
+      ...(this.opts.capabilityPins === undefined ? {} : { capabilityPins: this.opts.capabilityPins }),
+      ...(this.opts.permissionProfile === undefined ? {} : { permissionProfile: this.opts.permissionProfile }),
     }))
 
     this.sessions.set(id, { id, logPath, ctx, runTail: Promise.resolve() })

@@ -138,5 +138,5 @@ test('rejects an incomplete Recipe manifest before mounting any effects', () => 
     recipe,
     recipeOptions: undefined,
     session: { id: 's1', directory: '/tmp/s1', logPath: '/tmp/s1/session.jsonl' },
-  })).toThrow('agent recipe manifest id must not be empty')
+  })).toThrow('manifest.id must be a non-empty string')
 })

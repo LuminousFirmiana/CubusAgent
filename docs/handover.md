@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：B2 manifest 声明式字段 + 能力协商纯函数完成（B1 ADR 已 Accepted，快照采用方案 B）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：B3 Host 能力声明 + 选中装配 + session/mount 快照落盘完成。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -42,12 +42,13 @@
 | S4.6 评测 fixtures | 完成 | 7 个修复任务 fixture（7 类 bug）+ fixture.json 自描述 + 无 key 门禁 15 条 + 真模型分数表 EVALS.md |
 | B1 能力契约 ADR | 完成（Accepted） | docs/design/recipe-capabilities.md：manifest 声明面 + CapabilityKind 闭集 + 协商算法 + 装配期校验；快照确认采用方案 B（新增 session/mount 事件） |
 | B2 manifest + 协商纯函数 | 完成 | CapabilityKind/MountSnapshot 进 core/session；manifest 声明字段（可选，legacy 兼容）+ resolveCapabilities + validateManifest + verifyDeclarations + 三类类型化错误（19 条单测） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 B3：Host capabilities() + 选中装配 + session/mount 事件 + 装配期校验接线 |
+| B3 能力协商接线 | 完成 | AgentHost.capabilities() + 只挂选中 offerings + 装配期声明校验 + session/mount 成为日志第一条（第 11 种事件）+ 真实 JSONL 端到端验证 |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 B4：把 fs/subprocess/git 迁入 Host offerings，迁移三个 recipe 到声明式契约 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：163 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。33 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：176 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -55,7 +56,7 @@
 
 1. AGENTS.md —— 工程纪律（宪法、检查、TS 风格、锁文件、vendoring），人和 agent 都遵守；
 2. docs/handover.md —— 本文件；
-3. packages/core/session/src/types.ts —— 宪法第一页：会话日志词汇表（10 种事件 + 投影规则）；
+3. packages/core/session/src/types.ts —— 宪法第一页：会话日志词汇表（11 种事件 + 投影规则；session/mount 是装配快照，不进投影）；
 4. packages/core/agent-loop/src/loop.ts —— 循环驱动（turn/step 语义，约 200 行，必读）；
 5. packages/seams/llm/src/types.ts —— llm seam 的接口定义；
 6. docs/design/coding-agent-product.md —— Coding Agent 用户、信任边界与阶段验收；
@@ -181,6 +182,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 声明是数据、装配是代码 | manifest 只放名字与引用（能力 kind、prompt 片段 id、工具名、策略档名、评测 suite id）；分支/实现留在 mount。新增 manifest 字段必须同时给出装配期如何校验它 |
 | 能力 kind 是闭集 | 表达新需求要么用已有 kind+features，要么先落一个 seam 实现；不在配置层发明能力 |
 | 协商歧义即失败 | 同 kind 多个候选且 app 未 pin -> 装配期报错；不静默挑一个，也不在运行期降级 |
+| 装配快照是独立事件 | 新增 session/mount（第 11 种）：唯一且最先、非模型可见、确定性、可序列化无凭据；装配失败不写日志，所以它的存在等价于装配成功 |
+| 只挂被选中的能力 | Host 声明供给清单，运行时只把协商选中的 offerings 挂进会话；未选中的 mount 不被调用（有测试断言） |
 
 ## 7. Reference 项目的借鉴边界
 
@@ -242,16 +245,14 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：B3 Host 能力声明与 session/mount 快照（roadmap B3）
+## 10. 下一步：B4 迁移三个 recipe 与能力归属（roadmap B4）
 
-B2 已把声明与协商做成纯函数（19 条单测）。B3 把它接到真实装配上：
+B3 已把协商接到装配上（真实 JSONL 端到端验证）。B4 让现有产品真正用上它：
 
-1. AgentHost 增加 capabilities()：声明本 Host 能提供哪些 offerings（含 features），并只挂载被协商选中的那些；
-2. runtime.create() 串起协商 -> 装配 -> 声明校验（工具集合相等、片段 id 存在）-> 写 session/mount；
-3. core/session 增加 session/mount 事件（第 11 种）与投影忽略规则，补"旧日志仍可读"回归；
-4. 快照往返测试：日志第一条 == 由 recipe+host+config 推导的值；装配失败不写日志。
-
-B3 仍不迁移三个 recipe（legacy 路径保留），迁移是 B4。
+1. fs / subprocess / git 从 CLI 的 recipeOptions 迁入 Host offerings；CLI 只留部署参数（workspaceDir、sessionsDir、审批档、凭据来源）；
+2. reference-agent / coding-agent / repair-eval 三个 recipe 改为声明式（requires + prompt 片段 id + tools + permission + evaluation + presentation），删掉 legacy 装配路径；
+3. 审批档：manifest 默认 + CLI 覆盖，最终值与来源进快照；
+4. 验收：换 recipe 不改内核（既有 S3.5）、同 recipe 换 Host 不改 recipe、评测套件的 suite id 参与声明校验。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

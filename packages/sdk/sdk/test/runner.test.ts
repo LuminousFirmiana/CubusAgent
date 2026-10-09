@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +7,7 @@ import type { AgentRecipe } from '@cubus/agent-recipe'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { ScriptedAdapter } from '@cubus/llm'
 import type { LlmAdapter } from '@cubus/llm'
+import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
 import type { Tool } from '@cubus/tool-registry'
 import type { JsonRpcError, JsonRpcSuccess } from '../src/protocol.ts'
@@ -246,6 +248,58 @@ test('concurrent runs on one session each wait for and return their own complete
   expect(secondResult.turnEvents.filter(event => event.type === 'turn/start')).toHaveLength(1)
   expect(firstResult.turnEvents.find(event => event.type === 'user/message')?.content[0]?.text).toBe('一')
   expect(secondResult.turnEvents.find(event => event.type === 'user/message')?.content[0]?.text).toBe('二')
+})
+
+/** 声明式 recipe：走协商路径，装配快照会落进真实 JSONL 日志。 */
+const declarativeTestRecipe: AgentRecipe<void> = {
+  manifest: {
+    id: 'sdk-declarative',
+    version: '3.0.0',
+    displayName: 'SDK Declarative Agent',
+    contractVersion: 1,
+    requires: [{ kind: 'llm', features: ['tool-calling'] }, { kind: 'session-log' }],
+    prompt: { fragmentId: 'sdk/persona' },
+    tools: [],
+    permission: { profile: 'ask' },
+  },
+  async mount(ctx) {
+    await ctx.plugin(systemPromptContribution({ id: 'sdk/persona', text: 'You are a test agent.' }))
+  },
+}
+
+test('a declarative recipe records its assembly snapshot as the first log line', async () => {
+  const runtime = new SessionRuntime({
+    rootDir: dir,
+    host: createLocalAgentHost({ adapterFactory: () => new ScriptedAdapter([{ steps: [{ chunk: { delta: 'ok' } }] }]) }),
+    recipe: declarativeTestRecipe,
+    recipeOptions: undefined,
+    permissionProfile: 'deny',
+    generateId: makeIdGen('m'),
+  })
+
+  const session = await runtime.create()
+  const result = await runtime.run(session.id, 'go')
+
+  // 真实文件：第一行必须是装配快照，且容量/策略来自协商与 app 覆盖。
+  const lines = readFileSync(session.logPath, 'utf8').trim().split('\n')
+  const first = JSON.parse(lines[0] ?? '{}') as { type?: string, mount?: unknown }
+  expect(first.type).toBe('session/mount')
+  expect(first.mount).toEqual({
+    recipe: { id: 'sdk-declarative', version: '3.0.0', contractVersion: 1 },
+    capabilities: [
+      { kind: 'llm', provider: 'local-adapter', features: ['streaming', 'tool-calling'] },
+      { kind: 'session-log', provider: 'jsonl', features: ['live-subscribe'] },
+    ],
+    optionalMissing: [],
+    permission: { profile: 'deny', source: 'app' },
+    config: null,
+  })
+
+  // 装配成功后会话照常运行；快照不是模型可见内容。
+  expect(result.assistantText).toBe('ok')
+  const events = lines.map(line => JSON.parse(line) as { type: string })
+  expect(events.filter(event => event.type === 'session/mount')).toHaveLength(1)
+  expect(events.at(-1)?.type).toBe('turn/end')
 })
 
 /** 轮询等待条件成立（不用固定延迟猜时间）。 */

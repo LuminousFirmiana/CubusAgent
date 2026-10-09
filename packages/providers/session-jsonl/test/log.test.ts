@@ -26,6 +26,16 @@ afterEach(async () => {
 test('roundtrip: appended events read back byte-for-byte identical', async () => {
   const log = new SessionLogFile(logPath)
   const events: SessionEvent[] = [
+    // 装配快照（B 阶段新增的第 11 种事件）也必须字节级往返。
+    ev('session/mount', {
+      mount: {
+        recipe: { id: 'coding-agent', version: '1.0.0', contractVersion: 1 },
+        capabilities: [{ kind: 'llm', provider: 'local-adapter', features: ['tool-calling'] }],
+        optionalMissing: ['git'],
+        permission: { profile: 'ask', source: 'manifest' },
+        config: { workspaceDir: '/work' },
+      },
+    }),
     ev('turn/start', { turnId: 't1' }),
     ev('step/start', { stepId: 's1', turnId: 't1' }),
     ev('user/message', { messageId: 'm1', content: [{ type: 'text', text: '修一个 bug' }] }),

@@ -2,7 +2,7 @@
   "id": "timezone-day",
   "title": "用 UTC 取值判断\"今天\"，跨时区错一天",
   "bugKind": "logic",
-  "testCommand": "node --test 'test/*.test.ts'",
+  "testCommand": "TZ=UTC-8 node --test 'test/*.test.ts'",
   "referenceFix": [
     {
       "tool": "write_file",

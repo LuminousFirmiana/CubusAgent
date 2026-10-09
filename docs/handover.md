@@ -208,6 +208,7 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 环境相关的夹具必须自带环境 | timezone-day 在本地（Asia/Shanghai）能红、在 CI（UTC）却绿 —— 因为 bug 只在本地时区与 UTC 不同日时才可见。修法：夹具的 testCommand 自己钉死环境（`TZ=UTC-8`，POSIX 形式，不依赖 tzdata），并用「本地 00:30」这类必然跨日期的时刻。判据：同一夹具在 UTC/Asia/Shanghai/America/New_York 三种环境下的行为必须一致 |
 | 夹具与套件清单双向对齐 | 测试断言 suite.tasks 与磁盘上的 fixture 目录集合完全一致：清单漏夹具 = 任务不参与评测；夹具漏清单 = 任务集名不副实。每个夹具还必须「修前必失败、参考修复必通过」 |
 | golden 显式重算 | 重算命令打印与旧 golden 的 diff，且拒绝从判分失败的运行生成 —— 防止「顺手刷新」掩盖回归 |
 | usage 是响应事实、不进投影 | assistant/message.usage? 由 provider 流末帧给出；它可从日志重建（满足不变量）但不是模型可见内容：投影只读 content/thinking/toolCalls |

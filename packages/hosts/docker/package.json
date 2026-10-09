@@ -1,0 +1,30 @@
+{
+  "name": "@cubus/host-docker",
+  "version": "0.0.0",
+  "description": "Per-session Docker sandbox host: containerised fs, subprocess and sandbox capability",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/agent-recipe": "workspace:*",
+    "@cubus/cordis": "workspace:*",
+    "@cubus/credentials": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/sandbox": "workspace:*",
+    "@cubus/session-jsonl": "workspace:*",
+    "@cubus/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/sdk": "workspace:*",
+    "@cubus/session": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
+    "@cubus/tool-registry": "workspace:*"
+  }
+}

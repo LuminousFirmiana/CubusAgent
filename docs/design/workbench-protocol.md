@@ -33,6 +33,7 @@ POST /api/sessions              创建会话 -> 201 { session: { id, logPath } }
 GET  /api/sessions/:id          摘要 + 装配快照 + 预算状态 + 最近一次运行状态
 POST /api/sessions/:id/run      { task } -> 202（异步；事件走 SSE）
 GET  /api/sessions/:id/events   SSE 事件流（见 §4）
+GET  /api/sessions/:id/changes  本次运行的改动报告（只读 Git，见 §9）
 POST /api/sessions/:id/resume   恢复（D3 语义）-> 200 { formatVersion, settled, settlementEvents }
 ```
 
@@ -83,6 +84,17 @@ data: {"type":"tool/call","id":"c1","name":"read_file",...}
 - 服务**默认只监听 `127.0.0.1`**；工作台是本地工具，不是公网服务；
 - **v1 不做鉴权**：回环地址上的任何本地进程都能调用它（与 CLI 在本机的能力等价）；
 - 要把工作台暴露到回环之外，必须先补齐：令牌鉴权、CSRF/Origin 校验、审批档强制 ask、TLS 终止 —— 在此之前不得改默认监听地址。
+
+## 9. 改动报告（E4）
+
+GET /api/sessions/:id/changes 返回本次运行的改动（只读 Git 报告）：
+
+- 服务端在 POST …/run 开始前记录一次 Git 基线（内存里只有基线，不缓存报告）；
+- 请求时按需计算：当前工作区 - 基线；
+- 没有工作区（服务未配置）-> 409 started without a workspace；没有跑过 -> 409 no run has been recorded；
+- 非 git 工作区返回 isRepository: false（诚实表达不知道，而不是给一份空报告）。
+
+与 CLI 同源：两者都用 A1 的 GitCliWorkspaceProvider 与同一段 summary 渲染，因此输出格式一致。
 
 ## 7. 不做的事（非目标）
 

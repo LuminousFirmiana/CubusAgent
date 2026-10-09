@@ -157,6 +157,29 @@ async function refreshSessions(selectId) {
   return data.sessions
 }
 
+async function refreshChanges(id) {
+  const response = await fetch('/api/sessions/' + id + '/changes')
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ error: String(response.status) }))
+    marker('改动报告暂不可用：' + body.error)
+    return
+  }
+  const payload = await response.json()
+  const changes = payload.changes
+  if (!changes.isRepository) {
+    marker('工作区不是 git 仓库，无法给出改动报告')
+    return
+  }
+  if (changes.changed.length === 0) {
+    marker('本次运行没有改变任何文件')
+    return
+  }
+  for (const file of changes.changed) {
+    marker('改动 ' + file.kind + '：' + file.path +
+      '（+' + file.addedLines + ' / -' + file.removedLines + '）')
+  }
+}
+
 async function refreshDetail(id) {
   const detail = await (await fetch('/api/sessions/' + id)).json()
   const parts = []
@@ -200,6 +223,8 @@ function openSession(id) {
       if (frame.error) marker('运行失败：' + frame.error, 'error')
       if (frame.assistantText) marker('最终回复：' + frame.assistantText)
       refreshDetail(id).catch(() => {})
+      // 运行结束后看改动（复用 A1 的只读 Git 报告，与 CLI 输出同源）
+      refreshChanges(id).catch(() => {})
     }
   })
 }

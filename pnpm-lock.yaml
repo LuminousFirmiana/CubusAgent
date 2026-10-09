@@ -75,6 +75,12 @@ importers:
       '@cubus/credentials':
         specifier: workspace:*
         version: link:../../seams/credentials
+      '@cubus/git':
+        specifier: workspace:*
+        version: link:../../seams/git
+      '@cubus/git-cli':
+        specifier: workspace:*
+        version: link:../../providers/git-cli
       '@cubus/host-local':
         specifier: workspace:*
         version: link:../../hosts/local
@@ -96,6 +102,9 @@ importers:
       '@cubus/tool-approval':
         specifier: workspace:*
         version: link:../../policies/tool-approval
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
 
   packages/core/agent-loop:
     dependencies:

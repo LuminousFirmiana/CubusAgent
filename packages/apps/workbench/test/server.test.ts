@@ -7,6 +7,7 @@ import { ScriptedAdapter } from '@cubus/llm'
 import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
+import { LocalSubprocess } from '@cubus/tools'
 import { startWorkbenchServer } from '../src/server.ts'
 import type { WorkbenchServer } from '../src/server.ts'
 
@@ -55,8 +56,11 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-async function start(runtime = makeRuntime(scenes)): Promise<{ server: WorkbenchServer; runtime: SessionRuntime<void> }> {
-  server = await startWorkbenchServer({ runtime }, { port: 0 })
+async function start(
+  runtime = makeRuntime(scenes),
+  options: { workspaceDir?: string } = { workspaceDir: workspace },
+): Promise<{ server: WorkbenchServer; runtime: SessionRuntime<void> }> {
+  server = await startWorkbenchServer({ runtime, ...options }, { port: 0 })
   return { server, runtime }
 }
 
@@ -153,6 +157,23 @@ test('create, run and observe a session: events stream live and the log stays th
   }
   expect(concurrency.concurrency).toMatchObject({ active: 0, queued: 0, limit: 4 })
 })
+
+/** 让测试工作区成为真实 git 仓库：差异视图走 A1 的只读 Git provider。 */
+async function gitInit(dir: string): Promise<void> {
+  const subprocess = new LocalSubprocess()
+  const signal = new AbortController().signal
+  const commands = [
+    'git init -q -b main',
+    'git config user.email workbench@cubus.local',
+    'git config user.name cubus-workbench',
+    'git add -A',
+    'git commit -q -m initial',
+  ]
+  for (const command of commands) {
+    const result = await subprocess.run(command, { cwd: dir, signal })
+    if (result.exitCode !== 0) throw new Error(command + ' failed: ' + result.stderr)
+  }
+}
 
 /** 读取 SSE 响应，保留每条帧的 id（Last-Event-ID 续传的验收靠它）。 */
 async function readIndexedStream(
@@ -281,6 +302,50 @@ test('replaying the same log twice yields identical frames: refreshing renders t
   const second = await collect()
   expect(second).toEqual(first)
 }, 30_000)
+
+test('the change report reuses the read-only git provider and needs a baseline first', async () => {
+  // 脚本 agent 会真的改写 note.txt
+  const { server: wb } = await start(makeRuntime([
+    { steps: [{ chunk: { toolCalls: [{ id: 'w1', name: 'write_file', args: { path: 'note.txt', content: 'changed\n' } }] } }] },
+    { steps: [{ chunk: { delta: '改好了。' } }] },
+  ]))
+  await gitInit(workspace)
+  await fetch(wb.url + '/api/sessions', { method: 'POST' })
+
+  // 还没跑过：没有基线，明确拒绝而不是给一份空报告
+  const before = await fetch(wb.url + '/api/sessions/wb1/changes')
+  expect(before.status).toBe(409)
+  expect(((await before.json()) as { error: string }).error).toContain('no run has been recorded')
+
+  // 跑一轮：脚本 agent 会改写 note.txt
+  await fetch(wb.url + '/api/sessions/wb1/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ task: '改一下 note.txt' }),
+  })
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const detail = (await (await fetch(wb.url + '/api/sessions/wb1')).json()) as { run: { finishedAt?: string } | null }
+    if (detail.run?.finishedAt !== undefined) break
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+
+  const after = (await (await fetch(wb.url + '/api/sessions/wb1/changes')).json()) as {
+    changes: { isRepository: boolean; changed: { path: string; kind: string }[]; summary: string }
+  }
+  expect(after.changes.isRepository).toBe(true)
+  expect(after.changes.changed.map(file => file.path + ':' + file.kind)).toEqual(['note.txt:modified'])
+  expect(after.changes.summary).toContain('note.txt')
+})
+
+test('without a workspace the change report is refused with a clear reason', async () => {
+  const runtime = makeRuntime(scenes)
+  server = await startWorkbenchServer({ runtime }, { port: 0 })
+  await fetch(server.url + '/api/sessions', { method: 'POST' })
+  const response = await fetch(server.url + '/api/sessions/wb1/changes')
+  expect(response.status).toBe(409)
+  expect(((await response.json()) as { error: string }).error).toContain('started without a workspace')
+})
 
 test('resume refuses a session whose log has no assembly snapshot, and reports the reason', async () => {
   const { server: wb } = await start()

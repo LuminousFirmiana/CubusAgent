@@ -40,7 +40,7 @@ const runtime = new SessionRuntime({
   generateId: () => 'demo-session',
 })
 
-const server = await startWorkbenchServer({ runtime }, { port: 0 })
+const server = await startWorkbenchServer({ runtime, workspaceDir: workspace }, { port: 0 })
 console.log('workbench listening on ' + server.url)
 console.log('sessions dir: ' + sessions)
 console.log('workspace:    ' + workspace)

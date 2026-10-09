@@ -4,7 +4,10 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AssemblyMismatchError } from '@cubus/agent-recipe'
+import type { GitBaseline } from '@cubus/git'
+import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { listSessions, readSessionSummary, SessionRuntime } from '@cubus/sdk'
+import { LocalSubprocess } from '@cubus/tools'
 import { SessionFormatError } from '@cubus/session'
 import type { SessionEvent } from '@cubus/session'
 
@@ -20,6 +23,11 @@ import type { SessionEvent } from '@cubus/session'
 
 export interface WorkbenchOptions<RecipeOptions> {
   readonly runtime: SessionRuntime<RecipeOptions>
+  /**
+   * 被 agent 修改的工作区（E4 差异视图用）。
+   * 与 Host 的工作区是同一个目录：这里只做**只读** Git 报告，复用 A1 的 provider。
+   */
+  readonly workspaceDir?: string
   /** SSE 心跳间隔（毫秒）；默认 15s，0 = 关闭。 */
   readonly heartbeatMs?: number
 }
@@ -74,6 +82,8 @@ interface RunState {
   finishedAt?: string
   error?: string
   assistantText?: string
+  /** 本次运行开始前的工作区基线（差异视图的参照点；只有它进内存，不缓存报告本身）。 */
+  baseline?: GitBaseline
 }
 
 type Frame = { event: string; data: unknown }
@@ -145,8 +155,15 @@ export async function startWorkbenchServer<RecipeOptions>(
     }
   }
 
+  // 只读 Git 报告（A1 的 provider）：与 CLI 的输出同源，不另写 diff 逻辑。
+  const git = options.workspaceDir === undefined ? undefined : new GitCliWorkspaceProvider(new LocalSubprocess())
+
   async function startRun(sessionId: string, task: string): Promise<void> {
     const state: RunState = { startedAt: new Date().toISOString() }
+    if (git !== undefined && options.workspaceDir !== undefined) {
+      // 基线在运行前记录：不要求工作区干净，用户原有改动留在 preexisting 一侧
+      state.baseline = await git.baseline(options.workspaceDir)
+    }
     runs.set(sessionId, state)
     publish(sessionId, { event: 'run-state', data: { sessionId, running: true, startedAt: state.startedAt } })
     try {
@@ -267,6 +284,7 @@ export async function startWorkbenchServer<RecipeOptions>(
         'GET  /api/sessions/:id',
         'POST /api/sessions/:id/run        {"task": "..."}',
         'GET  /api/sessions/:id/events     (SSE)',
+        'GET  /api/sessions/:id/changes    本次运行改了什么（只读 Git 报告）',
         'POST /api/sessions/:id/resume',
         '',
       ].join('\n'))
@@ -326,6 +344,19 @@ export async function startWorkbenchServer<RecipeOptions>(
 
       if (segments.length === 4 && segments[3] === 'events' && method === 'GET') {
         await streamEvents(req, res, sessionId)
+        return
+      }
+
+      if (segments.length === 4 && segments[3] === 'changes' && method === 'GET') {
+        if (git === undefined || options.workspaceDir === undefined) {
+          throw new HttpError(409, 'this workbench was started without a workspace, so no change report is available')
+        }
+        const state = runs.get(sessionId)
+        if (state?.baseline === undefined) {
+          throw new HttpError(409, 'no run has been recorded for this session yet, so there is no baseline to compare against')
+        }
+        // 报告按需计算（不缓存）：请求时的工作区状态 - 运行前基线
+        sendJson(res, 200, { changes: await git.report(options.workspaceDir, state.baseline) })
         return
       }
 

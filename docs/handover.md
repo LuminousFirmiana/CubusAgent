@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：E3 工作台真模型入口 + 单页 UI 完成（含“刷新等价”验收）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：E4 差异视图完成（工作台与 CLI 同源输出）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -49,6 +49,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| E4 差异视图 | 完成 | 新增 GET /api/sessions/:id/changes：运行前记 Git 基线、请求时按需算报告（不缓存报告本身），复用 A1 的 GitCliWorkspaceProvider；无基线/无工作区时 409 并说明原因；UI 运行结束后列出改动；手工比对与 CLI 同格式 |
 | E3 真模型入口 + UI | 完成 | main.ts：凭据租约 -> DeepSeek 适配器、显式审批档（无默认）、会话目录必须在工作区外、只监听回环；ui/{index.html,app.js} 零构建单页：会话列表（待恢复/日志问题角标）+ 实时事件流（EventSource 自动续传）+ transcript 渲染 + token 用量 |
 | E1a 工作台服务端 | 完成 | 新包 @cubus/workbench：GET/POST /api/sessions、GET /api/sessions/:id（摘要+快照+预算+运行状态）、POST .../run（202 异步）、GET .../events（SSE，先回放再订阅）、POST .../resume、GET /api/concurrency；SDK 新增 listSessions/readSessionSummary/readSessionEvents（容错 JSONL）+ replay()/sessionsDir；错误语义化映射 400/404/409/500 |
 | D4b 评测集 30 任务 | 完成 | 夹具从 7 扩到 30（覆盖 boundary/logic/type-coercion/async/side-effect/error-handling/missing-branch 七类），suite 版本 1.1.0；套件清单与磁盘夹具集合由测试双向对齐；每个任务用真模型生成 golden |
@@ -61,12 +62,12 @@
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 E4：差异视图（复用 A1 的 git 报告），随后 E5 审批交互、E6 恢复视图 |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 E5：页面上的审批交互（ask/allow/deny + 超时默认拒绝），随后 E6 恢复视图 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：306 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：313 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -213,6 +214,7 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 差异视图只记基线、不缓存报告 | 运行前记一次 Git 基线（内存），报告在请求时按需计算：界面看到的永远是当前工作区与那次基线的差；与 CLI 同源（同一 provider、同一段 summary 渲染） |
 | 界面无状态 = 刷新等价 | 前端不缓存任何状态：打开会话就是“订阅日志（先回放、后实时）”，因此刷新页面 = 重新回放同一份日志。真实验收：同一会话两条连接的事件帧逐帧一致（358 帧） |
 | 服务进程不 process.exit | 服务启动成功后必须让事件循环活着（由监听中的 HTTP 服务保持）；只有启动失败或收到 SIGINT/SIGTERM 才退出 —— 第一版在 main 返回后 exit(0)，服务启动即自杀（已记入坑列表） |
 | 工作台事件流用 SSE | 单向“日志 -> 浏览器”正好匹配；原生重连 + Last-Event-ID 续传；curl 就能调试。上行操作走普通 POST，不需要双向通道 |
@@ -309,15 +311,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：E4 差异视图与 E5 审批交互（roadmap E）
+## 10. 下一步：E5 审批交互与 E6 恢复视图（roadmap E）
 
-工作台已经能看到“正在发生什么”（E1/E2/E3）。接下来两小步：
+E1–E4 让工作台能看、能跑、能对比。剩下两件让它能安全地用：
 
-1. **E4 差异视图**：会话结束后展示本次改动（复用 A1 的只读 git 报告）—— 与 CLI 的输出同源，不另写 diff 逻辑；
-2. **E5 审批交互**：页面上回答 ask/allow/deny（含超时默认拒绝），把现在的静态档升级为交互档；
-3. **E6 恢复视图**：列表里对 `needsSettlement` 的会话给出“恢复”按钮，并把结算事件在 transcript 里显示成“恢复时补写的闭合”。
+1. **E5 审批交互**：把静态档升级为交互档 —— 工具调用在页面上 ask，用户 allow/deny，**超时默认拒绝**；
+   - 需要一个新的审批 provider（把 ask 转成页面上的问题 + 等待回答），协议里加一条上行 POST 与一条 SSE 控制帧；
+   - 这是安全边界的变化，落地前要确认：超时时长、拒绝后的工具结果文案、并发审批的排队规则。
+2. **E6 恢复视图**：列表里对 needsSettlement 的会话提供恢复按钮（走既有 POST …/resume），并把结算事件渲染成恢复时补写的闭合。
 
-之后进 F（个人交付：一键运行、配置、日志归档）。
+E 阶段收尾后是 F（个人交付：一键运行、配置、日志归档）。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

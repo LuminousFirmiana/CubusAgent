@@ -169,7 +169,7 @@ async function main(args: readonly string[]): Promise<number> {
     permissionProfile: options.approval,
   })
 
-  const server = await startWorkbenchServer({ runtime }, { port: options.port })
+  const server = await startWorkbenchServer({ runtime, workspaceDir: workspace }, { port: options.port })
   process.stdout.write('workbench: ' + server.url + '\n')
   process.stdout.write('workspace: ' + workspace + '\n')
   process.stdout.write('sessions:  ' + sessionsDir + '\n')

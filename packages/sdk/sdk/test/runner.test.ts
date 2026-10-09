@@ -341,6 +341,36 @@ async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<vo
   throw new Error('waitFor timed out')
 }
 
+test('a budget cancels a runaway turn, settles the log and is recorded in the snapshot', async () => {
+  const scenes = Array.from({ length: 4 }, () => ({
+    steps: [{ chunk: { toolCalls: [{ id: 'echo-1', name: 'echo', args: { n: 1 } }] } }],
+  }))
+  const runtime = new SessionRuntime({
+    rootDir: dir,
+    host: createLocalAgentHost({ workspaceDir: dir, adapterFactory: () => new ScriptedAdapter(scenes) }),
+    recipe: sdkTestRecipe,
+    recipeOptions: undefined,
+    budget: { maxSteps: 2 },
+    generateId: makeIdGen('b'),
+  })
+
+  const session = await runtime.create()
+  const run = await runtime.run(session.id, 'keep going')
+
+  // 超限：策略调用 loop.cancel()，日志仍然完整闭合
+  const state = runtime.budgetState(session.id)
+  expect(state?.tripped).toBe('max-steps')
+  expect(state?.steps).toBe(3)
+  const events = readFileSync(session.logPath, 'utf8').trim().split('\n')
+    .map(line => JSON.parse(line) as { type: string })
+  expect(events.at(-1)?.type).toBe('turn/end')
+  expect(events.filter(event => event.type === 'turn/end')).toHaveLength(1)
+  expect(run.turnEvents.at(-1)?.type).toBe('turn/end')
+
+  // 生效上限进装配快照（第一条事件）
+  expect((await runtime.mountSnapshot(session.id))?.budget).toEqual({ maxSteps: 2 })
+})
+
 test('mountSnapshot exposes the assembly snapshot and rejects unknown sessions', async () => {
   const runtime = new SessionRuntime({
     rootDir: dir,

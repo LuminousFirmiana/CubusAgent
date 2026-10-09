@@ -1,6 +1,8 @@
 import { agentLoopPlugin } from '@cubus/agent-loop'
 import type { AgentLoopPluginConfig } from '@cubus/agent-loop'
+import { budgetPolicyPlugin } from '@cubus/budget'
 import type { Context } from '@cubus/cordis'
+import type { BudgetLimits } from '@cubus/session'
 import { systemPromptPlugin } from '@cubus/system-prompt'
 import type { SystemPromptService } from '@cubus/system-prompt'
 import { toolRegistryPlugin } from '@cubus/tool-registry'
@@ -31,6 +33,8 @@ export interface AgentRuntimePluginConfig<RecipeOptions = void> {
   capabilityPins?: CapabilityPins
   /** app 级审批档覆盖；优先级 app > manifest.permission。 */
   permissionProfile?: string
+  /** app 级预算覆盖；优先级 app > manifest.budget。设置时挂载预算策略插件。 */
+  budget?: BudgetLimits
 }
 
 /** 协商结果：选中的 offerings + 声明可选但缺失的能力。 */
@@ -115,6 +119,13 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
       })
       await ctx.plugin(agentLoopPlugin, config.loop ?? {})
 
+      // 预算（C5）：只要有效上限里至少有一项，就挂策略插件；
+      // 它观察日志事件并在超限时调用 loop.cancel()（走 S4.3b 的取消与结算）。
+      const budget = config.budget ?? manifest.budget
+      if (budget !== undefined) {
+        await ctx.plugin(budgetPolicyPlugin, { limits: budget })
+      }
+
       verifyDeclarations(manifest, actualContributions(ctx))
 
       const permission = config.permissionProfile === undefined
@@ -126,6 +137,7 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
         selection: assembly.selection,
         optionalMissing: assembly.optionalMissing,
         permission,
+        ...(budget === undefined ? {} : { budget }),
         config: config.recipeOptions,
       })
 

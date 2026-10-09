@@ -1,4 +1,4 @@
-import type { MountSnapshot } from '@cubus/session'
+import type { BudgetLimits, MountSnapshot } from '@cubus/session'
 import { toMountedCapabilities } from './capabilities.ts'
 import type { CapabilityOffering } from './capabilities.ts'
 import type { AgentRecipeManifest, CapabilityRequirement } from './types.ts'
@@ -59,6 +59,8 @@ export interface MountSnapshotInput {
   readonly selection: readonly CapabilityOffering[]
   readonly optionalMissing: readonly CapabilityRequirement[]
   readonly permission: { readonly profile: string; readonly source: 'manifest' | 'app' }
+  /** 实际生效的预算上限（C5）：只在设置时记录。 */
+  readonly budget?: BudgetLimits
   readonly config: unknown
 }
 
@@ -82,6 +84,7 @@ export function createMountSnapshot(input: MountSnapshotInput): MountSnapshot {
     capabilities: toMountedCapabilities(input.selection),
     optionalMissing: input.optionalMissing.map(requirement => requirement.kind).sort(),
     permission: { profile: input.permission.profile, source: input.permission.source },
+    ...(input.budget === undefined ? {} : { budget: input.budget }),
     config,
   }
 }

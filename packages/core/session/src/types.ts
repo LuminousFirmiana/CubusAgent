@@ -43,6 +43,16 @@ export interface MountedCapability {
 }
 
 /**
+ * 一次会话的资源上限（预算，C5）。缺省字段 = 不限制。
+ * 它是"策略 + 装配事实"：由 app 传入或 manifest 声明，实际生效值进装配快照。
+ */
+export interface BudgetLimits {
+  readonly maxSteps?: number
+  readonly maxToolCalls?: number
+  readonly maxDurationMs?: number
+}
+
+/**
  * 装配快照：B3 起作为 `session/mount` 事件的载荷，成为日志第一条事件。
  *
  * 它不是模型可见内容（投影忽略它），记录的是"这套会话按什么装起来的"。
@@ -55,6 +65,8 @@ export interface MountSnapshot {
   /** 声明为可选、但 Host 未提供的能力。 */
   optionalMissing: readonly CapabilityKind[]
   permission: { profile: string; source: 'manifest' | 'app' }
+  /** 本次装配实际生效的预算上限（C5；未设置时缺省）。 */
+  budget?: BudgetLimits
   config: unknown
 }
 

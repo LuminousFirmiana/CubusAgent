@@ -1,7 +1,7 @@
 {
-  "name": "@cubus/agent-recipe",
+  "name": "@cubus/budget",
   "version": "0.0.0",
-  "description": "Typed Agent Host and Recipe composition over Cordis",
+  "description": "Budget policy: step, tool-call and duration limits that cancel a runaway session",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,13 +14,7 @@
   },
   "dependencies": {
     "@cubus/agent-loop": "workspace:*",
-    "@cubus/budget": "workspace:*",
     "@cubus/cordis": "workspace:*",
-    "@cubus/session": "workspace:*",
-    "@cubus/system-prompt": "workspace:*",
-    "@cubus/tool-registry": "workspace:*"
-  },
-  "devDependencies": {
-    "@cubus/llm": "workspace:*"
+    "@cubus/session": "workspace:*"
   }
 }

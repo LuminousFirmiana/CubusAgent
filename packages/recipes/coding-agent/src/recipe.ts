@@ -3,6 +3,7 @@ import { systemPromptContribution } from '@cubus/system-prompt'
 import { requireToolApproval, withToolApproval } from '@cubus/tool-approval'
 import { toolContribution } from '@cubus/tool-registry'
 import { createTools } from '@cubus/tools'
+import type { BudgetLimits } from '@cubus/session'
 
 export const CODING_AGENT_PROMPT = [
   '你是一个在受信本地工作区中协助开发者完成任务的 Coding Agent。',
@@ -31,12 +32,21 @@ export const CODING_AGENT_REQUIREMENTS = [
   { kind: 'sandbox', required: false },
 ] as const
 
+/** 产品默认预算（C5）：足够做完一个正常任务，又能挡住"跑飞"。app 可覆盖或收紧。 */
+export const CODING_AGENT_BUDGET: BudgetLimits = {
+  maxSteps: 40,
+  maxToolCalls: 60,
+  maxDurationMs: 600_000,
+}
+
 export interface CodingAgentRecipeDefinition {
   id: string
   version: string
   displayName: string
   description?: string
   defaultSystemPrompt: string
+  /** 默认预算上限；缺省用 CODING_AGENT_BUDGET。 */
+  budget?: BudgetLimits
   /** 这个产品按哪套评测计分（可选；套件 id 由评测包注册与校验）。 */
   evaluationSuite?: string
   /** 默认审批档；app 可覆盖（优先级 app > manifest）。 */
@@ -60,6 +70,7 @@ export function createCodingAgentRecipe(definition: CodingAgentRecipeDefinition)
     prompt: { fragmentId: definition.id + '.role' },
     tools: [...CODING_AGENT_TOOLS],
     permission: { profile: definition.permissionProfile ?? 'ask' },
+    budget: definition.budget ?? CODING_AGENT_BUDGET,
     ...(definition.evaluationSuite === undefined
       ? {}
       : { evaluation: { suite: definition.evaluationSuite } }),

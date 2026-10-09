@@ -1,5 +1,5 @@
 import type { Context } from '@cubus/cordis'
-import type { CapabilityKind } from '@cubus/session'
+import type { BudgetLimits, CapabilityKind } from '@cubus/session'
 import type { CapabilityOffering } from './capabilities.ts'
 
 /** 一项能力需求：kind 必填，features 做子集匹配，required 默认 true。 */
@@ -31,6 +31,8 @@ export interface AgentRecipeManifest {
   readonly tools: readonly string[]
   /** 默认审批档；app 可覆盖（优先级 app > manifest），最终值与来源进装配快照。 */
   readonly permission: { readonly profile: string }
+  /** 默认预算上限（C5）：app 可覆盖或收紧；实际生效值进装配快照。 */
+  readonly budget?: BudgetLimits
   /** 评测套件 id：这个产品按哪套评测计分（由评测包注册与校验）。 */
   readonly evaluation?: { readonly suite: string }
   /** 呈现意图，供 CLI/工作台消费。 */

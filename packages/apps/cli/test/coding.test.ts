@@ -73,6 +73,14 @@ test('parses the explicit trusted-workspace command surface', () => {
   expect(parseCodingCommand([
     '--workspace', './repo', '--task', 'x', '--approval', 'deny',
   ]).options?.approval).toBe('deny')
+
+  // 预算覆盖（C5）：字段可选，--max-duration 以秒为单位转成毫秒
+  expect(parseCodingCommand([
+    '--workspace', './repo', '--task', 'x', '--max-steps', '5', '--max-duration', '30',
+  ]).options).toMatchObject({ maxSteps: 5, maxDurationMs: 30_000 })
+  expect(() => parseCodingCommand([
+    '--workspace', './repo', '--task', 'x', '--max-steps', '0',
+  ])).toThrow('--max-steps must be a positive integer')
   expect(() => parseCodingCommand(['--workspace', './repo'])).toThrow('coding requires --task')
   expect(() => parseCodingCommand(['--unknown'])).toThrow('unknown option')
   expect(() => parseCodingCommand([
@@ -334,6 +342,48 @@ test('reports a non-git workspace without failing the run', async () => {
   const lines: string[] = []
   renderCodingResult(result, { write: line => lines.push(line) })
   expect(lines).toContain('git: not a repository')
+})
+
+test('a per-run budget cancels a runaway run, settles the log and reports the reason', async () => {
+  const workspace = join(dir, 'budget-repo')
+  const sessionsDir = join(dir, 'budget-sessions')
+  await mkdir(workspace)
+  await writeFile(join(workspace, 'note.txt'), 'content\n', 'utf8')
+
+  const result = await runCodingCommand({
+    workspace,
+    task: 'Keep reading the file forever.',
+    trustWorkspace: true,
+    approval: 'allow',
+    sessionsDir,
+    maxSteps: 1,
+  }, {
+    adapterFactory: () => new ScriptedAdapter([
+      { steps: [{ chunk: { toolCalls: [{ id: 'r1', name: 'read_file', args: { path: 'note.txt' } }] } }] },
+      { steps: [{ chunk: { toolCalls: [{ id: 'r2', name: 'read_file', args: { path: 'note.txt' } }] } }] },
+      { steps: [{ chunk: { toolCalls: [{ id: 'r3', name: 'read_file', args: { path: 'note.txt' } }] } }] },
+    ]),
+    generateId: () => 'budget-session',
+  })
+
+  // 超限：预算策略取消本轮，日志仍然闭合
+  expect(result.budget?.limits).toMatchObject({ maxSteps: 1 })
+  expect(result.budget?.state.tripped).toBe('max-steps')
+  expect(result.turnEvents.at(-1)?.type).toBe('turn/end')
+
+  const lines: string[] = []
+  renderCodingResult(result, { write: line => lines.push(line) })
+  expect(lines).toContain('status: cancelled (budget: max-steps)')
+  expect(lines.some(line => line.startsWith('budget: '))).toBe(true)
+
+  // 生效上限也进装配快照（与 manifest 默认合并后的结果）
+  const { events } = await new SessionLogFile(result.logPath).read()
+  const mount = events[0]
+  expect(mount?.type === 'session/mount' ? mount.mount.budget : undefined).toEqual({
+    maxSteps: 1,
+    maxToolCalls: 60,
+    maxDurationMs: 600_000,
+  })
 })
 
 test('the mount snapshot records the manifest default profile, and an app override when given', async () => {

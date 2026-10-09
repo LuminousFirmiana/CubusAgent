@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cubus/budget": "workspace:*",
     "@cubus/credentials": "workspace:*",
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",

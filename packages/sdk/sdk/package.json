@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
+    "@cubus/budget": "workspace:*",
     "@cubus/cordis": "workspace:*",
     "@cubus/session": "workspace:*"
   },

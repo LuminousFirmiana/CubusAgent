@@ -207,6 +207,19 @@ export function validateManifest(manifest: AgentRecipeManifest): void {
   if (manifest.presentation !== undefined && manifest.presentation.label.trim() === '') {
     throw new RecipeManifestError(id, 'manifest.presentation.label must be a non-empty string')
   }
+
+  if (manifest.budget !== undefined) {
+    const limits = [
+      ['maxSteps', manifest.budget.maxSteps],
+      ['maxToolCalls', manifest.budget.maxToolCalls],
+      ['maxDurationMs', manifest.budget.maxDurationMs],
+    ] as const
+    for (const [name, value] of limits) {
+      if (value !== undefined && (!Number.isInteger(value) || value < 1)) {
+        throw new RecipeManifestError(id, 'manifest.budget.' + name + ' must be a positive integer')
+      }
+    }
+  }
 }
 
 /**

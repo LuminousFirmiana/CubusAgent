@@ -1,9 +1,10 @@
 import { mkdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
+import type { BudgetState } from '@cubus/budget'
 import type { CredentialsProvider } from '@cubus/credentials'
 import type { GitChangeReport } from '@cubus/git'
-import type { MountSnapshot } from '@cubus/session'
+import type { BudgetLimits, MountSnapshot } from '@cubus/session'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
@@ -24,6 +25,10 @@ export interface CodingCommandOptions {
   sessionsDir?: string
   approval?: CliApprovalMode
   maxModelAttempts?: number
+  /** 预算覆盖（C5）：与 manifest 默认逐字段合并，app 优先。 */
+  maxSteps?: number
+  maxToolCalls?: number
+  maxDurationMs?: number
 }
 
 export interface CodingCommandDependencies {
@@ -55,10 +60,22 @@ export function describeSandbox(mount: MountSnapshot | undefined): string {
   return 'sandbox: ' + sandbox.provider + ' — NO ISOLATION: commands run on this host as the current user'
 }
 
+/** 预算用量的可读摘要（CLI 渲染用）。 */
+export function describeBudget(state: BudgetState, limits: BudgetLimits | undefined): string {
+  const limit = (value: number | undefined): string => (value === undefined ? '-' : String(value))
+  return 'budget: ' + String(state.steps) + '/' + limit(limits?.maxSteps) + ' steps, ' +
+    String(state.toolCalls) + '/' + limit(limits?.maxToolCalls) + ' tool calls, ' +
+    (state.elapsedMs / 1000).toFixed(1) + 's/' +
+    (limits?.maxDurationMs === undefined ? '-' : String(limits.maxDurationMs / 1000) + 's') +
+    (state.tripped === undefined ? '' : ' (tripped: ' + state.tripped + ')')
+}
+
 export interface CodingCommandResult {
   sessionId: string
   logPath: string
   cancelled: boolean
+  /** 本次运行实际生效的预算上限与用量（未配置时为 undefined）。 */
+  budget?: { limits: BudgetLimits, state: BudgetState }
   assistantText?: string
   turnEvents: SessionEvent[]
   /** 相对运行前基线的 Git 变更报告（只读；非 Git 目录以 isRepository: false 表达）。 */
@@ -96,6 +113,9 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   // 默认档由 recipe manifest 声明（B4）；只有显式给了 --approval 才记作 app 覆盖。
   let approval: CliApprovalMode | undefined
   let maxModelAttempts = 3
+  let maxSteps: number | undefined
+  let maxToolCalls: number | undefined
+  let maxDurationMs: number | undefined
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -129,6 +149,18 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       index += 1
       continue
     }
+    if (arg === '--max-steps' || arg === '--max-tool-calls' || arg === '--max-duration') {
+      const value = optionValue(args, index, arg)
+      const parsed = Number(value)
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new CliUsageError(arg + ' must be a positive integer')
+      }
+      if (arg === '--max-steps') maxSteps = parsed
+      if (arg === '--max-tool-calls') maxToolCalls = parsed
+      if (arg === '--max-duration') maxDurationMs = parsed * 1000
+      index += 1
+      continue
+    }
     if (arg === '--max-model-attempts') {
       const value = optionValue(args, index, arg)
       maxModelAttempts = Number(value)
@@ -155,6 +187,9 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       trustWorkspace,
       ...(approval === undefined ? {} : { approval }),
       maxModelAttempts,
+      ...(maxSteps === undefined ? {} : { maxSteps }),
+      ...(maxToolCalls === undefined ? {} : { maxToolCalls }),
+      ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
   }
@@ -218,6 +253,14 @@ export async function runCodingCommand(
     throw new CliUsageError('unsupported approval profile: ' + approvalProfile)
   }
   const approval = createCliToolApproval(approvalProfile, dependencies.approvalPrompter)
+  // 有效预算：manifest 默认与 app 覆盖逐字段合并（app 优先）；两者都没有则不挂预算插件。
+  const appBudget: BudgetLimits = {
+    ...(options.maxSteps === undefined ? {} : { maxSteps: options.maxSteps }),
+    ...(options.maxToolCalls === undefined ? {} : { maxToolCalls: options.maxToolCalls }),
+    ...(options.maxDurationMs === undefined ? {} : { maxDurationMs: options.maxDurationMs }),
+  }
+  const mergedBudget: BudgetLimits = { ...codingAgentRecipe.manifest.budget, ...appBudget }
+  const budget = Object.keys(mergedBudget).length === 0 ? undefined : mergedBudget
 
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
@@ -233,6 +276,7 @@ export async function runCodingCommand(
     recipe: codingAgentRecipe,
     recipeOptions: undefined,
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
+    ...(budget === undefined ? {} : { budget }),
     ...(dependencies.generateId === undefined ? {} : { generateId: dependencies.generateId }),
   })
   const session = await runtime.create()
@@ -265,6 +309,7 @@ export async function runCodingCommand(
 
   // 报告在结束或取消后都必须产出，因此不参与运行期取消。
   const changes = await git.report(workspace, baseline)
+  const budgetState = budget === undefined ? undefined : runtime.budgetState(session.id)
 
   return {
     sessionId: session.id,
@@ -273,6 +318,9 @@ export async function runCodingCommand(
     ...(run.assistantText === undefined ? {} : { assistantText: run.assistantText }),
     turnEvents: run.turnEvents,
     changes,
+    ...(budgetState === undefined || budget === undefined
+      ? {}
+      : { budget: { limits: budget, state: budgetState } }),
   }
 }
 
@@ -286,12 +334,21 @@ export function renderCodingResult(result: CodingCommandResult, output: CodingCo
   }
   // 摘要文本由 Git provider 拥有，CLI 只负责逐行输出（不拼接 Git 语义）。
   for (const line of result.changes.summary.split('\n')) output.write(line)
-  if (result.cancelled) output.write('status: cancelled')
-  else output.write(`assistant: ${result.assistantText ?? ''}`)
+  if (result.budget !== undefined) {
+    output.write(describeBudget(result.budget.state, result.budget.limits))
+  }
+  if (result.budget?.state.tripped !== undefined) {
+    output.write('status: cancelled (budget: ' + result.budget.state.tripped + ')')
+  } else if (result.cancelled) {
+    output.write('status: cancelled')
+  } else {
+    output.write(`assistant: ${result.assistantText ?? ''}`)
+  }
 }
 
 export const CODING_COMMAND_HELP = `Usage:
-  pnpm run cubus -- coding --workspace <path> --task <text> --trust-workspace [--approval ask|allow|deny] [--max-model-attempts 1..10] [--sessions-dir <path>]
+  pnpm run cubus -- coding --workspace <path> --task <text> --trust-workspace [--approval ask|allow|deny] [--max-model-attempts 1..10] [--max-steps <n>] [--max-tool-calls <n>] [--max-duration <seconds>] [--sessions-dir <path>]
 
 Safety:
-  --trust-workspace is required. Approval defaults to ask. Local bash is not sandboxed.`
+  --trust-workspace is required. Approval defaults to the recipe manifest. Local bash is not sandboxed.
+  Budget defaults come from the recipe manifest and can be tightened per run.`

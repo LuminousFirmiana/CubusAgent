@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { createAgentRuntimePlugin } from '@cubus/agent-recipe'
 import type { AgentHost, AgentRecipe, AgentSessionDescriptor, CapabilityPins } from '@cubus/agent-recipe'
 import { Context } from '@cubus/cordis'
-import type { MountSnapshot, SessionEvent } from '@cubus/session'
+import type { BudgetState } from '@cubus/budget'
+import type { BudgetLimits, MountSnapshot, SessionEvent } from '@cubus/session'
 import { RpcInvalidParamsError } from './server.ts'
 import type { RpcMethod } from './server.ts'
 
@@ -42,6 +43,8 @@ export interface SessionRuntimeOptions<RecipeOptions = void> {
   capabilityPins?: CapabilityPins
   /** app 级审批档覆盖；优先级高于 manifest.permission.profile。 */
   permissionProfile?: string
+  /** 生效预算上限（app 覆盖 > manifest.budget）；设置时装配预算策略插件。 */
+  budget?: BudgetLimits
   /** 会话 ID 生成器（测试注入计数器实现确定性）。 */
   generateId?: () => string
 }
@@ -76,6 +79,7 @@ export class SessionRuntime<RecipeOptions = void> {
       session: descriptor,
       ...(this.opts.capabilityPins === undefined ? {} : { capabilityPins: this.opts.capabilityPins }),
       ...(this.opts.permissionProfile === undefined ? {} : { permissionProfile: this.opts.permissionProfile }),
+      ...(this.opts.budget === undefined ? {} : { budget: this.opts.budget }),
     }))
 
     this.sessions.set(id, { id, logPath, ctx, runTail: Promise.resolve() })
@@ -119,6 +123,16 @@ export class SessionRuntime<RecipeOptions = void> {
     const { events } = await log.read()
     const mount = events.find(event => event.type === 'session/mount')
     return mount?.type === 'session/mount' ? mount.mount : undefined
+  }
+
+  /**
+   * 读取该会话的预算状态（步数 / 工具调用数 / 耗时 / 是否超限）。
+   * 未配置预算时返回 undefined。
+   */
+  budgetState(sessionId: string): BudgetState | undefined {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('session not found: ' + sessionId)
+    return session.ctx.get('budget')?.state()
   }
 
   /**

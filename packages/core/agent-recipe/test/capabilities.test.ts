@@ -236,6 +236,16 @@ test('declaration verification catches a missing prompt fragment and eval suite'
   })).toThrow('declares evaluation suite "repair-v1"')
 })
 
+test('budget limits must be positive integers when declared', () => {
+  expect(() => validateManifest(declarative({ budget: { maxSteps: 0 } })))
+    .toThrow('manifest.budget.maxSteps must be a positive integer')
+  expect(() => validateManifest(declarative({ budget: { maxToolCalls: 1.5 } })))
+    .toThrow('manifest.budget.maxToolCalls must be a positive integer')
+  expect(() => validateManifest(declarative({ budget: { maxDurationMs: -5 } })))
+    .toThrow('manifest.budget.maxDurationMs must be a positive integer')
+  expect(() => validateManifest(declarative({ budget: { maxSteps: 20 } }))).not.toThrow()
+})
+
 test('required declaration fields are validated as non-empty strings', () => {
   expect(() => validateManifest(declarative({ prompt: { fragmentId: '  ' } })))
     .toThrow('prompt.fragmentId must be a non-empty string')

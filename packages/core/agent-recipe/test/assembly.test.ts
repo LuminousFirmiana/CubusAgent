@@ -405,6 +405,37 @@ test('optional capabilities the host cannot provide are recorded in the snapshot
   expect(event?.type === 'session/mount' ? event.mount.optionalMissing : undefined).toEqual(['git', 'sandbox'])
 })
 
+test('the effective budget comes from the app or the manifest and is recorded in the snapshot', async () => {
+  const harness = makeHost()
+  const ctx = new Context()
+
+  await ctx.plugin(createAgentRuntimePlugin({
+    host: harness.host,
+    recipe: declarativeRecipe({ budget: { maxSteps: 40, maxToolCalls: 60, maxDurationMs: 600_000 } }),
+    recipeOptions: undefined,
+    session: descriptor,
+    // app 只覆盖一项：其余字段仍取 manifest 默认（逐字段合并由 app 完成）
+    budget: { maxSteps: 3 },
+  }))
+
+  const event = harness.log.events[0]
+  expect(event?.type === 'session/mount' ? event.mount.budget : undefined).toEqual({ maxSteps: 3 })
+  expect(ctx.get('budget')).toBeDefined()
+
+  // 没有预算的装配不挂预算插件，快照里也没有这个字段
+  const plainHarness = makeHost()
+  const plainCtx = new Context()
+  await plainCtx.plugin(createAgentRuntimePlugin({
+    host: plainHarness.host,
+    recipe: declarativeRecipe(),
+    recipeOptions: undefined,
+    session: descriptor,
+  }))
+  const plainEvent = plainHarness.log.events[0]
+  expect(plainEvent?.type === 'session/mount' ? 'budget' in plainEvent.mount : true).toBe(false)
+  expect(plainCtx.get('budget')).toBeUndefined()
+})
+
 test('a recipe that fails to mount leaves no snapshot and rolls back the host capabilities', async () => {
   const harness = makeHost()
   const ctx = new Context()

@@ -15,6 +15,49 @@ export type StepId = string
 export type MessageId = string
 export type ToolCallId = string
 
+/**
+ * 能力种类闭集（B 阶段设计，见 docs/design/recipe-capabilities.md）。
+ *
+ * 它随装配快照进入日志，因此与日志词汇同源定义在这里；
+ * 需求/供给/协商逻辑在 @cubus/agent-recipe，不在这里。
+ * 新增一种 kind = 新增一个真实 seam 实现，而不是加一行配置。
+ */
+export const CAPABILITY_KINDS = [
+  'llm',
+  'session-log',
+  'fs',
+  'subprocess',
+  'git',
+  'sandbox',
+  'credentials',
+  'approval',
+] as const
+
+export type CapabilityKind = (typeof CAPABILITY_KINDS)[number]
+
+/** 装配快照里记录的一项已解析能力：描述，不含实现。 */
+export interface MountedCapability {
+  kind: CapabilityKind
+  provider: string
+  features: readonly string[]
+}
+
+/**
+ * 装配快照：B3 起作为 `session/mount` 事件的载荷，成为日志第一条事件。
+ *
+ * 它不是模型可见内容（投影忽略它），记录的是"这套会话按什么装起来的"。
+ * config 必须可 JSON 序列化且不含凭据（与工具参数同规则）。
+ */
+export interface MountSnapshot {
+  recipe: { id: string; version: string; contractVersion: number }
+  /** 按 kind 排序，与协商结果一致。 */
+  capabilities: readonly MountedCapability[]
+  /** 声明为可选、但 Host 未提供的能力。 */
+  optionalMissing: readonly CapabilityKind[]
+  permission: { profile: string; source: 'manifest' | 'app' }
+  config: unknown
+}
+
 /** 消息内容块：v1 只有纯文本一种。 */
 export type ContentBlock = { type: 'text'; text: string }
 

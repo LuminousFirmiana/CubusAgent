@@ -15,11 +15,11 @@
   "dependencies": {
     "@cubus/agent-loop": "workspace:*",
     "@cubus/cordis": "workspace:*",
+    "@cubus/session": "workspace:*",
     "@cubus/system-prompt": "workspace:*",
     "@cubus/tool-registry": "workspace:*"
   },
   "devDependencies": {
-    "@cubus/llm": "workspace:*",
-    "@cubus/session": "workspace:*"
+    "@cubus/llm": "workspace:*"
   }
 }

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -6,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { AssemblyMismatchError } from '@cubus/agent-recipe'
 import type { GitBaseline } from '@cubus/git'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
-import { listSessions, readSessionSummary, SessionRuntime } from '@cubus/sdk'
+import { listSessions, readSessionEvents, readSessionSummary, SessionRuntime } from '@cubus/sdk'
 import { LocalSubprocess } from '@cubus/tools'
 import type { InteractiveApproval } from '@cubus/tool-approval'
 import { SessionFormatError } from '@cubus/session'
@@ -115,6 +116,12 @@ function statusFor(error: unknown): number {
   return 500
 }
 
+/** Last-Event-ID 解析：客户端重连时从哪一条之后接着收（缺省 = 从头）。 */
+function lastEventIdOf(req: IncomingMessage): number {
+  const raw = Number(req.headers['last-event-id'] ?? '-1')
+  return Number.isInteger(raw) && raw >= 0 ? raw : -1
+}
+
 async function readJsonBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let size = 0
@@ -182,6 +189,17 @@ export async function startWorkbenchServer<RecipeOptions>(
   // 只读 Git 报告（A1 的 provider）：与 CLI 的输出同源，不另写 diff 逻辑。
   const git = options.workspaceDir === undefined ? undefined : new GitCliWorkspaceProvider(new LocalSubprocess())
 
+  /** 本进程是否打开着这个会话（没打开 = 只能读磁盘，没有内存侧状态）。 */
+  async function isOpen(sessionId: string): Promise<boolean> {
+    try {
+      await runtime.replay(sessionId)
+      return true
+    } catch (error) {
+      if (messageOf(error).includes('session not found')) return false
+      throw error
+    }
+  }
+
   async function startRun(sessionId: string, task: string): Promise<void> {
     const state: RunState = { startedAt: new Date().toISOString() }
     if (git !== undefined && options.workspaceDir !== undefined) {
@@ -219,7 +237,32 @@ export async function startWorkbenchServer<RecipeOptions>(
    * 既不会丢（快照覆盖到订阅时刻之后的全部写入）也不会重（下标是 append-only 的位置）。
    */
   async function streamEvents(req: IncomingMessage, res: ServerResponse, sessionId: string): Promise<void> {
-    const before = await runtime.replay(sessionId)
+    // 历史会话（本进程没打开过，例如崩溃后重启）：直接从磁盘回放，不订阅实时。
+    // 想要实时（以及结算）就用 POST …/resume 把它打开 —— 恢复视图正是这个流程。
+    let before: { events: readonly SessionEvent[] }
+    try {
+      before = await runtime.replay(sessionId)
+    } catch (error) {
+      if (!messageOf(error).includes('session not found')) throw error
+      const summary = await readSessionSummary(join(sessionsDir, sessionId))
+      // 目录/日志不存在 -> 真的没有这个会话（空日志与"读不出来"不是一回事）
+      const exists = await stat(summary.logPath).then(() => true, () => false)
+      if (!exists) throw new HttpError(404, 'session not found: ' + sessionId)
+      const fromDisk = await readSessionEvents(summary.logPath)
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      })
+      const resumeFrom = lastEventIdOf(req)
+      for (const [index, event] of fromDisk.events.entries()) {
+        if (index <= resumeFrom) continue
+        res.write('id: ' + String(index) + '\nevent: session-event\ndata: ' + JSON.stringify(event) + '\n\n')
+      }
+      res.write(': replay-only (session is not open; POST /resume to continue it)\n\n')
+      res.end()
+      return
+    }
     const buffered: SessionEvent[] = []
     // 头部（回放）写好之前先缓冲；写好之后订阅回调直接写流 —— 中间不丢也不重。
     let forward: ((event: SessionEvent) => void) | undefined
@@ -232,8 +275,7 @@ export async function startWorkbenchServer<RecipeOptions>(
     })
 
     const snapshot = await runtime.replay(sessionId)
-    const lastEventId = Number(req.headers['last-event-id'] ?? '-1')
-    const resumeFrom = Number.isInteger(lastEventId) && lastEventId >= 0 ? lastEventId : -1
+    const resumeFrom = lastEventIdOf(req)
 
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
@@ -369,10 +411,11 @@ export async function startWorkbenchServer<RecipeOptions>(
 
       if (segments.length === 3 && method === 'GET') {
         const summary = await readSessionSummary(directory)
-        const open = summary.problems.length === 0
+        // 只有本进程打开过的会话才有内存侧的状态（装配快照可从日志摘要取，预算内存态没有）
+        const open = await isOpen(sessionId)
         sendJson(res, 200, {
           summary,
-          ...(open ? { snapshot: await runtime.mountSnapshot(sessionId) } : {}),
+          ...(open && summary.problems.length === 0 ? { snapshot: await runtime.mountSnapshot(sessionId) } : {}),
           ...(open ? { budget: runtime.budgetState(sessionId) } : {}),
           run: runs.get(sessionId) ?? null,
         })

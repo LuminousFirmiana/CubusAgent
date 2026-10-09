@@ -153,6 +153,15 @@ async function refreshSessions(selectId) {
     if (session.id === (selectId || current)) button.setAttribute('aria-current', 'true')
     button.onclick = () => openSession(session.id)
     list.append(button)
+
+    // 崩溃留下的未闭合会话：给一个恢复入口（E6）
+    if (session.needsSettlement) {
+      const resume = document.createElement('button')
+      resume.textContent = '恢复 ' + session.id
+      resume.style.marginTop = '-4px'
+      resume.onclick = () => resumeSession(session.id)
+      list.append(resume)
+    }
   }
   return data.sessions
 }
@@ -293,6 +302,34 @@ async function refreshApprovals() {
   for (const approval of payload.pending) {
     if (!transcript.querySelector('[data-approval-id="' + approval.id + '"]')) approvalCard(approval)
   }
+}
+
+/** 恢复：把崩溃留下的未闭合区间结算掉，之后这个会话就能继续用了（D3 语义）。 */
+async function resumeSession(id) {
+  const response = await fetch('/api/sessions/' + id + '/resume', { method: 'POST' })
+  const body = await response.json().catch(() => ({ error: String(response.status) }))
+  if (!response.ok) {
+    // 409 不只是"失败"：装配不一致/格式版本过高都要把原因原样显示出来
+    marker('无法恢复 ' + id + '：' + body.error, 'error')
+    return
+  }
+  if (body.settled) {
+    // 结算事件是**恢复时补写的闭合**：在 transcript 里单独标出来，与正常回合区分
+    for (const event of body.settlementEvents) {
+      marker('恢复补写：' + describeSettlement(event), 'settled')
+    }
+  } else {
+    marker('恢复 ' + id + '：日志本来就是闭合的，无需结算')
+  }
+  await refreshSessions(id)
+  openSession(id)
+}
+
+function describeSettlement(event) {
+  if (event.type === 'tool/result') return '工具结果未知（崩溃前没落盘）：' + (event.output ? event.output.text : '')
+  if (event.type === 'step/end') return '步闭合（settled）'
+  if (event.type === 'turn/end') return '回合闭合（settled）'
+  return event.type
 }
 
 el('run').onclick = async () => {

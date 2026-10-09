@@ -10,6 +10,7 @@ import type { LlmAdapter } from '@cubus/llm'
 import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
 import type { Tool } from '@cubus/tool-registry'
+import { QueueTimeoutError } from '../src/concurrency.ts'
 import type { JsonRpcError, JsonRpcSuccess } from '../src/protocol.ts'
 import { createRunnerMethods, SessionRuntime } from '../src/runner.ts'
 import { RpcServer } from '../src/server.ts'
@@ -340,6 +341,93 @@ async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<vo
   }
   throw new Error('waitFor timed out')
 }
+
+test('a global run limit queues sessions instead of overlapping their model calls', async () => {
+  const hold = deferred()
+  let inFlight = 0
+  let maxInFlight = 0
+  const runtime = new SessionRuntime({
+    rootDir: dir,
+    host: createLocalAgentHost({
+      workspaceDir: dir,
+      adapterFactory: () => ({
+        provider: 'blocking-test',
+        model: 'blocking',
+        async *stream() {
+          inFlight += 1
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          try {
+            await hold.promise
+            yield { delta: 'done' }
+          } finally {
+            inFlight -= 1
+          }
+        },
+      }),
+    }),
+    recipe: sdkTestRecipe,
+    recipeOptions: undefined,
+    maxConcurrentRuns: 1,
+    generateId: makeIdGen('c'),
+  })
+
+  const first = await runtime.create()
+  const second = await runtime.create()
+
+  const runningFirst = runtime.run(first.id, 'first')
+  await waitFor(() => runtime.concurrency().active === 1)
+  const runningSecond = runtime.run(second.id, 'second')
+  await waitFor(() => runtime.concurrency().queued === 1)
+
+  // 第二个会话在排队：位置 1，且它的模型还没有被调用
+  expect(runtime.concurrency().waiters[0]).toMatchObject({ sessionId: second.id, position: 1 })
+  expect(maxInFlight).toBe(1)
+
+  hold.resolve()
+  const [resultA, resultB] = await Promise.all([runningFirst, runningSecond])
+  expect(resultA.assistantText).toBe('done')
+  expect(resultB.assistantText).toBe('done')
+  // 全程没有两个模型调用重叠
+  expect(maxInFlight).toBe(1)
+  expect(runtime.concurrency()).toMatchObject({ active: 0, queued: 0 })
+})
+
+test('a queued run that exceeds queueWaitMs fails clearly and leaves no residue', async () => {
+  const hold = deferred()
+  const runtime = new SessionRuntime({
+    rootDir: dir,
+    host: createLocalAgentHost({
+      workspaceDir: dir,
+      adapterFactory: () => ({
+        provider: 'blocking-test',
+        model: 'blocking',
+        async *stream() {
+          await hold.promise
+          yield { delta: 'done' }
+        },
+      }),
+    }),
+    recipe: sdkTestRecipe,
+    recipeOptions: undefined,
+    maxConcurrentRuns: 1,
+    queueWaitMs: 30,
+    generateId: makeIdGen('d'),
+  })
+
+  const first = await runtime.create()
+  const second = await runtime.create()
+  const runningFirst = runtime.run(first.id, 'first')
+  await waitFor(() => runtime.concurrency().active === 1)
+
+  await expect(runtime.run(second.id, 'second')).rejects.toThrow(QueueTimeoutError)
+  await expect(runtime.run(second.id, 'second again')).rejects.toThrow('timed out waiting for a concurrency slot')
+  // 超时者已出队，正在跑的不受影响
+  expect(runtime.concurrency()).toMatchObject({ limit: 1, active: 1, queued: 0 })
+
+  hold.resolve()
+  await runningFirst
+  expect(runtime.concurrency()).toMatchObject({ active: 0, queued: 0 })
+})
 
 test('a budget cancels a runaway turn, settles the log and is recorded in the snapshot', async () => {
   const scenes = Array.from({ length: 4 }, () => ({

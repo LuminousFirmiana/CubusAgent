@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：C5 预算策略（步数 / 工具调用 / 时长上限）完成。本文件是"接手这个项目的第一份读物"。
+> 最后更新：C6 有界并发与队列完成（C 阶段 / P5 共享安全层收尾）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -47,15 +47,16 @@
 | B 阶段收尾验证 | 完成 | 真模型 add-bug PASS 10.6s + 机械核对（recipe 无 provider 构造、loop 无能力词汇依赖、提交未碰内核文件） |
 | C1 沙箱/凭据 ADR | 完成（Accepted） | docs/design/sandbox-seam.md：威胁模型 + sandbox/credentials 能力形状 + Docker provider 契约 + 预算与并发边界 + 拒绝测试清单 |
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
+| C6 有界并发与队列 | 完成 | SDK 新增 ConcurrencyGate：跨会话并发上限（默认 4）+ FIFO 排队 + 等待超时（0 = 不排队）+ abort 出队；名额交接不经过空闲窗口；runtime.concurrency() 暴露名额与排队位置 |
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 C6：有界并发与队列（Host/Runtime 层全局并发上限、排队与超时） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 D1：评测契约与恢复语义 ADR（roadmap D 阶段） |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：218 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：225 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -197,6 +198,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | git 报告保持 app 级只读探测 | 基线必须在会话创建前拍，而 Host 能力只在会话 ctx 里；工作区路径本就是 app 的部署输入，所以报告不进能力协商（容器化后见 D1） |
 | 无隔离必须是显式特性 | 本地 sandbox provider 只声明 unconfined；需要 fs-isolation 的 recipe 在本地 Host 上装配期失败，不静默降级 |
 | 沙箱与 fs/subprocess 叠加而非替换 | sandbox 描述强制边界，fs/subprocess 描述边界内怎么读写与执行；三者在同一 Host 内必须自洽 |
+| 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
+| 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 预算不进 Loop | 预算 = 观察会话日志的策略插件，超限调用 loop.cancel() 走既有取消与结算；不新增事件类型，trip 原因经 budget 服务暴露给 app |
 | 预算是逐字段合并 | manifest.budget 提供产品默认（coding 系 40 步 / 60 次工具 / 10 分钟），app 只覆盖它关心的字段；合并后的生效值进快照 |
 | sandbox 是可选但必须记录的需求 | 三个 recipe 都声明 { kind: sandbox, required: false }：不强制隔离档，但 Host 的隔离事实（含 unconfined）一定进装配快照 |
@@ -260,6 +263,7 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
 - 本地（local-unconfined）仍无文件边界：那是设计上的诚实档位，要边界就用 Docker Host（C4 已完成）。
 - Docker Host 目前只能被 embedding/测试使用：CLI 还没有 --sandbox docker 入口（属 P6/P7 交付面），因此产品默认仍是本地档。
+- 会话/容器数量上限尚未限制：C6 限制的是并发运行数，同时存在的会话（= Docker 容器）数量属 app 级策略，留给 P6 多会话服务一起设计。
 - 容器取消只杀 docker exec 进程组：容器内孤儿进程会活到会话销毁；要更强语义需在容器内做进程组管理（C4b 候选）。
 - 默认镜像 digest 是常量（node@sha256:c3de60…）：升级基础镜像要手动改常量并跑一遍集成测试。
 - 容器网络只有 none（C1 决定 2）：需要装依赖的仓库目前只能在工作区外先装好。
@@ -275,16 +279,17 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：C6 有界并发与队列（roadmap C6）
+## 10. 下一步：D1 评测契约与恢复语义 ADR（roadmap D1）
 
-C5 挡住了单会话跑飞；C6 挡住「一次来太多会话」：
+C 阶段（P5 共享安全层）收尾：沙箱、凭据、预算、并发四件都以拒绝测试为证据。下一步进 D 阶段，先写设计：
 
-1. Runtime 层队列：全局并发上限 + 排队 + 等待超时（app 级配置，默认单机保守值）；
-2. 与既有串行化的关系：同会话本来串行（S2.3a），这里加的是跨会话上限；
-3. 队列状态可观测：排队位置 / 等待时长经 SDK 暴露，CLI 打印；
-4. 不改变会话语义：排队中的会话尚未装配，取消排队即取消 create()。
+1. Eval Suite 作为产品契约：suite id / 任务集 / 判定方式 / golden trajectory 的定义，以及它与 manifest.evaluation 的关系；
+2. 回归门禁：改 prompt/工具导致行为回退时如何变红（golden 对比的粒度与容差）；
+3. 会话恢复语义：哪些副作用可重放、哪些不可；未闭合 turn 的结算（settlement）与 resume 的边界；
+4. 日志格式版本：SESSION_FORMAT_VERSION 信封与迁移（C1 决定 4 把 usage 也留到这里）；
+5. 明确与 B 阶段「装配快照」的关系：恢复时如何重建装配。
 
-验收：超过上限时后续 create/run 排队而不是并行；等待超时有明确错误；取消排队不留残留。C 阶段随后收尾（P5 共享安全层完成）。
+D2 之后才是实现（Eval Suite + resume + 结算）。D 与 C 的剩余小项（容器数量上限）互不阻塞。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

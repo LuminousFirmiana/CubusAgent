@@ -6,6 +6,8 @@ import type { AgentHost, AgentRecipe, AgentSessionDescriptor, CapabilityPins } f
 import { Context } from '@cubus/cordis'
 import type { BudgetState } from '@cubus/budget'
 import type { BudgetLimits, MountSnapshot, SessionEvent } from '@cubus/session'
+import { ConcurrencyGate } from './concurrency.ts'
+import type { ConcurrencySnapshot } from './concurrency.ts'
 import { RpcInvalidParamsError } from './server.ts'
 import type { RpcMethod } from './server.ts'
 
@@ -45,6 +47,10 @@ export interface SessionRuntimeOptions<RecipeOptions = void> {
   permissionProfile?: string
   /** 生效预算上限（app 覆盖 > manifest.budget）；设置时装配预算策略插件。 */
   budget?: BudgetLimits
+  /** 跨会话并发运行上限（C6）；默认 4。会话内串行不受影响。 */
+  maxConcurrentRuns?: number
+  /** 排队等待上限（毫秒）；0 = 不排队，没名额直接失败。默认 120000。 */
+  queueWaitMs?: number
   /** 会话 ID 生成器（测试注入计数器实现确定性）。 */
   generateId?: () => string
 }
@@ -58,10 +64,20 @@ export class SessionRuntime<RecipeOptions = void> {
   private readonly sessions = new Map<string, SessionEntry>()
   private readonly opts: SessionRuntimeOptions<RecipeOptions>
   private readonly generateId: () => string
+  private readonly gate: ConcurrencyGate
 
   constructor(opts: SessionRuntimeOptions<RecipeOptions>) {
     this.opts = opts
     this.generateId = opts.generateId ?? randomUUID
+    this.gate = new ConcurrencyGate({
+      limit: opts.maxConcurrentRuns ?? 4,
+      waitMs: opts.queueWaitMs ?? 120_000,
+    })
+  }
+
+  /** 并发与排队状态（C6）：给 app / 工作台看的名额占用与排队位置。 */
+  concurrency(): ConcurrencySnapshot {
+    return this.gate.snapshot()
   }
 
   async create(): Promise<SessionInfo> {
@@ -95,15 +111,22 @@ export class SessionRuntime<RecipeOptions = void> {
       const loop = session.ctx.get('loop')
       if (!log || !loop) throw new Error('session kernel not ready')
 
-      const { events: before } = await log.read()
-      await loop.submit([{ type: 'text', text }])
-      const { events } = await log.read()
+      // 跨会话并发上限（C6）：拿到名额才真正开始这一轮；
+      // 会话内串行由 runTail 保证，因此排队发生在"轮到本会话"之后。
+      const release = await this.gate.acquire(sessionId)
+      try {
+        const { events: before } = await log.read()
+        await loop.submit([{ type: 'text', text }])
+        const { events } = await log.read()
 
-      const turnEvents = events.slice(before.length)
-      const lastAssistant = [...turnEvents].reverse().find(e => e.type === 'assistant/message')
-      const assistantText = lastAssistant?.content[0]?.text
-      // exactOptionalPropertyTypes：可选字段不能携带显式 undefined，只能整体缺省
-      return { ...(assistantText === undefined ? {} : { assistantText }), turnEvents }
+        const turnEvents = events.slice(before.length)
+        const lastAssistant = [...turnEvents].reverse().find(e => e.type === 'assistant/message')
+        const assistantText = lastAssistant?.content[0]?.text
+        // exactOptionalPropertyTypes：可选字段不能携带显式 undefined，只能整体缺省
+        return { ...(assistantText === undefined ? {} : { assistantText }), turnEvents }
+      } finally {
+        release()
+      }
     })
     // A failed run rejects only its caller; later queued runs still get their turn.
     session.runTail = operation.then(() => undefined, () => undefined)

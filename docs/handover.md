@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：S4.6 评测 fixtures 扩充完成。本文件是"接手这个项目的第一份读物"。
+> 最后更新：B1 Recipe 声明式契约与能力协商 ADR（Draft，待确认 §14 的 3 项决定）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -40,12 +40,13 @@
 | S4.4 Git 变更报告 | 完成 | 只读 Git seam/provider（seams/git + providers/git-cli）+ 基线-报告边界 + CLI 输出 |
 | S4.5 CLI 实时渲染 | 完成 | SessionLog 订阅 seam + SDK subscribe + CLI 实时输出（chunk 逐行、工具卡片、结果行） |
 | S4.6 评测 fixtures | 完成 | 7 个修复任务 fixture（7 类 bug）+ fixture.json 自描述 + 无 key 门禁 15 条 + 真模型分数表 EVALS.md |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步进 roadmap B1：Recipe 声明式契约与能力协商 ADR |
+| B1 能力契约 ADR | 完成（Draft） | docs/design/recipe-capabilities.md：manifest 声明面 + CapabilityKind 闭集 + 协商算法 + 装配期校验 + 快照方案 A/B 对比 |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 B2：manifest 扩展 + resolveCapabilities 纯函数 + 声明校验（按 B1 ADR） |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：109 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。30 个测试文件、19 个测试包，分支 Cubus-v1.0。
+**测试现状**：144 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。32 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -57,8 +58,10 @@
 4. packages/core/agent-loop/src/loop.ts —— 循环驱动（turn/step 语义，约 200 行，必读）；
 5. packages/seams/llm/src/types.ts —— llm seam 的接口定义；
 6. docs/design/coding-agent-product.md —— Coding Agent 用户、信任边界与阶段验收；
-7. docs/design/tool-cancellation.md —— Tool signal、进程终止与事实日志结算；
-8. packages/apps/cli/src/coding.ts —— 当前产品入口的校验、装配与结果输出。
+7. docs/design/recipe-capabilities.md —— B 阶段设计：recipe 声明面、能力协商、装配期校验（Draft）；
+8. docs/design/tool-cancellation.md —— Tool signal、进程终止与事实日志结算；
+9. packages/apps/cli/src/coding.ts —— 当前产品入口的校验、装配与结果输出；
+10. docs/roadmap.md —— 四条产品声明对应的阶段计划与验收证据清单。
 
 ## 4. 架构一页图
 
@@ -174,6 +177,9 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 实时流是日志的视图而非第二状态源 | `SessionLog` 增加可选 `subscribe`；provider 只在事件落盘后回调，回调参数与日志事件完全相同（「流上看到」蕴含「日志里已记录」），Loop 一行未改 |
 | 订阅者异常不影响落盘 | 广播时逐订阅者捕获异常：事件已持久化，回调失败不能看起来像落盘失败，也不能阻断其它订阅者 |
 | 实时渲染只做呈现、不持有状态 | CLI renderer 消费事件并成行输出：chunk 缓冲遇换行成行，工具调用/结果即时成行；思考增量暂不渲染但完整留在日志 |
+| 声明是数据、装配是代码（Draft） | manifest 只放名字与引用（能力 kind、prompt 片段 id、工具名、策略档名、评测 suite id）；分支/实现留在 mount。新增 manifest 字段必须同时给出装配期如何校验它 |
+| 能力 kind 是闭集（Draft） | 表达新需求要么用已有 kind+features，要么先落一个 seam 实现；不在配置层发明能力 |
+| 协商歧义即失败（Draft） | 同 kind 多个候选且 app 未 pin -> 装配期报错；不静默挑一个，也不在运行期降级 |
 
 ## 7. Reference 项目的借鉴边界
 
@@ -235,14 +241,15 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：S4.6 评测 fixtures 扩充（roadmap A3）
+## 10. 下一步：B2 manifest 扩展与协商纯函数（roadmap B2）
 
-A2 已让运行过程可见。下一步把「改坏了自己知道」变成自动化：
+B1 已把设计写成 `docs/design/recipe-capabilities.md`（Draft）。B2 只做内核之外的三件事，全部可单测：
 
-1. 修复任务 fixture 扩到 5-8 个（覆盖类型错误、边界条件、缺失分支、测试与实现不一致等 bug 类型）；
-2. 假模型门禁保持无 key、秒级，CI 每次 push 都跑；
-3. 真模型夜跑脚本产出分数表 `EVALS.md`，记录通过率与成本；
-4. 本步不改内核、不新增事件类型；会话 resume 与结算属 roadmap D3。
+1. 扩展 `AgentRecipeManifest`：`contractVersion`、`requires`、`prompt.fragmentId`、`tools`、`permission`、`evaluation`、`presentation`（先加类型与校验，不动三个 recipe）；
+2. 写纯函数 `resolveCapabilities(requires, offerings, pins)`：子集匹配、缺必需即抛、歧义即抛、可选缺失记录；
+3. 类型化错误：`CapabilityNegotiationError` / `RecipeDeclarationMismatchError`（文案带差集与 host 可提供清单）。
+
+B2 不碰 Loop、Host 装配顺序与会话事件词汇（快照方案 A 在 B3 落地）。待 §14 三项决定确认后开工。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

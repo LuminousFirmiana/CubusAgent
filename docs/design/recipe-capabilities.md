@@ -1,0 +1,206 @@
+# Recipe 声明式契约与 Host 能力协商
+
+> 状态：Draft（待确认 §14 的 3 项决定后转 Accepted）。这是 roadmap B 阶段（B1–B4）的设计依据。
+> 前置：[agent-recipe.md](agent-recipe.md)（P3 装配边界，Accepted）。本文件扩展它，不取代它。
+
+## 1. 背景：差在哪
+
+P3 建立了 Host/Recipe 装配入口，但"产品契约"仍停留在代码里：
+
+| 现状 | 证据 | 后果 |
+|---|---|---|
+| manifest 只有身份 | `AgentRecipeManifest { id, version, displayName }` | 外部工具（CLI 预览、工作台、评测）无法在**装配前**知道这个产品要什么、能用什么 |
+| 产品面靠代码挂载 | `mount()` 里 `ctx.plugin(...)` 注册 prompt/tools | 声明与实现之间没有可校验的关系，两者会静默漂移 |
+| 能力需求没有表达 | Recipe 收 `recipeOptions: { fs, subprocess, workspaceDir }`，由启动代码 `new LocalFs(...)` 造好塞进来 | "同一 recipe 换环境不改代码"无法证明；谁提供什么能力没有名字 |
+| 能力供给没有清单 | `AgentHost.mount()` 直接往 ctx 挂 provider | 缺能力只能在第一次工具调用时炸，错误信息离原因很远 |
+
+要解决的问题因此是三个：**声明产品面**、**声明能力需求**、**装配期协商且对不上就失败**。
+
+## 2. 决策摘要
+
+1. **声明是数据，装配仍是代码**：manifest 只放"名字与引用"（能力种类、prompt 片段 id、工具名、策略档名、评测套件 id），不放逻辑。分支、拼装顺序、工具实现一律留在 `mount()`。
+2. **能力有稳定词汇表**：`CapabilityKind` 是封闭集合，每种 kind 对应一个既有或计划中的 seam；新增一种 kind = 新增 seam 实现，而不是加一行配置。
+3. **Recipe 声明需求，Host 声明供给，运行时协商**：`host.capabilities()` 给出可提供的 offerings，运行时把 recipe 的 `requires` 与之匹配，只把**被选中的** offerings 挂进会话 ctx。
+4. **装配期失败，不留半成品会话**：缺必需能力、需求歧义、声明与实现不符，都在 `runtime.create()` 内失败（无模型调用、无日志文件），错误类型化且文案可执行。
+5. **装配快照随每个 step 落日志**（方案见 §8）：recipe 身份 + 解析后的能力清单 + 有效策略档，进 `request/header` 的可选字段；不新增事件类型。
+6. **step 能力快照语义不变**（[agent-recipe.md](agent-recipe.md) §3.3）：模型可见的能力集合仍按 step 冻结；mount 快照是装配来源（provenance），不是第二个模型可见状态。
+
+## 3. 能力词汇表（v1）
+
+| kind | 语义 | features（示例） | 今天的提供者 | 引入阶段 |
+|---|---|---|---|---|
+| `llm` | 模型调用 | `tool-calling`, `streaming`, `thinking` | Host（app 造 adapter） | 已有 |
+| `session-log` | 会话事实源 | `append`, `live-subscribe` | Host（`@cubus/session-jsonl`） | 已有 |
+| `fs` | 受限文件读写 | `read`, `write`, `path-pinning` | Host（本地；将来容器） | 已有，B3 迁入 Host |
+| `subprocess` | 命令执行 | `cancellation`, `process-group-kill` | Host（本地；将来容器） | 已有，B3 迁入 Host |
+| `git` | 只读版本状态检查 | `read-only-report` | Host（`@cubus/git-cli`） | 已有，B3 迁入 Host |
+| `sandbox` | 执行隔离 | `fs-isolation`, `network-deny`, `resource-limits` | Host（Docker） | P5 新增 kind |
+| `credentials` | 凭据引用（非明文值） | 例如 `deepseek` | Host | P5 新增 kind |
+| `approval` | 逐工具审批策略 | `ask`, `static-allow`, `static-deny` | app 装饰器（`withToolApprovalHost`） | 已有，B3 纳入协商 |
+
+规则：kind 是**闭集**。想表达"我需要一个带 X 特性的 Y"，只能先在 seam 层真实存在 Y 与 X，再进这张表。
+
+## 4. Manifest 形状（目标）
+
+```ts
+interface AgentRecipeManifest {
+  contractVersion: 1              // manifest 契约版本；未知版本装配期失败
+  id: string
+  version: string
+  displayName: string
+  description?: string
+
+  requires: readonly CapabilityRequirement[]
+
+  prompt: { fragmentId: string }                       // 静态基座片段的稳定 id
+  tools: readonly string[]                             // 声明的工具名集合
+  permission: { profile: string }                      // 默认策略档；app 可覆盖
+  evaluation: { suite: string }                        // 评测套件 id
+  presentation: { label: string; description?: string; icon?: string }
+}
+
+interface CapabilityRequirement {
+  kind: CapabilityKind
+  features?: readonly string[]    // 需要的能力特性（子集匹配）
+  required?: boolean              // 默认 true；false = 可选（缺了就降级，见 §6）
+}
+```
+
+**进 manifest vs 留在代码**：
+
+| 进 manifest（数据） | 留在 mount（代码） |
+|---|---|
+| 身份、版本、契约版本 | prompt 的动态拼装（含工具清单、工作区路径等运行时信息） |
+| 能力需求（kind/features/必需性） | 工具实现与 JSON Schema（仍在 tool registry） |
+| prompt 基座片段 id、工具名集合 | 策略的具体判定逻辑（manifest 只写档名） |
+| 默认审批档名、评测套件 id | 领域服务、记忆、检索等插件装配 |
+| 呈现意图（label/description/icon） | 任何条件分支、循环、IO |
+
+明确**不进** manifest：凭据值（只声明 `credentials` 需求）、Host/provider 选择（recipe 永不点名 host）、模型参数（属 app/部署决策；实际值由 `request/header` 记录）、YAML/JSON 编写方式。
+
+## 5. 声明与实现的对应校验
+
+装配完成、运行第一个 step 之前，运行时校验（全部 fail loud）：
+
+| 校验 | 规则 | 失败类型 |
+|---|---|---|
+| prompt 基座 | `prompt.fragmentId` 必须已被注册 | `RecipeDeclarationMismatchError` |
+| 工具集合 | 注册的工具名集合 **等于** `tools` 声明集合 | 同上，错误列出两侧差集 |
+| 评测套件 | `evaluation.suite` 必须在评测包已注册（仅评测运行时校验） | 同上 |
+
+理由：声明若允许与实现不同，"声明式"就退化成注释。集合相等比包含更严格也更可预测（插件多注册一个工具必须显式声明）。
+
+## 6. 协商算法（纯函数，可单测）
+
+```text
+resolveCapabilities(requires, offerings, pins) -> { selection, optionalMissing }
+```
+
+1. 对每个 requirement：候选 = offerings 中 kind 相同且 `requirement.features ⊆ offering.features` 的项；
+2. 候选 0 个：`required !== false` -> 抛 `CapabilityNegotiationError`（带 recipe id、缺失 kind/features、以及 host 实际能提供的清单）；可选 -> 记入 `optionalMissing`；
+3. 候选 > 1：app 未 pin（`pins[kind]`）则**失败**（歧义必须显式消解，不静默挑一个）；pin 指向不存在的 provider 也失败；
+4. 每种 kind 至多选中一个；`selection` 按 kind 名排序（确定性）。
+
+`optionalMissing` 必须进装配快照，并在 CLI 输出一条 warning：可选能力缺失会改变产品行为，不能静默。
+
+## 7. 装配流程
+
+```text
+runtime.create()
+  -> host.capabilities()                     // 静态供给清单
+  -> resolveCapabilities(recipe.requires, offerings, pins)
+  -> host.mount(ctx, session, selection)     // Host 只挂被选中的 offerings
+  -> recipe.mount(ctx, { capabilities, config })
+  -> verifyDeclarations(...)                 // §5
+  -> freeze mount snapshot
+  -> 第一个 turn 时逐 step 取 prompt/tools 快照（§3.3 不变）
+```
+
+失败语义：任一步失败 -> dispose 该会话 ctx、`create()` 抛错、**不写会话日志**（一个没有内核的日志不可回放）。
+
+## 8. 装配快照与会话日志（需要确认）
+
+目标：从日志能回答"这条请求是哪套 recipe + 哪套能力/policy 产生的"。两个方案：
+
+**方案 A（推荐）：扩展 `request/header` 的可选字段**
+
+```ts
+interface RequestHeader {
+  provider: string
+  model: string
+  systemPrompt?: string
+  tools?: RequestToolSpec[]
+  mount?: MountSnapshot            // 新增，可选
+}
+
+interface MountSnapshot {
+  recipe: { id: string; version: string; contractVersion: number }
+  capabilities: readonly { kind: string; provider: string; features: readonly string[] }[]
+  optionalMissing: readonly string[]
+  permission: { profile: string; source: 'manifest' | 'app' }
+  config: unknown                  // 必须可 JSON 序列化且不含凭据（同工具参数规则）
+}
+```
+
+- 优点：不新增事件类型（词汇表仍是 10 个）；字段可选，历史日志与既有读取方不受影响；与 provider/model/systemPrompt/tools 同属"这条请求的来源信息"，语义位置一致。
+- 局限：只在**至少发生过一次请求**的会话里存在；空会话（装配后未运行）没有快照。
+
+**方案 B：新增 `session/mount` 事件**
+
+- 优点：装配本身有生命周期记录，空会话也有；与将来 resume/格式版本一起设计更顺。
+- 代价：现在就要动事件词汇表（`packages/core/session/src/types.ts` 是宪法第一页）与格式版本策略；[agent-recipe.md](agent-recipe.md) §3.5 明确要求这类改动单独讨论。
+
+**建议**：B3 采用方案 A；把方案 B 留给 D1（resume 与结算 ADR），届时若需要装配生命周期事件，再连同 `SESSION_FORMAT_VERSION` 一起设计。**这一条需要你签字**，因为它触及宪法边界的解释。
+
+## 9. 与 step 快照的关系
+
+- step 快照（§3.3）：每个 step 开始时解析一次 `{ systemPrompt, tools }` 并冻结；
+- mount 快照（§8）：装配结果，整个会话不变；
+- 两者都不改变"模型可见即已记录"：模型看到的内容仍由 `request/header` 的 `systemPrompt`/`tools` 完整记录，mount 快照只是补充来源。
+
+## 10. 迁移映射（B3/B4 执行）
+
+| 今天的 owner | 目标 owner | 迁移动作 |
+|---|---|---|
+| CLI 造 `LocalFs`/`LocalSubprocess` 并塞进 `recipeOptions` | Host 的 `fs`/`subprocess` offerings | Host 接收 app 传入的 `workspaceDir` 等部署参数，自行构造 provider |
+| CLI 造 `GitCliWorkspaceProvider`（A1） | Host 的 `git` offering | 同上；CLI 需要报告时改从 ctx 取 |
+| `withToolApprovalHost` 装饰器 | `approval` offering + manifest 默认档 | 装饰器保留为实现形式，向 `capabilities()` 贡献 `approval`；优先级 app > manifest |
+| `recipeOptions.systemPrompt` 覆盖 | manifest `prompt.fragmentId` + app 覆盖 | 评测用 `CODING_AGENT_PROMPT` 改为注册片段，manifest 声明其 id |
+| 三个 recipe 的 `mount()` 直接注册 | 声明 + mount 双份 | 声明需求与产品面，mount 里注册实现；用 §5 校验保证一致 |
+
+## 11. 验收（B2/B3/B4 的证据清单）
+
+| 验收 | 证据形态 |
+|---|---|
+| 缺必需能力装配期失败 | 假 Host 不提供 `fs` -> `create()` 抛 `CapabilityNegotiationError`，文案含缺失 kind 与 host 可提供清单 |
+| 歧义失败 | 两个 `fs` offering 且无 pin -> 抛错；pin 后成功且快照记录 provider 名 |
+| 可选缺失降级 | `required: false` 且 host 不提供 -> 装配成功，`optionalMissing` 进快照，app 收到 warning |
+| 声明/实现不符 | 注册工具集合与 `tools` 不等 -> `RecipeDeclarationMismatchError`，含两侧差集 |
+| 同一 recipe 换 Host 零改动 | 同一 recipe 分别用 local Host 与假 Docker Host 装配：prompt/tools 一致，快照 provider 名不同；recipe 目录无 diff |
+| 新 recipe 零内核改动 | 测试内定义一个仅存在于测试文件的 recipe 并成功装配运行；内核包无 diff（评审清单项） |
+| 快照可复现装配 | 从日志的 `mount` 字段 + recipe 包版本重建装配参数（测试断言往返一致） |
+
+## 12. 非目标
+
+- 不引入 YAML/JSON Recipe 配置语言，不做远程下载或插件市场；
+- 不做跨进程能力发现、版本求解或依赖图（kind 是闭集，匹配是子集判断）；
+- 不允许 session 中途重新协商或热切换能力（沿用 §3.3/§3.4）；
+- recipe 不点名 Host/provider，不做模型参数声明；
+- B3 **不新增 SessionEvent 类型**（方案 A）；方案 B 留给 D1；
+- 不在本阶段动审批策略的判定逻辑（只把档名纳入声明与快照）。
+
+## 13. 风险与缓解
+
+| 风险 | 缓解 |
+|---|---|
+| 声明漂移成"第二份实现" | §5 强制校验（工具集合相等、片段 id 存在）；评测套件 id 参与校验 |
+| 可选能力造成静默降级 | `optionalMissing` 进快照 + app warning + 两条分支各有测试 |
+| manifest 膨胀成配置语言 | §4 的"不进"清单 + §12；新增字段必须同时给出"装配期如何校验它" |
+| 协商把启动代码变复杂 | 协商是纯函数 + 类型化错误；app 只多一个 `pins` 选项 |
+| 迁移期间双份真相 | B4 一次性迁移三个 recipe，迁移后删除 `recipeOptions` 里的 provider 字段 |
+
+## 14. 待确认决定（B2 开工前）
+
+1. **装配快照**：采用方案 A（`request/header` 可选字段，不新增事件类型），方案 B 留给 D1？
+2. **prompt 声明粒度**：只声明基座片段 id（推荐），还是把完整静态提示词文本也放进 manifest（便于 UI 预览，但会与片段注册产生重复）？
+3. **审批档默认值**：manifest 声明默认档、app 覆盖（推荐），还是维持"档位完全由 app 决定、manifest 不写"？

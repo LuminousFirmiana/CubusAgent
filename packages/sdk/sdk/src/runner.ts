@@ -103,6 +103,20 @@ export class SessionRuntime<RecipeOptions = void> {
     return this.gate.snapshot()
   }
 
+  /** 会话目录（E1）：工作台用它列历史会话，避免与运行时各存一份根目录。 */
+  get sessionsDir(): string {
+    return this.opts.rootDir
+  }
+
+  /** 回放某个已打开会话的日志（E1：工作台的事件流先回放再订阅）。 */
+  async replay(sessionId: string): Promise<{ events: SessionEvent[]; truncated: boolean }> {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('session not found: ' + sessionId)
+    const log = session.ctx.get('sessionLog')
+    if (!log) throw new Error('session kernel not ready')
+    return await log.read()
+  }
+
   /** 装配一个会话（create 与 resume 共用；resume 时插件会校验装配身份且不写第二条快照）。 */
   private async mount(
     descriptor: AgentSessionDescriptor,

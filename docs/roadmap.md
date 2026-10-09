@@ -89,8 +89,8 @@ A(P4收尾) ──> B(契约声明式化) ──> C(P5共享安全层) ──> E
 
 | 步 | 目标 | 交付 | 验收证据 |
 |---|---|---|---|
-| E1 | **ADR**：工作台事件流协议 | `docs/design/workbench-protocol.md` | 选 SSE 或 WebSocket；UI 只读日志投影；无状态 |
-| E2 | 事件流服务端 | 会话事件流 + 鉴权 + 断线重连 | 重连后事件不丢不重（协议测试） |
+| E1 ✅ | **ADR**：工作台事件流协议 | `docs/design/workbench-protocol.md` | 选 SSE 或 WebSocket；UI 只读日志投影；无状态 |
+| E2 ✅ | 事件流服务端 | 会话事件流 + 鉴权 + 断线重连 | 重连后事件不丢不重（协议测试） |
 | E3 | Web UI 骨架 | 会话列表 + transcript 回放（chunk 打字机 + 工具卡片） | 中途刷新页面渲染一致（**UI 无状态验收**） |
 | E4 | 任务与差异视图 | 复用 A1 的 git diff provider | 与 CLI 输出一致 |
 | E5 | 审批交互 | Web 端 ask/allow/deny + 超时默认拒绝 | 三分支 + 超时 e2e |

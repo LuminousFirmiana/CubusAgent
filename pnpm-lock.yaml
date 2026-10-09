@@ -67,6 +67,31 @@ importers:
         specifier: workspace:*
         version: link:../../providers/session-jsonl
 
+  packages/apps/workbench:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/sdk':
+        specifier: workspace:*
+        version: link:../../sdk/sdk
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
+    devDependencies:
+      '@cubus/host-local':
+        specifier: workspace:*
+        version: link:../../hosts/local
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+      '@cubus/recipe-coding-agent':
+        specifier: workspace:*
+        version: link:../../recipes/coding-agent
+      '@cubus/tool-approval':
+        specifier: workspace:*
+        version: link:../../policies/tool-approval
+
   packages/core/agent-loop:
     dependencies:
       '@cubus/cordis':

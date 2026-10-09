@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：D4b 评测集扩到 30 个任务完成（D 阶段收尾）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：E1a 工作台服务端完成（HTTP + SSE + 会话列表/恢复）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -47,6 +47,9 @@
 | B 阶段收尾验证 | 完成 | 真模型 add-bug PASS 10.6s + 机械核对（recipe 无 provider 构造、loop 无能力词汇依赖、提交未碰内核文件） |
 | C1 沙箱/凭据 ADR | 完成（Accepted） | docs/design/sandbox-seam.md：威胁模型 + sandbox/credentials 能力形状 + Docker provider 契约 + 预算与并发边界 + 拒绝测试清单 |
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
+| E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
+| E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| E1a 工作台服务端 | 完成 | 新包 @cubus/workbench：GET/POST /api/sessions、GET /api/sessions/:id（摘要+快照+预算+运行状态）、POST .../run（202 异步）、GET .../events（SSE，先回放再订阅）、POST .../resume、GET /api/concurrency；SDK 新增 listSessions/readSessionSummary/readSessionEvents（容错 JSONL）+ replay()/sessionsDir；错误语义化映射 400/404/409/500 |
 | D4b 评测集 30 任务 | 完成 | 夹具从 7 扩到 30（覆盖 boundary/logic/type-coercion/async/side-effect/error-handling/missing-branch 七类），suite 版本 1.1.0；套件清单与磁盘夹具集合由测试双向对齐；每个任务用真模型生成 golden |
 | D4a 行为指纹与门禁 | 完成 | fingerprint.ts：行为指纹（判分 / 事件序列 / 工具序列 / 工作区文件集，来自 A1 只读 Git 报告）+ compareFingerprints 四条规则；harness 把夹具副本变成真 git 仓库并产出指纹；eval:real 报告门禁结果并因回归退出非零；eval:golden 显式重算（打印 diff、拒绝从失败运行生成） |
 | D3b usage 与 token 预算 | 完成 | LlmUsage 进会话词汇（assistant/message.usage?，不进投影）；DeepSeek 适配器带 stream_options.include_usage 并解析末帧（含 cachedTokens）；Loop 落盘 usage；预算新增 maxTokens（读 usage 累计）；CLI 新增 --max-tokens 并打印 token 用量 |
@@ -57,12 +60,12 @@
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 E1：工作台（多会话服务 + 实时事件流 + 会话恢复入口） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 E1b：工作台真模型入口（main.ts，凭据+审批档）与最小页面（看得见正在发生什么） |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：297 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：306 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -76,6 +79,7 @@
 6. docs/design/coding-agent-product.md —— Coding Agent 用户、信任边界与阶段验收；
 7. docs/design/recipe-capabilities.md —— B 阶段设计：recipe 声明面、能力协商、装配期校验（Accepted）；
 7b. docs/design/sandbox-seam.md —— C 阶段设计：沙箱与凭据能力、Docker provider 契约、拒绝测试清单（Accepted）；
+7d. docs/design/workbench-protocol.md —— E 阶段设计：工作台事件流协议（SSE、续传、鉴权边界）（Accepted）；
 7c. docs/design/eval-suite-and-resume.md —— D 阶段设计：Eval Suite 契约、行为指纹门禁、恢复与结算、格式版本（Accepted）；
 8. docs/design/tool-cancellation.md —— Tool signal、进程终止与事实日志结算；
 9. packages/apps/cli/src/coding.ts —— 当前产品入口的校验、装配与结果输出；
@@ -208,6 +212,10 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 工作台事件流用 SSE | 单向“日志 -> 浏览器”正好匹配；原生重连 + Last-Event-ID 续传；curl 就能调试。上行操作走普通 POST，不需要双向通道 |
+| 控制帧易失、日志才是事实源 | run-state / session-resumed 不落盘：连得晚的客户端从日志（turn/start…turn/end）或 GET 详情取状态，界面不得依赖控制帧 |
+| 工作台只做编排 | 它不碰内核、不造会话语义：所有状态来自会话日志与 SDK 既有能力（C6 并发、D3 恢复）。app 负责接线（模型/凭据/Host/权限档/recipe）—— 因此测试可以直接注入假模型的运行时 |
+| SSE 先回放再订阅 | 事件流先回放日志里已有的事件，再推实时事件：断线重连不会丢上下文，且日志始终是唯一事实源（工作台不维护影子状态） |
 | 环境相关的夹具必须自带环境 | timezone-day 在本地（Asia/Shanghai）能红、在 CI（UTC）却绿 —— 因为 bug 只在本地时区与 UTC 不同日时才可见。修法：夹具的 testCommand 自己钉死环境（`TZ=UTC-8`，POSIX 形式，不依赖 tzdata），并用「本地 00:30」这类必然跨日期的时刻。判据：同一夹具在 UTC/Asia/Shanghai/America/New_York 三种环境下的行为必须一致 |
 | 夹具与套件清单双向对齐 | 测试断言 suite.tasks 与磁盘上的 fixture 目录集合完全一致：清单漏夹具 = 任务不参与评测；夹具漏清单 = 任务集名不副实。每个夹具还必须「修前必失败、参考修复必通过」 |
 | golden 显式重算 | 重算命令打印与旧 golden 的 diff，且拒绝从判分失败的运行生成 —— 防止「顺手刷新」掩盖回归 |
@@ -296,17 +304,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：E1 工作台（roadmap E）
+## 10. 下一步：E3 Web UI 骨架 + E3 前的真模型入口（roadmap E）
 
-D 阶段收尾：评测有契约（D1–D2）、会话能恢复（D3）、成本可算（D3b）、行为可回归（D4）。
-接下来把能力交到人手上 —— 工作台的第一小步：
+服务端与协议已就绪（E1/E2）。接下来把它接到人手上：
 
-1. 多会话服务：在 SDK 的 stdio/JSON-RPC 入口（已有）之外加一个 HTTP 入口，复用 C6 的有界并发；
-2. 实时事件流：订阅会话日志（A2 已有 subscribe），把 turn/step/tool 事件推给前端；
-3. 会话可见性：列出历史会话（sidecar 格式版本 + 装配快照 + 恢复入口）；
-4. 先不做花哨 UI：一个能看到「正在发生什么」的最小页面即可（这是「看得见」的验收）。
+1. **真模型入口**（`main.ts`）：凭据 -> DeepSeek 适配器（沿用 CLI 的 model 层）、显式审批档（默认 ask）、端口/工作区/会话目录参数；
+2. **单页 HTML**（无构建步骤）：会话列表 + 实时事件流（EventSource，带 Last-Event-ID 自动续传）+ 运行状态 + token 用量；
+3. **transcript 回放**：按日志投影渲染（user/assistant/tool 卡片，chunk 打字机效果可选）；
+4. **UI 无状态验收**（roadmap E3 的判据）：任务跑到一半刷新页面，渲染结果与刷新前一致 —— 因为界面只读日志。
 
-E 之后是 F（个人交付：一键运行、配置、日志归档）。
+之后 E4 差异视图（复用 A1 的 git 报告）、E5 审批交互、E6 恢复视图。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

@@ -11,10 +11,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "eval:real": "node --import tsx/esm src/run.ts"
+    "eval:real": "node --import tsx/esm src/run.ts",
+    "eval:golden": "node --import tsx/esm src/golden.ts"
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
+    "@cubus/git": "workspace:*",
+    "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
     "@cubus/llm-retry": "workspace:*",

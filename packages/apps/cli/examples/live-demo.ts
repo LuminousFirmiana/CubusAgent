@@ -103,5 +103,7 @@ const result = await runCodingCommand({
 output.write('')
 renderCodingResult(result, output)
 output.write('')
-output.write('# 屏幕上的每一行都来自会话日志的落盘事件；日志文件可自行对照：')
+output.write('# 上方的 text/tool 实时行逐条对应会话日志里的 assistant/chunk 与 tool/call 事件；')
+output.write('# session/log/tool/git 这几段是运行结束后由 CLI 计算的汇总，不是日志事件。')
+output.write('# 日志可自行对照：')
 output.write('#   cat ' + result.logPath)

@@ -5,6 +5,7 @@ import { repairEvalRecipe, REPAIR_EVAL_SUITE } from '@cubus/recipe-repair-eval'
 import type { SessionEvent } from '@cubus/session'
 import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
 import { LocalSubprocess } from '@cubus/tools'
+import { assertSuiteRegistered } from './suites.ts'
 
 export { CODING_AGENT_PROMPT } from '@cubus/recipe-repair-eval'
 export { REPAIR_EVAL_SUITE } from '@cubus/recipe-repair-eval'
@@ -40,7 +41,10 @@ export interface EvalRunResult {
  * 声明与计分套件不一致直接失败，避免"拿 A 套件给 B 产品打分"。
  */
 export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunResult> {
+  // 套件校验（D2）：recipe 声明的 suite 必须真实注册，且必须是 harness 计分的那一套。
+  // 这一步不可绕过 —— 它保证"拿 A 套件给 B 产品打分"这类错配在评测运行时就失败。
   const declaredSuite = repairEvalRecipe.manifest.evaluation?.suite
+  await assertSuiteRegistered(repairEvalRecipe.manifest.id, declaredSuite)
   if (declaredSuite !== REPAIR_EVAL_SUITE) {
     throw new Error(
       'repair-eval recipe declares suite ' + String(declaredSuite) + ' but the harness scores ' + REPAIR_EVAL_SUITE,

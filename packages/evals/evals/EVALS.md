@@ -19,3 +19,11 @@
 
 总耗时 10.6s。未通过项需人工看日志定位（会话日志即完整轨迹）。
 
+## 2026-10-09 10:41 UTC · deepseek-chat · 1 tasks (suite repair-eval-v1 v1.0.0) · 1/1 passed (100%)
+
+| fixture | bug 类型 | 结果 | 耗时 | 会话日志 |
+|---|---|---|---|---|
+| add-bug | logic | ✅ | 7.1s | /var/folders/gl/dmnnkdn57j97smsm5xwph5j80000gn/T/cubus-eval-add-bug-Gh5Tkv/sessions/f4071996-28c9-4a58-a110-62d349b6f4b1/session.jsonl |
+
+总耗时 7.1s。未通过项需人工看日志定位（会话日志即完整轨迹）。
+

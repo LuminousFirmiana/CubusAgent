@@ -1,0 +1,14 @@
+{
+  "id": "repair-eval-v1",
+  "version": "1.0.0",
+  "judge": "hidden-tests",
+  "tasks": [
+    { "id": "add-bug", "gate": "subsequence" },
+    { "id": "empty-input", "gate": "subsequence" },
+    { "id": "in-place-mutation", "gate": "subsequence" },
+    { "id": "missing-await", "gate": "subsequence" },
+    { "id": "off-by-one", "gate": "subsequence" },
+    { "id": "string-coercion", "gate": "subsequence" },
+    { "id": "swallowed-error", "gate": "subsequence" }
+  ]
+}

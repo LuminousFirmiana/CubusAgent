@@ -1,0 +1,17 @@
+{
+  "ranAt": "2026-10-09T10:41:52.458Z",
+  "model": "deepseek-chat",
+  "suiteId": "repair-eval-v1",
+  "suiteVersion": "1.0.0",
+  "passed": 1,
+  "total": 1,
+  "outcomes": [
+    {
+      "id": "add-bug",
+      "passed": true,
+      "durationMs": 7120,
+      "logPath": "/var/folders/gl/dmnnkdn57j97smsm5xwph5j80000gn/T/cubus-eval-add-bug-Gh5Tkv/sessions/f4071996-28c9-4a58-a110-62d349b6f4b1/session.jsonl",
+      "gate": "subsequence"
+    }
+  ]
+}

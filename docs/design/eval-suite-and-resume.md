@@ -1,6 +1,6 @@
 # 评测契约与恢复语义
 
-> 状态：Draft（待确认 §7 的五项决定后转 Accepted）。这是 roadmap D 阶段（D1–D4）的设计依据。
+> 状态：Accepted（2026-10-09）。§7 记录了五项已确认的决定。这是 roadmap D 阶段（D1–D4）的设计依据。
 > 前置：[recipe-capabilities.md](recipe-capabilities.md)（B 阶段，Accepted）、[sandbox-seam.md](sandbox-seam.md)（C 阶段，Accepted）。
 
 ## 1. 背景：两笔欠账
@@ -61,7 +61,8 @@ interface EvalTaskRef {
 
 ### 3.3 注册与校验
 
-- 评测包提供可选服务 `ctx.evalSuites`（注册表）；**评测运行时**校验 `recipe.manifest.evaluation.suite` 已注册，否则拒绝计分（关闭交接文档里"D1 待办"的那条技术债）。
+- 注册表做成 **evals 包的模块级 API**（`loadSuite(id)` / `assertSuiteRegistered(...)`），由评测 harness 校验；
+  不引入 `ctx.evalSuites` 服务：能力 kind 是闭集且没有"评测"这一 kind，而**评测上下文本身就是 harness**，校验放在这里既真实又不污染内核（实现时修正）。
 - 运行时**不做**跨包套件注册检查（保持内核不依赖评测包）；只有评测上下文存在时才校验。
 
 ## 4. Golden trajectory 与回归门禁（D4 实现）
@@ -161,13 +162,13 @@ usage?: { promptTokens: number; completionTokens: number; totalTokens: number; c
 - 语义：usage 不是"模型可见内容"，而是**响应事实**——它同样满足"可以从日志重建"；
 - 有了它，C5 的预算才能从"步数/时长"升级到 token/费用上限（D3 之后的小步）。
 
-## 7. 待确认决定（D2 开工前）
+## 7. 已确认的决定（2026-10-09）
 
-1. **`turn/end` 加可选 `settled?: true`**（推荐）还是不加字段（让读者容忍未闭合 turn）？
-2. **孤儿工具调用的结算**：写 `ok:false` + "结果未知"的 tool/result（推荐，协议要求配对），还是留空（下一轮请求会因配对缺失而报错）？
-3. **格式版本位置**：sidecar `session.meta.json`（推荐，不动事件流）还是首行事件（新增事件类型，破坏 mount-first 不变量）？
-4. **usage 形状**：`assistant/message.usage?`（推荐，additive）还是独立事件（更显眼但词汇 +1）？
-5. **恢复的装配一致性**：身份不一致即**拒绝恢复**（推荐）还是允许降级并记录一条差异事件？
+1. **turn/end 加可选 settled?: true**：恢复写下的闭合与循环正常收尾可区分，"每个 turn 都闭合"成为可依赖不变量。
+2. **孤儿工具调用补一条结算结果**：tool/result 带 ok:false 与"结果未知"文本 —— 协议要求 tool_calls 与结果配对，留空会让下一轮请求直接失败。
+3. **格式版本放 sidecar session.meta.json**：不动事件流，保住 session/mount 是第一条的不变量；缺失视为 v1，过高版本拒绝读取。
+4. **usage 作为 assistant/message.usage?**：additive 可选字段（与 thinking 同类），属"响应事实"，不参与消息投影。
+5. **恢复时装配身份不一致即拒绝**：打印差异并提示开新会话；不允许"以为在沙箱里其实在本地"的静默降级。
 
 ## 8. 非目标
 

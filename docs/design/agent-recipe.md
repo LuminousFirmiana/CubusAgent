@@ -87,6 +87,8 @@ P3 不新增或修改 `SessionEvent` 类型。实际 provider、model、system p
 
 Recipe 身份的跨进程恢复等到实现 session resume 时再设计；若需要新增持久事件，必须单独讨论格式版本和迁移，不能借 P3 顺带修改词汇表。
 
+> 2026-10-09 更新：B 阶段按 [recipe-capabilities.md](recipe-capabilities.md) §8 新增 `session/mount` 事件（装配快照），词汇表由 10 种增为 11 种；格式版本信封仍留到 D1 的 resume 设计。
+
 ## 4. 首版公开形状
 
 具体 TypeScript API 在实现阶段以测试驱动收敛，但职责固定为：

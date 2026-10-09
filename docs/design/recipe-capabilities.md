@@ -1,6 +1,6 @@
 # Recipe 声明式契约与 Host 能力协商
 
-> 状态：Draft（待确认 §14 的 3 项决定后转 Accepted）。这是 roadmap B 阶段（B1–B4）的设计依据。
+> 状态：Accepted（2026-10-09）。§14 记录了三项已确认的决定。这是 roadmap B 阶段（B1–B4）的设计依据。
 > 前置：[agent-recipe.md](agent-recipe.md)（P3 装配边界，Accepted）。本文件扩展它，不取代它。
 
 ## 1. 背景：差在哪
@@ -22,7 +22,7 @@ P3 建立了 Host/Recipe 装配入口，但"产品契约"仍停留在代码里�
 2. **能力有稳定词汇表**：`CapabilityKind` 是封闭集合，每种 kind 对应一个既有或计划中的 seam；新增一种 kind = 新增 seam 实现，而不是加一行配置。
 3. **Recipe 声明需求，Host 声明供给，运行时协商**：`host.capabilities()` 给出可提供的 offerings，运行时把 recipe 的 `requires` 与之匹配，只把**被选中的** offerings 挂进会话 ctx。
 4. **装配期失败，不留半成品会话**：缺必需能力、需求歧义、声明与实现不符，都在 `runtime.create()` 内失败（无模型调用、无日志文件），错误类型化且文案可执行。
-5. **装配快照随每个 step 落日志**（方案见 §8）：recipe 身份 + 解析后的能力清单 + 有效策略档，进 `request/header` 的可选字段；不新增事件类型。
+5. **装配快照是独立事件**（§8，已确认采用方案 B）：新增 `session/mount` 事件，作为日志第一条，记录 recipe 身份 + 解析后的能力清单 + 有效策略档；装配本身因此有生命周期记录。
 6. **step 能力快照语义不变**（[agent-recipe.md](agent-recipe.md) §3.3）：模型可见的能力集合仍按 step 冻结；mount 快照是装配来源（provenance），不是第二个模型可见状态。
 
 ## 3. 能力词汇表（v1）
@@ -39,6 +39,8 @@ P3 建立了 Host/Recipe 装配入口，但"产品契约"仍停留在代码里�
 | `approval` | 逐工具审批策略 | `ask`, `static-allow`, `static-deny` | app 装饰器（`withToolApprovalHost`） | 已有，B3 纳入协商 |
 
 规则：kind 是**闭集**。想表达"我需要一个带 X 特性的 Y"，只能先在 seam 层真实存在 Y 与 X，再进这张表。
+
+`CapabilityKind` 定义在 `packages/core/session/src/types.ts`：它会随装配快照进入日志，因此与日志词汇同源；`@cubus/agent-recipe` 引用它，需求/供给/协商逻辑仍在后者。
 
 ## 4. Manifest 形状（目标）
 
@@ -87,6 +89,7 @@ interface CapabilityRequirement {
 | prompt 基座 | `prompt.fragmentId` 必须已被注册 | `RecipeDeclarationMismatchError` |
 | 工具集合 | 注册的工具名集合 **等于** `tools` 声明集合 | 同上，错误列出两侧差集 |
 | 评测套件 | `evaluation.suite` 必须在评测包已注册（仅评测运行时校验） | 同上 |
+| manifest 自身 | 字段合法性：契约版本可识别、kind 属于闭集、同名 kind 不重复、字符串非空 | `RecipeManifestError` |
 
 理由：声明若允许与实现不同，"声明式"就退化成注释。集合相等比包含更严格也更可预测（插件多注册一个工具必须显式声明）。
 
@@ -118,39 +121,43 @@ runtime.create()
 
 失败语义：任一步失败 -> dispose 该会话 ctx、`create()` 抛错、**不写会话日志**（一个没有内核的日志不可回放）。
 
-## 8. 装配快照与会话日志（需要确认）
+## 8. 装配快照：新增 `session/mount` 事件（已确认：方案 B）
 
-目标：从日志能回答"这条请求是哪套 recipe + 哪套能力/policy 产生的"。两个方案：
-
-**方案 A（推荐）：扩展 `request/header` 的可选字段**
+决定（2026-10-09）：装配本身要有生命周期记录——空会话（装配后未运行）也必须能回答"这套会话是按什么装起来的"。因此给会话日志新增第 11 种事件：
 
 ```ts
-interface RequestHeader {
-  provider: string
-  model: string
-  systemPrompt?: string
-  tools?: RequestToolSpec[]
-  mount?: MountSnapshot            // 新增，可选
+// packages/core/session/src/types.ts（宪法第一页）
+| {
+    /** 装配快照：本会话创建成功时记录一次，必须是日志的第一条事件。 */
+    type: 'session/mount'
+    mount: MountSnapshot
+  }
+
+export interface MountSnapshot {
+  recipe: { id: string; version: string; contractVersion: number }
+  capabilities: readonly MountedCapability[]     // 按 kind 排序，与协商结果一致
+  optionalMissing: readonly CapabilityKind[]     // 声明为可选、但 Host 未提供的能力
+  permission: { profile: string; source: 'manifest' | 'app' }
+  config: unknown                                 // 必须可 JSON 序列化且不含凭据（同工具参数规则）
 }
 
-interface MountSnapshot {
-  recipe: { id: string; version: string; contractVersion: number }
-  capabilities: readonly { kind: string; provider: string; features: readonly string[] }[]
-  optionalMissing: readonly string[]
-  permission: { profile: string; source: 'manifest' | 'app' }
-  config: unknown                  // 必须可 JSON 序列化且不含凭据（同工具参数规则）
+export interface MountedCapability {
+  kind: CapabilityKind
+  provider: string
+  features: readonly string[]
 }
 ```
 
-- 优点：不新增事件类型（词汇表仍是 10 个）；字段可选，历史日志与既有读取方不受影响；与 provider/model/systemPrompt/tools 同属"这条请求的来源信息"，语义位置一致。
-- 局限：只在**至少发生过一次请求**的会话里存在；空会话（装配后未运行）没有快照。
+不变量：
 
-**方案 B：新增 `session/mount` 事件**
+1. **唯一且最先**：每个会话至多一条，且是日志第一条；写在装配**成功之后**、任何 turn 之前。装配失败不写日志（见 §7）。
+2. **不是模型可见内容**：投影（`deriveMessages`）忽略它；"模型可见 ⟺ 已记录"不受影响——它记录的是来源（provenance），不是发给模型的内容。
+3. **确定性**：`capabilities` 按 kind 排序；同一套 recipe + host + config 产出同一份快照。
+4. **可序列化、无凭据**：`config` 与工具参数同规则，写入前校验可 JSON 序列化。
 
-- 优点：装配本身有生命周期记录，空会话也有；与将来 resume/格式版本一起设计更顺。
-- 代价：现在就要动事件词汇表（`packages/core/session/src/types.ts` 是宪法第一页）与格式版本策略；[agent-recipe.md](agent-recipe.md) §3.5 明确要求这类改动单独讨论。
+兼容性：词汇表由 10 种增为 11 种。**旧日志（无 `session/mount`）仍然合法可读**（字段语义不变）；新日志由 B3+ 的代码读取。`SESSION_FORMAT_VERSION` 信封仍留到 D1，本阶段不加。
 
-**建议**：B3 采用方案 A；把方案 B 留给 D1（resume 与结算 ADR），届时若需要装配生命周期事件，再连同 `SESSION_FORMAT_VERSION` 一起设计。**这一条需要你签字**，因为它触及宪法边界的解释。
+被否掉的方案 A（扩展 `request/header` 的可选字段）记录在此：它改动更小、不新增事件，但只能覆盖"至少发生过一次请求"的会话，装配本身没有生命周期记录——与 resume 的方向不一致，故不采用。
 
 ## 9. 与 step 快照的关系
 
@@ -178,7 +185,9 @@ interface MountSnapshot {
 | 声明/实现不符 | 注册工具集合与 `tools` 不等 -> `RecipeDeclarationMismatchError`，含两侧差集 |
 | 同一 recipe 换 Host 零改动 | 同一 recipe 分别用 local Host 与假 Docker Host 装配：prompt/tools 一致，快照 provider 名不同；recipe 目录无 diff |
 | 新 recipe 零内核改动 | 测试内定义一个仅存在于测试文件的 recipe 并成功装配运行；内核包无 diff（评审清单项） |
-| 快照可复现装配 | 从日志的 `mount` 字段 + recipe 包版本重建装配参数（测试断言往返一致） |
+| 快照可复现装配 | `create()` 后日志第一条即快照，且与 recipe+host+config 推导出的值往返一致 |
+| 旧日志仍可读 | 无 `session/mount` 的既有日志照常投影与回放（回归测试） |
+| 装配失败不写日志 | 协商失败时 `create()` 抛错且会话目录内无 `session.jsonl` |
 
 ## 12. 非目标
 
@@ -186,7 +195,7 @@ interface MountSnapshot {
 - 不做跨进程能力发现、版本求解或依赖图（kind 是闭集，匹配是子集判断）；
 - 不允许 session 中途重新协商或热切换能力（沿用 §3.3/§3.4）；
 - recipe 不点名 Host/provider，不做模型参数声明；
-- B3 **不新增 SessionEvent 类型**（方案 A）；方案 B 留给 D1；
+- B3 只新增 `session/mount` 一种事件（方案 B）；不新增其它事件类型，不加 `SESSION_FORMAT_VERSION` 信封（留 D1）；
 - 不在本阶段动审批策略的判定逻辑（只把档名纳入声明与快照）。
 
 ## 13. 风险与缓解
@@ -198,9 +207,10 @@ interface MountSnapshot {
 | manifest 膨胀成配置语言 | §4 的"不进"清单 + §12；新增字段必须同时给出"装配期如何校验它" |
 | 协商把启动代码变复杂 | 协商是纯函数 + 类型化错误；app 只多一个 `pins` 选项 |
 | 迁移期间双份真相 | B4 一次性迁移三个 recipe，迁移后删除 `recipeOptions` 里的 provider 字段 |
+| 词汇表增长带来读取方分叉 | `session/mount` 是纯增量事件：投影忽略它、旧日志仍合法；B3 补"旧日志回归"测试；格式版本信封留 D1 |
 
-## 14. 待确认决定（B2 开工前）
+## 14. 已确认的决定（2026-10-09）
 
-1. **装配快照**：采用方案 A（`request/header` 可选字段，不新增事件类型），方案 B 留给 D1？
-2. **prompt 声明粒度**：只声明基座片段 id（推荐），还是把完整静态提示词文本也放进 manifest（便于 UI 预览，但会与片段注册产生重复）？
-3. **审批档默认值**：manifest 声明默认档、app 覆盖（推荐），还是维持"档位完全由 app 决定、manifest 不写"？
+1. **装配快照**：采用**方案 B** —— 新增 `session/mount` 事件（§8）。理由：装配要有自己的生命周期记录，空会话也有；与 resume 方向一致。代价（词汇表 +1、格式版本留待 D1）已接受。
+2. **prompt 声明粒度**：只声明基座片段 id（不重复放静态文本）；装配后校验该片段确实注册过。
+3. **审批档默认值**：manifest 声明默认档（`permission.profile`），app 可覆盖；优先级 app > manifest，快照记录最终值与来源。

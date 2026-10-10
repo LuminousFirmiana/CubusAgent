@@ -282,18 +282,21 @@ function approvalCard(approval) {
   deny.onclick = () => answer('deny')
   buttons.append(allow, deny)
   card.append(name, args, hint, buttons)
-  transcript.append(card)
-  transcript.scrollTop = transcript.scrollHeight
+  // 审批卡不住在 transcript 里：transcript 会被整份日志回放（顺序由日志决定），
+  // 而"还在等回答"是易失的实时状态。放固定区域，刷新/重连后都找得到。
+  el('approvals').append(card)
 }
 
 function resolveApprovalCard(id, outcome, reason, by) {
-  const card = transcript.querySelector('[data-approval-id="' + id + '"]')
+  const card = el('approvals').querySelector('[data-approval-id="' + id + '"]')
   if (!card) return
   const note = document.createElement('pre')
   note.textContent = (outcome === 'allow' ? '已允许' : '已拒绝') +
     (by === 'timeout' ? '（超时未回答，按默认拒绝）' : '') + (reason ? '：' + reason : '')
   card.append(note)
   for (const button of card.querySelectorAll('button')) button.disabled = true
+  // 结论看一眼就够，3 秒后收起，避免审批区堆积历史决定
+  setTimeout(() => card.remove(), 3000)
 }
 
 async function refreshApprovals() {
@@ -301,7 +304,7 @@ async function refreshApprovals() {
   if (!response.ok) return
   const payload = await response.json()
   for (const approval of payload.pending) {
-    if (!transcript.querySelector('[data-approval-id="' + approval.id + '"]')) approvalCard(approval)
+    if (!el('approvals').querySelector('[data-approval-id="' + approval.id + '"]')) approvalCard(approval)
   }
 }
 

@@ -50,6 +50,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| **S1.5 工作台 UI** | 完成 | 界面重做（零构建仍是硬约束）：明暗两套调色板（`prefers-color-scheme`）、顶栏品牌 + 产品身份徽章 + 连接指示灯、会话列表（单行截断 + 待恢复/日志问题角标）、对话区排版（用户/助手/思考三种行、工具卡片带参数与输出、事件标记统一为虚线标尺、token 行等宽字体）、空状态文案。**顺带修一个真 bug**：待回答的审批原先内联在 transcript 里，而 transcript 会被整份日志回放（顺序由日志决定），刷新页面后卡片被埋进历史中部、用户看不见 —— 现在审批移入 `#approvals` 固定区域（易失的实时状态与可回放的日志分开），解决后 3 秒自动收起。验证方式：headless Chrome 截图三态（浅色/暗色/带审批卡）逐张核对 + 全量 check 绿。 |
 | **S1 产品身份** | 完成 | 从冻结版另起 `feat/coding-agent` 分支：新增 @cubus/recipe-cubus-coding-agent（产品 id `cubus-coding-agent@0.1.0`、自己的提示词、四工具、审批默认 `ask`），CLI 与工作台改为装配该产品——装配快照因此能回答"这次跑的是哪个产品"。产品包**只声明**（提示词/工具面/审批档/预算），装配逻辑仍来自通用工厂 @cubus/recipe-coding-agent：`repair-eval` 与产品共用同一工厂，不复制装配。docs/design/coding-agent-product.md 增 §7（产品身份与验收）与 §8（目标能力 S2–S6 及各自的复现方式：每步都必须能用日志或评测出结论）。 |
 | 地基债第三批 | 完成 | ①**取消不再留孤儿**：容器内命令改由 `setsid -w` 起独立进程组并记录组号，取消/超时后按组 `kill -s TERM -- -$p` -> KILL；`docker run --init` 让被杀孤儿被回收。真容器集成测试断言"取消后容器内无存活进程且容器仍可用"。②**镜像升级流程**：DEFAULT_DOCKER_IMAGE 的升级四步写进 sandbox ADR，并新增镜像预检集成测试（核对 sh/setsid/cat/rm/sleep 与全部边界）——镜像换代让假设失效时立刻红。③**容器上限**：Host 新增 maxContainers（默认 4）与 DockerContainerLimitError，超限快速失败、释放后名额回收（集成测试覆盖） |
 | 地基债第二批 | 完成 | ①会话归属：ToolExecutionContext 加可选 sessionId（seam additive），循环从 runtime 插件的 session 描述符透传，审批项带 sessionId 并显示在工作台卡片上（实测与真实会话 id 一致）。②评测跑飞的可见性：预算本就由 recipe manifest 声明并被评测继承（40 步/60 工具/10 分钟/200k token，已核对真实评测日志的 mount.budget），缺的是"被拦住"与"答错"没有区分 -> EvalTaskOutcome 加 budgetTripped，控制台打 CANCELLED，EVALS.md 标 ⏱ 并在表头统计，机器可读结果保留该字段。③SDK 公开面补预算类型（BudgetState/BudgetTripReason/BudgetLimits），消费方不必再去 import 策略包 |
@@ -362,6 +363,7 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 
 | 待办 | 触发条件 / 归属 |
 |---|---|
+| **时长预算按"会话打开"起算，交互式长会话会误判** | S1.5 亲手验证时发现：`BudgetPolicy.startedAt` 在装配（打开会话）时固定，工作台一个会话可跑多次任务，因此会话活了超过 `maxDurationMs`（默认 10 分钟）之后，**之后每次运行都会被判 `max-duration` 并取消**（实测：跑 45 秒的任务报 `tripped: max-duration`、`elapsedMs` 2997 秒）。步数/工具/token 按会话累计是 D1 的**有意决定**（跨崩溃续算），但墙钟时长跨"空闲时间"没有意义 —— 建议 S1.6 把时长改成**按运行窗口**（run 开始时重置基线），并在工作台 meta 行显示 `步 4/40 · 工具 2/60 · tokens 9482/200000` 让预算进度可见 |
 | CLI 无交互式多轮、无 --resume、无 patch 级 diff | A 方向（coding agent 产品化）规划内 |
 | Docker Host 未接进入口（--sandbox docker） | A 方向；Host 自身已补齐（见 9.1） |
 | 容器网络只有 none | 需要"沙箱内装依赖"时做域名白名单；现在在工作区外先装好 |

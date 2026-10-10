@@ -5,6 +5,7 @@ import type { SystemPromptService } from '@cubus/system-prompt'
 import type { ToolRegistryService } from '@cubus/tool-registry'
 import { echoTool } from './echo-tool.ts'
 import { Loop } from './loop.ts'
+import type { LoopRetryOptions } from './retry.ts'
 import type { Tool } from './types.ts'
 
 // 服务键声明合并：ctx.loop 由本插件提供；ctx.sessionLog 由 Host provider 提供。
@@ -22,6 +23,10 @@ export interface AgentLoopPluginConfig {
   systemPrompt?: string
   /** ID 生成器（测试注入实现确定性）；默认 randomUUID。 */
   generateId?: () => string
+  /** 循环级重试（F4b）：每次重试写进日志（request/retry）。 */
+  retry?: LoopRetryOptions
+  /** 时钟注入（时间戳只用于耗时指标）。 */
+  now?: () => number
 }
 
 /**
@@ -54,6 +59,8 @@ export const agentLoopPlugin = {
       // exactOptionalPropertyTypes：可选属性不能收到显式 undefined，只能整体缺省
       ...(config.systemPrompt === undefined ? {} : { systemPrompt: config.systemPrompt }),
       ...(config.generateId ? { generateId: config.generateId } : {}),
+      ...(config.retry === undefined ? {} : { retry: config.retry }),
+      ...(config.now === undefined ? {} : { now: config.now }),
     })
     ctx.provide('loop', loop)
   },

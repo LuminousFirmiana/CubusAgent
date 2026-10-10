@@ -285,6 +285,8 @@ async function main(args: readonly string[]): Promise<number> {
     recipe: codingAgentRecipe,
     recipeOptions: undefined,
     permissionProfile: options.approval,
+    // 重试由循环做（F4b）：每次重试进日志
+    retry: { maxAttempts: options.maxAttempts },
   })
 
   const server = await startWorkbenchServer({

@@ -6,6 +6,7 @@ import { createLocalAgentHost } from '@cubus/host-local'
 import { ScriptedAdapter } from '@cubus/llm'
 import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
+import { SESSION_FORMAT_VERSION } from '@cubus/session'
 import { createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
 import type { AgentRecipe } from '@cubus/agent-recipe'
 import { startWorkbenchServer } from '../src/server.ts'
@@ -99,7 +100,8 @@ test('a crashed session can be read from disk and then resumed into a live sessi
     settlementEvents: { type: string; settled?: true }[]
     formatVersion: number
   }
-  expect(resumed.formatVersion).toBe(2)
+  // 用常量而不是字面量：格式版本会随词汇表增长（F4b 起是 3）
+  expect(resumed.formatVersion).toBe(SESSION_FORMAT_VERSION)
   expect(resumed.settled).toBe(true)
   expect(resumed.settlementEvents.at(-1)).toMatchObject({ type: 'turn/end', settled: true })
 

@@ -174,7 +174,7 @@ gate FAIL: tools (subsequence): golden [...] is not covered in order by [...]
 
 - 为什么不放首行事件：会新增事件类型，并且和 `session/mount` 的"必须是第一条"冲突；
 - 读取方规则：文件缺失 → 视为 **1**（D1 之前的日志）；`formatVersion > 支持版本` → **拒绝读取**并提示升级，不做静默降级；
-- 版本号只在**破坏性**变化时递增（新增可选字段不算：v1 → v2 是因为多了 `session/mount` 与 `mount.budget`）。
+- 版本号只在**破坏性**变化时递增（新增可选字段不算）：v1 → v2 是因为多了 `session/mount` 与 `mount.budget`；v2 → v3 是因为多了 `request/retry` 事件（**新增事件类型算一次递增**）。
 
 ### 6.2 usage（token 计量）
 

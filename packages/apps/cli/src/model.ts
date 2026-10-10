@@ -1,7 +1,6 @@
 import type { CredentialsProvider } from '@cubus/credentials'
 import { DeepSeekAdapter } from '@cubus/llm'
 import type { LlmAdapter } from '@cubus/llm'
-import { withLlmRetry } from '@cubus/llm-retry'
 import type { DeepSeekEnvironment } from './config.ts'
 
 /** 模型凭据名：CLI 与 Host 的 credentials 能力共用同一个名字（进快照的也只有名字）。 */
@@ -29,7 +28,9 @@ export async function createModelAdapterFactory(
       apiKey: lease.reveal(),
       model: options.settings.DEEPSEEK_MODEL ?? 'deepseek-chat',
     })
-    return () => withLlmRetry(adapter, { maxAttempts: options.maxAttempts })
+    // 重试由**循环**负责（F4b），这样每次重试都进日志（request/retry）；这里不再套适配器层重试。
+    void options.maxAttempts
+    return () => adapter
   } finally {
     await lease.release()
   }

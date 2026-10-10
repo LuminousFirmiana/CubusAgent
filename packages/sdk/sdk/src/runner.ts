@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { createAgentRuntimePlugin } from '@cubus/agent-recipe'
+import type { LoopRetryOptions } from '@cubus/agent-loop'
 import type { AgentHost, AgentRecipe, AgentSessionDescriptor, CapabilityPins } from '@cubus/agent-recipe'
 import { Context } from '@cubus/cordis'
 import type { BudgetState } from '@cubus/budget'
@@ -74,6 +75,11 @@ export interface SessionRuntimeOptions<RecipeOptions = void> {
   maxConcurrentRuns?: number
   /** 排队等待上限（毫秒）；0 = 不排队，没名额直接失败。默认 120000。 */
   queueWaitMs?: number
+  /**
+   * 模型请求的重试（F4b）：**循环级**重试，每次重试写进日志（request/retry）。
+   * 传了它就不要再在适配器外面套 withLlmRetry —— 双重拥有者会让重试不可见。
+   */
+  retry?: LoopRetryOptions
   /** 会话 ID 生成器（测试注入计数器实现确定性）。 */
   generateId?: () => string
 }
@@ -131,6 +137,7 @@ export class SessionRuntime<RecipeOptions = void> {
       ...(this.opts.capabilityPins === undefined ? {} : { capabilityPins: this.opts.capabilityPins }),
       ...(this.opts.permissionProfile === undefined ? {} : { permissionProfile: this.opts.permissionProfile }),
       ...(this.opts.budget === undefined ? {} : { budget: this.opts.budget }),
+      ...(this.opts.retry === undefined ? {} : { loop: { retry: this.opts.retry } }),
       ...(extras.resume === true ? { resume: true as const } : {}),
     }))
     return ctx

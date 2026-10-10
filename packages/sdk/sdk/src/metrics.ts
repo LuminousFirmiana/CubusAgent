@@ -35,6 +35,17 @@ export interface SessionMetrics {
   }
   /** 带 usage 的助手消息数（用来判断 token 数字覆盖了多少回合）。 */
   readonly usageMessages: number
+  /** 模型请求的重试次数（request/retry；F4b 起重试由循环写进日志）。 */
+  readonly retries: number
+  /**
+   * 正常闭合的回合耗时（毫秒；只统计 turn/start 与 turn/end 都带 at 的回合）。
+   * 恢复结算的回合不计入 —— 那会把"崩溃到重启"的时间算成一个回合的耗时。
+   */
+  readonly durationMs: {
+    readonly turns: number
+    readonly total: number
+    readonly max: number
+  }
   readonly needsSettlement: boolean
 }
 
@@ -49,7 +60,10 @@ export function sessionMetrics(sessionId: string, events: readonly SessionEvent[
   let toolFailures = 0
   let toolDenials = 0
   let usageMessages = 0
+  let retries = 0
   let openTurn = false
+  let openTurnStartedAt: number | undefined
+  const duration = { turns: 0, total: 0, max: 0 }
   const byName: Record<string, number> = {}
   const tokens = { prompt: 0, completion: 0, total: 0, cached: 0 }
 
@@ -58,10 +72,31 @@ export function sessionMetrics(sessionId: string, events: readonly SessionEvent[
       case 'turn/start':
         turns += 1
         openTurn = true
+        openTurnStartedAt = event.at === undefined ? undefined : Date.parse(event.at)
         break
-      case 'turn/end':
+      case 'turn/end': {
         if (event.settled === true) settledTurns += 1
         openTurn = false
+        // 只有正常闭合、且两端都有时间戳的回合才计入耗时（恢复结算的不算）
+        const endedAt = event.at === undefined ? undefined : Date.parse(event.at)
+        if (
+          event.settled !== true &&
+          openTurnStartedAt !== undefined &&
+          endedAt !== undefined &&
+          Number.isFinite(openTurnStartedAt) &&
+          Number.isFinite(endedAt) &&
+          endedAt >= openTurnStartedAt
+        ) {
+          const elapsed = endedAt - openTurnStartedAt
+          duration.turns += 1
+          duration.total += elapsed
+          duration.max = Math.max(duration.max, elapsed)
+        }
+        openTurnStartedAt = undefined
+        break
+      }
+      case 'request/retry':
+        retries += 1
         break
       case 'step/start':
         steps += 1
@@ -105,6 +140,8 @@ export function sessionMetrics(sessionId: string, events: readonly SessionEvent[
     toolCallsByName: byName,
     tokens,
     usageMessages,
+    retries,
+    durationMs: duration,
     needsSettlement: openTurn,
   }
 }
@@ -122,7 +159,10 @@ export interface MetricsSummary {
     readonly toolDenials: number
     readonly tokens: SessionMetrics['tokens']
     readonly usageMessages: number
+    readonly retries: number
     readonly toolCallsByName: Readonly<Record<string, number>>
+    /** 所有会话的回合耗时合计（只含有两端时间戳的正常回合）。 */
+    readonly durationMs: { readonly turns: number; readonly total: number; readonly max: number }
   }
   /**
    * 比率：分母为 0 时是 **null**（"没有数据"），不是 0 也不是 NaN —— 0 会被误读成"确实没发生"。
@@ -133,6 +173,10 @@ export interface MetricsSummary {
     readonly turnCancellation: number | null
     /** 平均每个有产出的回合花了多少 token。 */
     readonly tokensPerUsageMessage: number | null
+    /** 重试率：重试次数 / 模型请求数（step 数）。 */
+    readonly retry: number | null
+    /** 平均每个计时回合的耗时（毫秒）。 */
+    readonly turnDurationMs: number | null
   }
 }
 
@@ -151,8 +195,10 @@ export function summarizeMetrics(sessions: readonly SessionMetrics[]): MetricsSu
     toolFailures: 0,
     toolDenials: 0,
     usageMessages: 0,
+    retries: 0,
     tokens: { prompt: 0, completion: 0, total: 0, cached: 0 },
     toolCallsByName: {} as Record<string, number>,
+    durationMs: { turns: 0, total: 0, max: 0 },
   }
 
   for (const session of sessions) {
@@ -164,6 +210,10 @@ export function summarizeMetrics(sessions: readonly SessionMetrics[]): MetricsSu
     totals.toolFailures += session.toolFailures
     totals.toolDenials += session.toolDenials
     totals.usageMessages += session.usageMessages
+    totals.retries += session.retries
+    totals.durationMs.turns += session.durationMs.turns
+    totals.durationMs.total += session.durationMs.total
+    totals.durationMs.max = Math.max(totals.durationMs.max, session.durationMs.max)
     totals.tokens.prompt += session.tokens.prompt
     totals.tokens.completion += session.tokens.completion
     totals.tokens.total += session.tokens.total
@@ -181,6 +231,8 @@ export function summarizeMetrics(sessions: readonly SessionMetrics[]): MetricsSu
       toolFailure: ratio(totals.toolFailures, totals.toolCalls),
       turnCancellation: ratio(totals.cancelledTurns, totals.turns),
       tokensPerUsageMessage: ratio(totals.tokens.total, totals.usageMessages),
+      retry: ratio(totals.retries, totals.steps),
+      turnDurationMs: ratio(totals.durationMs.total, totals.durationMs.turns),
     },
   }
 }

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { LlmToolCall } from '@cubus/llm'
 import { deriveRequest } from '@cubus/session'
 import type { ContentBlock, LlmUsage, SessionLog } from '@cubus/session'
+import { describeRetryFailure, isRetryable, resolveRetryOptions } from './retry.ts'
+import type { ResolvedRetryOptions } from './retry.ts'
 import type { InboxItem, LoopConfig, StepCapabilities, Tool } from './types.ts'
 
 interface ResolvedStepCapabilities {
@@ -41,6 +43,8 @@ export class Loop {
   private readonly adapter: LoopConfig['adapter']
   private readonly resolveCapabilities: () => StepCapabilities
   private readonly generateId: () => string
+  private readonly retry: ResolvedRetryOptions
+  private readonly now: () => number
 
   constructor(config: LoopConfig) {
     this.log = config.log
@@ -51,6 +55,13 @@ export class Loop {
       tools: staticTools,
     }))
     this.generateId = config.generateId ?? randomUUID
+    this.retry = resolveRetryOptions(config.retry)
+    this.now = config.now ?? Date.now
+  }
+
+  /** 事件时间戳（F4b）：只用于耗时指标，不参与任何投影。 */
+  private isoNow(): string {
+    return new Date(this.now()).toISOString()
   }
 
   /**
@@ -79,7 +90,7 @@ export class Loop {
 
   private async runTurn(item: InboxItem): Promise<void> {
     const turnId = this.generateId()
-    await this.log.append({ type: 'turn/start', turnId })
+    await this.log.append({ type: 'turn/start', turnId, at: this.isoNow() })
     await this.log.append({ type: 'user/message', messageId: item.messageId, content: item.content })
 
     this.abort = new AbortController()
@@ -89,7 +100,7 @@ export class Loop {
         if (stepDone || this.abort.signal.aborted) break
       }
     } finally {
-      await this.log.append({ type: 'turn/end', turnId })
+      await this.log.append({ type: 'turn/end', turnId, at: this.isoNow() })
       this.abort = null
     }
   }
@@ -125,23 +136,49 @@ export class Loop {
     const toolCalls: LlmToolCall[] = []
     let aborted = false
 
+    // 循环级重试（F4b）：重试写进日志（request/retry），app 不再在适配器外套一层
+    let attempt = 1
+    let retryDelayMs = this.retry.initialDelayMs
     try {
-      for await (const chunk of this.adapter.stream(request, this.abort!.signal)) {
-        if (this.abort!.signal.aborted) {
-          aborted = true
-          break
+      attemptLoop: while (true) {
+        let emitted = false
+        try {
+          for await (const chunk of this.adapter.stream(request, this.abort!.signal)) {
+            emitted = true
+            if (this.abort!.signal.aborted) {
+              aborted = true
+              break attemptLoop
+            }
+            if (chunk.delta) {
+              text += chunk.delta
+              await this.log.append({ type: 'assistant/chunk', stepId, delta: chunk.delta })
+            }
+            if (chunk.thinkingDelta) {
+              thinkingText += chunk.thinkingDelta
+              await this.log.append({ type: 'assistant/chunk', stepId, thinkingDelta: chunk.thinkingDelta })
+            }
+            if (chunk.toolCalls) toolCalls.push(...chunk.toolCalls)
+            // D3b：usage 是响应事实，落进 assistant/message（不参与消息投影）
+            if (chunk.usage) usage = chunk.usage
+          }
+          break attemptLoop
+        } catch (error) {
+          if (this.abort!.signal.aborted) {
+            aborted = true
+            break attemptLoop
+          }
+          if (!isRetryable(error, emitted, attempt, this.retry)) throw error
+          attempt += 1
+          // 重试是请求事实：落盘（审计与指标都靠它）
+          await this.log.append({
+            type: 'request/retry',
+            stepId,
+            attempt,
+            reason: describeRetryFailure(error),
+          })
+          await this.retry.sleep(retryDelayMs, this.abort!.signal)
+          retryDelayMs = Math.min(this.retry.maxDelayMs, retryDelayMs * this.retry.backoffMultiplier)
         }
-        if (chunk.delta) {
-          text += chunk.delta
-          await this.log.append({ type: 'assistant/chunk', stepId, delta: chunk.delta })
-        }
-        if (chunk.thinkingDelta) {
-          thinkingText += chunk.thinkingDelta
-          await this.log.append({ type: 'assistant/chunk', stepId, thinkingDelta: chunk.thinkingDelta })
-        }
-        if (chunk.toolCalls) toolCalls.push(...chunk.toolCalls)
-        // D3b：usage 是响应事实，落进 assistant/message（不参与消息投影）
-        if (chunk.usage) usage = chunk.usage
       }
     } catch (error) {
       if (this.abort!.signal.aborted) {

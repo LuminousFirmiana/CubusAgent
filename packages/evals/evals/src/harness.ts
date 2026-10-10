@@ -93,6 +93,8 @@ export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunRes
     recipeOptions: undefined,
     // 评测是 app：它把 manifest 的默认档覆盖为 allow，快照会记录 source: app。
     permissionProfile: 'allow',
+    // 重试由循环做（F4b）：评测也能从日志里看到重试次数
+    retry: { maxAttempts: 3 },
     ...(opts.generateId === undefined ? {} : { generateId: opts.generateId }),
   })
 

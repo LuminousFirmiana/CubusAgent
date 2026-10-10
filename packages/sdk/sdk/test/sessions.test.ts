@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { ScriptedAdapter } from '@cubus/llm'
+import { SESSION_FORMAT_VERSION } from '@cubus/session'
 import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
 import { createTools } from '@cubus/tools'
@@ -94,7 +95,7 @@ test('listSessions summarises live and crashed sessions, newest first', async ()
   expect(summaries.map(summary => summary.id)).toEqual(['s2', 's1'])
   for (const summary of summaries) {
     expect(summary.problems).toEqual([])
-    expect(summary.formatVersion).toBe(2)
+    expect(summary.formatVersion).toBe(SESSION_FORMAT_VERSION)
     expect(summary.recipe).toEqual({ id: 'sessions-test', version: '1.0.0' })
     expect(summary.capabilities).toContain('llm:local-adapter')
     expect(summary.permissionProfile).toBe('allow')

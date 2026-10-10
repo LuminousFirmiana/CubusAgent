@@ -17,12 +17,14 @@ function session(overrides: Partial<SessionMetrics> = {}): SessionMetrics {
     toolCallsByName: { bash: 3, read_file: 1 },
     tokens: { prompt: 1_000, completion: 100, total: 1_100, cached: 750 },
     usageMessages: 2,
+    retries: 1,
+    durationMs: { turns: 2, total: 4_000, max: 3_000 },
     needsSettlement: false,
     ...overrides,
   }
 }
 
-test('the report is deterministic and shows the real numbers with honest gaps', () => {
+test('the report is deterministic and shows the real numbers', () => {
   const report = renderMetricsReport(summarizeMetrics([session()]), '/tmp/sessions')
 
   expect(report).toContain('sessions: 1  (/tmp/sessions)')
@@ -31,9 +33,9 @@ test('the report is deterministic and shows the real numbers with honest gaps', 
   expect(report).toContain('tokens:   1,100  (prompt 1,000 / completion 100 / cached 750 -> 75.0% of prompt)')
   expect(report).toContain('per response: 550 tokens  (2 responses with usage)')
   expect(report).toContain('by tool:  bash 3, read_file 1')
-  // 算不出来的东西写在报告里，而不是假装有
-  expect(report).toContain('duration: the event vocabulary has no timestamps yet')
-  expect(report).toContain('retry rate: llm-retry retries are not written to the log yet')
+  // F4b 之后这两项也算得出来了：重试写进日志、回合带时间戳
+  expect(report).toContain('retries:  1  (50.0% of model requests)')
+  expect(report).toContain('turn time: 2.0s  (slowest 3.0s, 2 timed turns)')
   // 同样的输入 -> 同样的输出（可当基线）
   expect(renderMetricsReport(summarizeMetrics([session()]), '/tmp/sessions')).toBe(report)
 })
@@ -43,6 +45,8 @@ test('an empty corpus says n/a instead of pretending zero', () => {
   expect(report).toContain('sessions: 0')
   expect(report).toContain('denied by approval 0 -> n/a')
   expect(report).toContain('per response: n/a tokens  (0 responses with usage)')
+  expect(report).toContain('retries:  0  (n/a of model requests)')
+  expect(report).toContain('turn time: n/a')
   expect(report).toContain('by tool:  (none)')
 })
 

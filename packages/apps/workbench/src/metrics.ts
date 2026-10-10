@@ -87,6 +87,11 @@ export function renderMetricsReport(summary: MetricsSummary, sessionsDir: string
     'per response: ' + (rates.tokensPerUsageMessage === null ? 'n/a' : Math.round(rates.tokensPerUsageMessage).toLocaleString('en-US')) +
     ' tokens  (' + String(totals.usageMessages) + ' responses with usage)',
   )
+  lines.push('retries:  ' + String(totals.retries) + '  (' + percent(rates.retry) + ' of model requests)')
+  lines.push(
+    'turn time: ' + (rates.turnDurationMs === null ? 'n/a' : (rates.turnDurationMs / 1000).toFixed(1) + 's') +
+    '  (slowest ' + (totals.durationMs.max / 1000).toFixed(1) + 's, ' + String(totals.durationMs.turns) + ' timed turns)',
+  )
   const tools = Object.entries(totals.toolCallsByName).sort((left, right) => right[1] - left[1] || (left[0] < right[0] ? -1 : 1))
   lines.push('by tool:  ' + (tools.length === 0 ? '(none)' : tools.map(([name, count]) => name + ' ' + String(count)).join(', ')))
   lines.push('')
@@ -102,10 +107,6 @@ export function renderMetricsReport(summary: MetricsSummary, sessionsDir: string
     )
   }
   if (summary.sessions.length > 20) lines.push('  … 还有 ' + String(summary.sessions.length - 20) + ' 个会话')
-  lines.push('')
-  lines.push('not derivable from the log (honest gaps):')
-  lines.push('  - duration: the event vocabulary has no timestamps yet')
-  lines.push('  - retry rate: llm-retry retries are not written to the log yet')
   return lines.join('\n')
 }
 

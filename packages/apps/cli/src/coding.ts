@@ -283,6 +283,8 @@ export async function runCodingCommand(
     recipeOptions: undefined,
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(budget === undefined ? {} : { budget }),
+    // 重试由循环做（F4b）：每次重试进日志（request/retry），而不是在适配器层悄悄重试
+    retry: { maxAttempts: options.maxModelAttempts ?? 3 },
     ...(dependencies.generateId === undefined ? {} : { generateId: dependencies.generateId }),
   })
   const session = await runtime.create()

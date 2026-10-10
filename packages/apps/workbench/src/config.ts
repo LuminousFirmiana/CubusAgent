@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import type { CredentialsProvider } from '@cubus/credentials'
 import { DeepSeekAdapter } from '@cubus/llm'
 import type { LlmAdapter } from '@cubus/llm'
-import { withLlmRetry } from '@cubus/llm-retry'
 
 /**
  * 工作台的真模型接线（E3）：与 CLI 同构 —— 明文只经 credentials seam 的租约取出，
@@ -61,7 +60,9 @@ export async function createModelAdapterFactory(options: {
       apiKey: lease.reveal(),
       model: options.settings.DEEPSEEK_MODEL ?? 'deepseek-chat',
     })
-    return () => withLlmRetry(adapter, { maxAttempts: options.maxAttempts })
+    // 重试由循环负责（F4b）：工作台把 maxAttempts 传给 SessionRuntime 的 retry 选项
+    void options.maxAttempts
+    return () => adapter
   } finally {
     await lease.release()
   }

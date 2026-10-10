@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DeepSeekAdapter } from '@cubus/llm'
-import { withLlmRetry } from '@cubus/llm-retry'
 import type { LlmAdapter } from '@cubus/llm'
 
 /**
@@ -40,16 +39,16 @@ export function modelName(): string {
   return process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat'
 }
 
-/** 每个任务一份适配器实例（含重试包装）。 */
+/**
+ * 每个任务一份适配器实例。**不在这里包重试**（F4b）：重试由循环做，
+ * 这样每次重试都写进日志；评测侧把 maxAttempts 交给 SessionRuntime 的 retry 选项。
+ */
 export function createAdapterFactory(apiKey: string, model: string): () => LlmAdapter {
-  return () => withLlmRetry(
-    new DeepSeekAdapter({
-      baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
-      apiKey,
-      model,
-    }),
-    { maxAttempts: 3 },
-  )
+  return () => new DeepSeekAdapter({
+    baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
+    apiKey,
+    model,
+  })
 }
 
 /** pnpm run 会把分隔符 -- 原样传给脚本（与 CLI 入口同一个坑），先剥掉。 */

@@ -1,5 +1,6 @@
 import type { LlmAdapter } from '@cubus/llm'
 import type { ContentBlock, SessionLog } from '@cubus/session'
+import type { LoopRetryOptions } from './retry.ts'
 import type { Tool } from '@cubus/tool-registry'
 
 export type { Tool } from '@cubus/tool-registry'
@@ -22,6 +23,13 @@ export interface LoopConfig {
   resolveCapabilities?: () => StepCapabilities
   /** 默认随机；测试注入计数器实现确定性回放。 */
   generateId?: () => string
+  /**
+   * 模型请求的重试策略（F4b）。**在循环里重试**，因此每次重试都会写进日志
+   * （request/retry）—— app 不应再在适配器外面套一层重试，否则是双重拥有者。
+   */
+  retry?: LoopRetryOptions
+  /** 时钟注入：默认 Date.now（时间戳只用于耗时指标，不参与投影）。 */
+  now?: () => number
 }
 
 /** 收件箱里的一条待处理输入。 */

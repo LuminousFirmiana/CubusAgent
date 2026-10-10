@@ -28,13 +28,39 @@ function makeIdGen() {
 
 let runCounter = 0
 
+/**
+ * 固定时钟（F4b）：事件会带 at 时间戳，注入同一个时钟才能保持"逐字节可复现"。
+ * 这与 generateId 的注入是同一个道理：不确定的东西要能被钉住。
+ */
+function makeClock(start = Date.parse('2026-01-01T00:00:00.000Z')): () => number {
+  let current = start
+  return () => {
+    current += 1_000
+    return current
+  }
+}
+
+/** 剥掉 at 时间戳再比结构：时钟是注入的，但断言不该依赖"第几次调用时钟"。 */
+function withoutTimestamps(events: readonly SessionEvent[]): unknown[] {
+  return events.map(event => {
+    const { at, ...rest } = event as SessionEvent & { at?: string }
+    void at
+    return rest
+  })
+}
+function withoutTimestamp(event: unknown): unknown {
+  const { at, ...rest } = event as { at?: string }
+  void at
+  return rest
+}
+
 // 每次 runWith 使用独立子目录：保证每次跑都从空日志开始。
 async function runWith(scenes: ConstructorParameters<typeof ScriptedAdapter>[0]): Promise<{ events: SessionEvent[]; log: SessionLogFile; adapter: ScriptedAdapter }> {
   const sub = join(dir, 'run-' + String(++runCounter))
   await mkdir(sub)
   const log = new SessionLogFile(join(sub, 'session.jsonl'))
   const adapter = new ScriptedAdapter(scenes)
-  const loop = new Loop({ log, adapter, tools: [echoTool], generateId: makeIdGen() })
+  const loop = new Loop({ log, adapter, tools: [echoTool], generateId: makeIdGen(), now: makeClock() })
   await loop.submit([{ type: 'text', text: '你好' }])
   const { events } = await log.read()
   return { events, log, adapter }
@@ -49,7 +75,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-test('deterministic replay: the same script produces a byte-identical log', async () => {
+test('deterministic replay: the same script and clock produce a byte-identical log', async () => {
   const scenes = [
     { steps: [{ chunk: { delta: '你好' } }] },
   ]
@@ -63,7 +89,7 @@ test('deterministic replay: the same script produces a byte-identical log', asyn
 test('structure: events follow the turn/step vocabulary with correct id links', async () => {
   const { events } = await runWith([{ steps: [{ chunk: { delta: '你好' } }] }])
 
-  expect(events).toEqual([
+  expect(withoutTimestamps(events)).toEqual([
     { type: 'turn/start', turnId: 'id2' },
     { type: 'user/message', messageId: 'id1', content: [{ type: 'text', text: '你好' }] },
     { type: 'step/start', stepId: 'id3', turnId: 'id2' },
@@ -140,7 +166,7 @@ test('cancel mid-stream: interrupted prefix logged, undispatched tool calls abse
     interrupted: true,
   })
   // 回合正常闭环
-  expect(events.at(-1)).toEqual({ type: 'turn/end', turnId: 'id2' })
+  expect(withoutTimestamp(events.at(-1))).toEqual({ type: 'turn/end', turnId: 'id2' })
 })
 
 test('cancel during tool execution settles every recorded call and stops the turn', async () => {
@@ -179,7 +205,7 @@ test('cancel during tool execution settles every recorded call and stops the tur
     { type: 'tool/result', id: 'c2', ok: false, output: { text: 'cancelled before execution' } },
   ])
   expect(events.filter(event => event.type === 'step/start')).toHaveLength(1)
-  expect(events.slice(-2)).toEqual([
+  expect(withoutTimestamps(events.slice(-2))).toEqual([
     { type: 'step/end', stepId: 'id3' },
     { type: 'turn/end', turnId: 'id2' },
   ])

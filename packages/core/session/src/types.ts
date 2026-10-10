@@ -123,7 +123,8 @@ export interface RequestHeader {
 
 /**
  * 会话事件的闭合联合（closed union）：
- * 十一个事件类型覆盖 mount / turn / step / request / user / assistant / tool 七个域。
+ * 十二个事件类型覆盖 mount / turn / step / request / user / assistant / tool 七个域
+ * （request/retry 属 request 域，F4b 新增）。
  */
 export type SessionEvent =
   | {
@@ -135,12 +136,19 @@ export type SessionEvent =
       type: 'session/mount'
       mount: MountSnapshot
     }
-  | { type: 'turn/start'; turnId: TurnId }
+  | {
+      type: 'turn/start'
+      turnId: TurnId
+      /** 回合开始时刻（ISO 字符串）；可选、additive，用于耗时指标（F4b）。 */
+      at?: string
+    }
   | {
       type: 'turn/end'
       turnId: TurnId
       /** 恢复时写下的闭合（D3）：与循环正常收尾可区分。 */
       settled?: true
+      /** 回合结束时刻（ISO 字符串）；可选、additive，用于耗时指标（F4b）。 */
+      at?: string
     }
   | { type: 'step/start'; stepId: StepId; turnId: TurnId }
   | {
@@ -154,6 +162,18 @@ export type SessionEvent =
       type: 'request/header'
       stepId: StepId
       header: RequestHeader
+    }
+  | {
+      /**
+       * 一次模型请求的重试（F4b）：**请求事实**，落盘以便审计与指标。
+       * 只有"还没吐出任何 chunk 的瞬时失败"才会重试（与 llm-retry 的语义一致）。
+       */
+      type: 'request/retry'
+      stepId: StepId
+      /** 即将进行的尝试序号（2 = 第一次重试）。 */
+      attempt: number
+      /** 上一次失败的原因（人类可读）。 */
+      reason: string
     }
   | { type: 'user/message'; messageId: MessageId; content: ContentBlock[] }
   | {

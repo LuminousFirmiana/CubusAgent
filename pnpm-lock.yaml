@@ -392,6 +392,9 @@ importers:
 
   packages/sdk/sdk:
     dependencies:
+      '@cubus/agent-loop':
+        specifier: workspace:*
+        version: link:../../core/agent-loop
       '@cubus/agent-recipe':
         specifier: workspace:*
         version: link:../../core/agent-recipe

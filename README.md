@@ -78,6 +78,7 @@ pnpm run workbench -- --workspace /path/to/repo --approval allow --port 4173   #
 pnpm run cubus -- coding --workspace /path/to/repo --task "修好测试" --trust-workspace   # 一次性任务（不开页面）
 pnpm run eval:real -- --task add-bug        # 真模型评测一个任务（需要 key）
 pnpm run eval:golden -- --task add-bug      # 重新生成该任务的 golden 指纹
+pnpm run metrics                            # 从会话日志算指标（拦截率/重试率/耗时/token）
 ```
 
 ## 给开发者
@@ -93,4 +94,4 @@ pnpm run eval:golden -- --task add-bug      # 重新生成该任务的 golden �
 - 本地档**不是沙箱**；Docker Host 尚未接到 CLI/工作台的 `--sandbox` 开关；
 - 还没做打包分发（当前是 monorepo 开发态：`pnpm install` 即"安装"）；
 - 审批项不带会话归属（并发多会话时只按工具名与参数区分）；
-- 费用（美元）需要价目表：日志里只有 token 事实。
+- 费用（美元）需要价目表：日志里只有 token 事实（含缓存命中），换算成钱由使用方决定。

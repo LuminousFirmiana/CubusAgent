@@ -19,31 +19,34 @@ afterEach(async () => {
 
 const events: SessionEvent[] = [
   { type: 'session/mount', mount: {} as never },
-  { type: 'turn/start', turnId: 't1' },
+  { type: 'turn/start', turnId: 't1', at: '2026-01-01T00:00:00.000Z' },
   { type: 'user/message', messageId: 'm1', content: [{ type: 'text', text: '修好测试' }] },
   { type: 'step/start', stepId: 's1', turnId: 't1' },
   { type: 'tool/call', id: 'c1', stepId: 's1', name: 'read_file', args: { path: 'a.ts' } },
   { type: 'tool/result', id: 'c1', ok: true, output: { text: '内容' } },
   { type: 'assistant/message', messageId: 'a1', stepId: 's1', content: [], usage: { promptTokens: 100, completionTokens: 10, totalTokens: 110, cachedTokens: 64 } },
   { type: 'step/end', stepId: 's1' },
+  // 一次瞬时失败后的重试（F4b：重试是请求事实，落盘可审计）
+  { type: 'request/retry', stepId: 's1', attempt: 2, reason: 'network error' },
   { type: 'step/start', stepId: 's2', turnId: 't1' },
   { type: 'tool/call', id: 'c2', stepId: 's2', name: 'bash', args: { command: 'node --test' } },
   { type: 'tool/result', id: 'c2', ok: false, output: { text: 'tool denied by approval policy: bash (the user rejected this tool call)' } },
   { type: 'assistant/message', messageId: 'a2', stepId: 's2', content: [], usage: { promptTokens: 200, completionTokens: 20, totalTokens: 220 } },
   { type: 'step/end', stepId: 's2' },
-  { type: 'turn/end', turnId: 't1' },
-  { type: 'turn/start', turnId: 't2' },
+  { type: 'turn/end', turnId: 't1', at: '2026-01-01T00:00:05.000Z' },
+  { type: 'turn/start', turnId: 't2', at: '2026-01-01T00:01:00.000Z' },
   { type: 'step/start', stepId: 's3', turnId: 't2' },
   { type: 'assistant/message', messageId: 'a3', stepId: 's3', content: [{ type: 'text', text: '部分' }], interrupted: true },
   { type: 'step/end', stepId: 's3' },
-  { type: 'turn/end', turnId: 't2', settled: true },
+  // 恢复结算的回合：这段间隔是"崩溃到重启"，不该算成一个回合的耗时
+  { type: 'turn/end', turnId: 't2', settled: true, at: '2026-01-01T03:00:00.000Z' },
 ]
 
 test('session metrics count turns, tools, denials and tokens straight from the log', () => {
   const metrics = sessionMetrics('s1', events)
 
   expect(metrics).toMatchObject({
-    events: 19,
+    events: 20,
     turns: 2,
     cancelledTurns: 1,
     settledTurns: 1,
@@ -56,6 +59,9 @@ test('session metrics count turns, tools, denials and tokens straight from the l
   })
   expect(metrics.toolCallsByName).toEqual({ read_file: 1, bash: 1 })
   expect(metrics.tokens).toEqual({ prompt: 300, completion: 30, total: 330, cached: 64 })
+  // F4b：重试次数 + 回合耗时（只算正常闭合、两端都有时间戳的回合；结算回合不计）
+  expect(metrics.retries).toBe(1)
+  expect(metrics.durationMs).toEqual({ turns: 1, total: 5_000, max: 5_000 })
 })
 
 test('an unclosed turn is reported as needing settlement, and rates stay null without data', () => {
@@ -76,6 +82,10 @@ test('an unclosed turn is reported as needing settlement, and rates stay null wi
   expect(withData.rates.toolDenial).toBeCloseTo(0.5)
   expect(withData.rates.turnCancellation).toBeCloseTo(0.5)
   expect(withData.rates.tokensPerUsageMessage).toBe(165)
+  expect(withData.rates.retry).toBeCloseTo(1 / 3)
+  expect(withData.rates.turnDurationMs).toBe(5_000)
+  expect(withData.totals.retries).toBe(1)
+  expect(summarizeMetrics([]).rates.turnDurationMs).toBeNull()
   expect(withData.totals.toolCallsByName).toEqual({ read_file: 1, bash: 1 })
 })
 

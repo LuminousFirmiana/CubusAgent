@@ -5,8 +5,13 @@
  * 并且和"session/mount 必须是第一条"的不变量冲突。
  */
 
-/** v1 = D1 之前（无 session/mount、无 budget）；v2 = 现在（含装配快照与预算）。 */
-export const SESSION_FORMAT_VERSION = 2
+/**
+ * v1 = D1 之前（无 session/mount、无 budget）；
+ * v2 = 含装配快照与预算（B/C 阶段）；
+ * v3 = 含 request/retry 事件与 turn/start|end 的 at 时间戳（F4b）。
+ * 规则（D1 决定）：**新增事件类型算一次版本递增**（读取方据此拒绝过新的日志），新增可选字段不算。
+ */
+export const SESSION_FORMAT_VERSION = 3
 
 export interface SessionMeta {
   readonly formatVersion: number

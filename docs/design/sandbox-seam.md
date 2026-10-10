@@ -145,7 +145,8 @@ interface CredentialsProvider {
 |---|---|
 | Docker 在开发机/CI 不可用 | 分两层：契约测试用**假 sandbox provider**（无 Docker 也能跑，进 CI 必跑）；真实 Docker 测试在缺 Docker 时**显式 skip 并打印原因**（不静默通过） |
 | 每会话一个容器的启动开销 | 会话级复用（一次装配一个容器）；预热/池化留给以后，先测量再优化 |
-| 镜像供应链 | 只允许白名单镜像并 pin digest；digest 进快照 |
+| 镜像供应链 | 只允许白名单镜像并 pin digest；digest 进快照；升级流程见 §12 决定 3（含镜像预检测试） |
+| 取消后容器内留下孤儿进程 | 命令以 `setsid -w` 起独立进程组并记下组号；取消/超时后按组 TERM -> KILL（`kill -s TERM -- -$p`）；`--init` 让被杀的孤儿被回收。真容器集成测试断言"取消后容器内无存活进程且容器仍可用" |
 | 假安全（以为有隔离其实没有） | `unconfined` 显式特性 + 装配期失败 + CLI 与快照双重可见 |
 | 凭据仍被工具参数带出 | 工具只拿引用；拒绝测试断言日志全文无明文 |
 
@@ -154,4 +155,7 @@ interface CredentialsProvider {
 1. **默认姿态**：保留「本地无隔离」档。本地 Host 提供 sandbox[unconfined] 并如实标注；需要隔离的 recipe（无人值守 / 陌生仓库档）在本地**装配期失败**，不静默降级。理由：本地自有仓库、人就在旁边时，强制容器的成本高于收益；真正的风险场景由 recipe 声明强制。
 2. **网络 v1**：只做 --network none。域名白名单是 C4 的第二小步。理由：出口是最容易被滥用的通道，先把「默认全关」变成可测事实。
 3. **镜像来源**：只允许白名单镜像并 pin **digest**（默认官方 node:22-slim），digest 进快照；不做 --image 自由传参。理由：不让「沙箱是否安全」取决于使用者拉的镜像。
+   **升级流程**（地基债第三批）：改 `DEFAULT_DOCKER_IMAGE` 前先 pull 新 tag 并用 `docker inspect --format '{{index .RepoDigests 0}}'` 取 digest；
+   改完必须跑 `pnpm --filter @cubus/host-docker run test` —— 其中一条**镜像预检**会核对取消机制依赖的工具（sh / setsid / cat / rm / sleep）与全部边界，
+   镜像换代让假设失效时立刻红，而不是等到线上取消命令留下孤儿才发现。
 4. **预算 v1**：只做步数 / 工具调用数 / 墙钟时长（不改日志词汇）；usage 字段与格式版本一起放到 D1。理由：先装粗粒度刹车挡住「跑飞」，避免为费用统计两次修改宪法第一页。

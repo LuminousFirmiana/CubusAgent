@@ -301,3 +301,112 @@ integration('the container is removed when the session context is disposed', asy
   })
   expect(gone.stdout.trim()).toBe('')
 })
+
+/** 列出容器里"活着的" sleep 进程（跳过 PID 1 的 sleep infinity 与僵尸）：失败时能直接看出残留的是谁。 */
+async function liveSleeps(client: DockerClient, container: string): Promise<string[]> {
+  const script = [
+    'n=0',
+    'for d in /proc/[0-9]*; do',
+    '  pid=' + '${d#/proc/}',
+    '  cmd=$(tr "\\000" " " < $d/cmdline 2>/dev/null)',
+    // 容器主进程（sleep infinity）要跳过：加了 --init 之后它是普通子进程，不再是 PID 1
+    '  [ "$cmd" = "sleep infinity " ] && continue',
+    '  set -- $(cat $d/stat 2>/dev/null)',
+    '  [ "$2" = "(sleep)" ] || continue',
+    '  [ "$3" = "Z" ] && continue',
+    '  echo "$pid comm=$2 state=$3 ppid=$4 pgid=$5"',
+    'done',
+  ].join('\n')
+  const result = await client.exec(container, script, { workdir: '/workspace', signal: idleSignal })
+  return result.stdout.trim() === '' ? [] : result.stdout.trim().split('\n')
+}
+
+async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await predicate()) return
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  throw new Error('condition never became true')
+}
+
+integration('cancelling a command kills the in-container process group, not just the docker exec client', async () => {
+  const { container, client } = await startSandbox()
+  const controller = new AbortController()
+
+  // 典型的孤儿制造机：后台子进程 + 一直等
+  const running = client.exec(container, 'sleep 300 & wait', { workdir: '/workspace', signal: controller.signal })
+  running.catch(() => undefined)
+
+  // 等容器内记下进程组号：说明命令真的起来了
+  await waitFor(async () => {
+    const probed = await client.exec(container, 'cat /tmp/cubus-pgid-* 2>/dev/null', {
+      workdir: '/workspace',
+      signal: idleSignal,
+    })
+    return probed.stdout.trim().length > 0
+  })
+  expect(await liveSleeps(client, container)).not.toEqual([])
+
+  controller.abort()
+  await expect(running).rejects.toBeDefined()
+  expect(await liveSleeps(client, container)).toEqual([])
+
+  // 是"杀进程组"而不是"杀容器"：容器本身照常可用
+  const alive = await client.exec(container, 'echo still-alive', { workdir: '/workspace', signal: idleSignal })
+  expect(alive.stdout).toContain('still-alive')
+})
+integration('a host refuses to start more containers than maxContainers, and frees the slot on dispose', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'cubus-docker-cap-'))
+  cleanups.push(async () => {
+    await rm(workspace, { recursive: true, force: true })
+  })
+  const { createDockerAgentHost } = await import('../src/host.ts')
+  const { ScriptedAdapter } = await import('@cubus/llm')
+  const host = createDockerAgentHost({
+    adapterFactory: () => new ScriptedAdapter([]),
+    workspaceDir: workspace,
+    maxContainers: 1,
+  })
+
+  const mountSession = (sessionId: string) => {
+    createdContainers.push(containerName(sessionId))
+    const ctx = new Context()
+    return ctx.plugin({
+      name: 'docker-host-cap-test',
+      apply(hostContext: Context) {
+        const wanted = host.capabilities!().filter(offering =>
+          offering.kind === 'sandbox' || offering.kind === 'fs' || offering.kind === 'subprocess')
+        return host.mount(hostContext, {
+          id: sessionId,
+          directory: workspace,
+          logPath: join(workspace, 'session.jsonl'),
+        }, wanted)
+      },
+    })
+  }
+
+  const first = mountSession('test-cap-a-' + Math.random().toString(36).slice(2, 8))
+  await first
+
+  // 第二个会话超限：快速失败，错误说清楚是上限问题（而不是 docker 的模糊报错）
+  const second = mountSession('test-cap-b-' + Math.random().toString(36).slice(2, 8))
+  await expect(second).rejects.toThrow(/refusing to start another sandbox container: 1 of 1/)
+
+  // 释放第一个：名额回来（账本会减，不是只增不减）
+  await first.dispose()
+  const third = mountSession('test-cap-c-' + Math.random().toString(36).slice(2, 8))
+  await third
+  await third.dispose()
+})
+integration('the pinned image still provides the tools the sandbox relies on', async () => {
+  const { container, client } = await startSandbox()
+  // 取消机制依赖 setsid / sh；命令包装依赖 cat / rm / sleep（见 spec.ts 的 argv 构造）
+  const probe = await client.exec(
+    container,
+    'for tool in sh setsid cat rm sleep; do command -v $tool > /dev/null || echo "missing: $tool"; done; echo checked',
+    { workdir: '/workspace', signal: idleSignal },
+  )
+  expect(probe.stdout).toContain('checked')
+  expect(probe.stdout).not.toContain('missing:')
+})

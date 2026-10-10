@@ -6,6 +6,14 @@ import { jsonlSessionPlugin } from '@cubus/session-jsonl'
 import { LocalSubprocess } from '@cubus/tools'
 import { DockerClient } from './client.ts'
 import { DockerFs } from './fs.ts'
+
+/** 同时存活容器数超限：快速失败，避免把宿主资源拖垮。 */
+export class DockerContainerLimitError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DockerContainerLimitError'
+  }
+}
 import { DockerSandbox } from './sandbox.ts'
 import { containerName, defaultSandboxSpec } from './spec.ts'
 import type { DockerSandboxSpec } from './spec.ts'
@@ -26,6 +34,13 @@ export interface DockerAgentHostOptions {
   credentials?: CredentialsProvider
   /** docker CLI 需要的宿主环境（默认只放行 DOCKER_HOST / DOCKER_CONTEXT）。 */
   dockerEnvAllowlist?: readonly string[]
+  /**
+   * 同时存活的容器数上限（默认 4）。
+   *
+   * 为什么 Host 这一层也要限：C6 限的是**本进程的并发运行数**，但"同时存在多少容器"是资源事实
+   * （每个容器有自己的内存/PID 配额），异常路径一旦漏删就会累积。超限时**快速失败**并给出明确错误。
+   */
+  maxContainers?: number
 }
 
 /**
@@ -42,6 +57,9 @@ export function createDockerAgentHost(options: DockerAgentHostOptions): AgentHos
   const client = new DockerClient(subprocess)
   const credentials = options.credentials
   const workdir = options.workdir ?? '/workspace'
+  const maxContainers = options.maxContainers ?? 4
+  /** 本 Host 实例已起的容器：既是资源账本，也是"容器泄漏可见"的地方。 */
+  const live = new Set<string>()
 
   const specFor = (session: AgentSessionDescriptor): DockerSandboxSpec => defaultSandboxSpec({
     sessionId: session.id,
@@ -114,13 +132,21 @@ export function createDockerAgentHost(options: DockerAgentHostOptions): AgentHos
       let container: string | undefined
       ctx.effect(() => () => {
         if (container === undefined) return
+        live.delete(container)
         return client.removeContainer(container).then(result => {
           if (result.exitCode !== 0) {
             throw new Error('failed to remove sandbox container ' + container + ': ' + result.stderr.trim())
           }
         })
       })
+      if (live.size >= maxContainers) {
+        throw new DockerContainerLimitError(
+          'refusing to start another sandbox container: ' + String(live.size) + ' of ' + String(maxContainers) +
+          ' are already live in this host (dispose unused sessions, or raise maxContainers)',
+        )
+      }
       container = await client.startContainer(specFor(session))
+      live.add(container)
       for (const offering of selection ?? offerings) {
         await offering.mount(ctx, session)
       }

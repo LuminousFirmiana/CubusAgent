@@ -6,6 +6,7 @@ import {
   containerRunArgs,
   copyInArgs,
   defaultSandboxSpec,
+  killProcessGroupArgs,
   execArgs,
 } from '../src/index.ts'
 
@@ -62,11 +63,35 @@ test('container names are derived from the session id and stay shell-safe', () =
   expect(containerRemoveArgs('cubus-x')).toEqual(['rm', '-f', 'cubus-x'])
 })
 
-test('commands run through a login shell inside the container workdir', () => {
-  expect(execArgs('cubus-x', 'npm test', '/workspace')).toEqual([
-    'exec', '-i', '-w', '/workspace', 'cubus-x', 'sh', '-lc', 'npm test',
+test('commands run through a login shell inside a recorded process group', () => {
+  expect(execArgs('cubus-x', 'npm test', '/workspace', '/tmp/cubus-pgid-1')).toEqual([
+    'exec', '-i', '-w', '/workspace', 'cubus-x',
+    // -w 是必须的：没有它 setsid 的 fork 会让每条命令的退出码都变成 0
+    'setsid', '-w', 'sh', '-c', 'echo $$ > /tmp/cubus-pgid-1; exec sh -lc "$1"',
+    'cubus-runner', 'npm test',
   ])
+  // 命令原文是**独立 argv**：命令里的引号不会被宿主 shell 改写
+  expect(execArgs('cubus-x', 'echo "a b" && rm -rf x', '/workspace', '/tmp/p')).toContain('echo "a b" && rm -rf x')
   expect(copyInArgs('cubus-x', '/tmp/payload', '/workspace/a.ts')).toEqual([
     'cp', '/tmp/payload', 'cubus-x:/workspace/a.ts',
   ])
+})
+
+test('process group cleanup uses a negative pid with -- and escalates TERM -> KILL', () => {
+  const args = killProcessGroupArgs('cubus-x', '/tmp/cubus-pgid-7')
+  expect(args.slice(0, 3)).toEqual(['exec', 'cubus-x', 'sh'])
+  const script = args[4] ?? ''
+  // 关键：负 PID 必须带 --（否则 dash 把 -$p 当信号选项解析，实测 exit=2 一个都没杀掉）
+  expect(script).toContain('kill -s TERM -- -"$p"')
+  expect(script).toContain('kill -s KILL -- -"$p"')
+  expect(script).toContain('rm -f /tmp/cubus-pgid-7')
+  // pid 文件缺失时安静退出（命令可能已经跑完）
+  expect(script).toContain('[ -n "$p" ] || exit 0')
+})
+
+test('containers start with docker init so cancelled orphans get reaped', () => {
+  const args = containerRunArgs(defaultSandboxSpec({ sessionId: 's1', workspaceDir: '/tmp/ws' }))
+  // PID 1 是 sleep infinity：没有 --init 时被取消的子进程会变成僵尸直到容器销毁
+  expect(args).toContain('--init')
+  expect(args[args.indexOf('--init') + 1]).toBe('--network')
 })

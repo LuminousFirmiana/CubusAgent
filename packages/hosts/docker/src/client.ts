@@ -6,6 +6,7 @@ import {
   containerRunArgs,
   copyInArgs,
   execArgs,
+  killProcessGroupArgs,
 } from './spec.ts'
 import type { DockerSandboxSpec } from './spec.ts'
 
@@ -35,9 +36,14 @@ const LIFECYCLE_TIMEOUT_MS = 120_000
 export class DockerClient {
   private readonly subprocess: SubprocessProvider
   private readonly idleSignal = new AbortController().signal
+  /** 每次 exec 一个 pid 文件：串行命令之间不互相踩。 */
+  private execCounter = 0
+  /** 清理失败的观察点（默认忽略：清理是尽力而为，但调用方可以记账）。 */
+  private onProcessGroupKillFailure: ((message: string) => void) | undefined
 
-  constructor(subprocess: SubprocessProvider) {
+  constructor(subprocess: SubprocessProvider, options: { onProcessGroupKillFailure?: (message: string) => void } = {}) {
     this.subprocess = subprocess
+    this.onProcessGroupKillFailure = options.onProcessGroupKillFailure
   }
 
   private async docker(args: readonly string[], options: {
@@ -69,16 +75,54 @@ export class DockerClient {
     return await this.docker(containerRemoveArgs(container), { signal: this.idleSignal })
   }
 
-  /** 容器内执行命令；返回原始结果（由调用方决定非零是否算错误）。 */
+  /**
+   * 容器内执行命令；返回原始结果（由调用方决定非零是否算错误）。
+   *
+   * 取消或超时后**必须连容器内的进程组一起清理**：宿主侧只杀掉了 docker exec 客户端，
+   * 容器内的子进程（例如 `sleep 300 &`）会活到容器销毁。做法是让命令以 setsid 起一个
+   * 独立进程组并记下组号，取消时按组 TERM -> KILL（argv 构造见 spec.ts）。
+   */
   async exec(container: string, command: string, options: {
     workdir: string
     signal: AbortSignal
     timeoutMs?: number
   }): Promise<SubprocessResult> {
-    return await this.docker(execArgs(container, command, options.workdir), {
-      signal: options.signal,
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    })
+    const pidFile = '/tmp/cubus-pgid-' + String(++this.execCounter)
+    let aborted = false
+    const onAbort = (): void => {
+      aborted = true
+    }
+    options.signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      const result = await this.docker(execArgs(container, command, options.workdir, pidFile), {
+        signal: options.signal,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      })
+      // 超时由 subprocess provider 判定：它杀掉宿主侧进程组，但看不见容器内
+      if (aborted || result.timedOut) await this.killProcessGroup(container, pidFile)
+      return result
+    } catch (error) {
+      if (aborted) await this.killProcessGroup(container, pidFile)
+      throw error
+    } finally {
+      options.signal.removeEventListener('abort', onAbort)
+    }
+  }
+
+  /**
+   * 清理容器内的进程组（尽力而为：失败不该掩盖原始错误，但要能被看见）。
+   * 走 idleSignal —— 调用方的 signal 此刻多半已经 abort 了。
+   */
+  private async killProcessGroup(container: string, pidFile: string): Promise<void> {
+    const result = await this.docker(killProcessGroupArgs(container, pidFile), {
+      signal: this.idleSignal,
+      timeoutMs: 20_000,
+    }).catch(() => undefined)
+    if (result !== undefined && result.exitCode !== 0) {
+      this.onProcessGroupKillFailure?.(
+        'process group kill exited with ' + String(result.exitCode) + ': ' + result.stderr.trim(),
+      )
+    }
   }
 
   /** 宿主文件 -> 容器内路径（写文件用；内容不进命令行，避免出现在 ps 里）。 */

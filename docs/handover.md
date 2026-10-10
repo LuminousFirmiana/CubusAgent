@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：地基债第二批清完（审批项带会话归属、评测跑飞可见且可拦、SDK 补预算类型导出）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：地基债第三批清完（Docker 取消能杀容器内进程组、镜像升级有流程与预检、容器数有上限）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -49,6 +49,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| 地基债第三批 | 完成 | ①**取消不再留孤儿**：容器内命令改由 `setsid -w` 起独立进程组并记录组号，取消/超时后按组 `kill -s TERM -- -$p` -> KILL；`docker run --init` 让被杀孤儿被回收。真容器集成测试断言"取消后容器内无存活进程且容器仍可用"。②**镜像升级流程**：DEFAULT_DOCKER_IMAGE 的升级四步写进 sandbox ADR，并新增镜像预检集成测试（核对 sh/setsid/cat/rm/sleep 与全部边界）——镜像换代让假设失效时立刻红。③**容器上限**：Host 新增 maxContainers（默认 4）与 DockerContainerLimitError，超限快速失败、释放后名额回收（集成测试覆盖） |
 | 地基债第二批 | 完成 | ①会话归属：ToolExecutionContext 加可选 sessionId（seam additive），循环从 runtime 插件的 session 描述符透传，审批项带 sessionId 并显示在工作台卡片上（实测与真实会话 id 一致）。②评测跑飞的可见性：预算本就由 recipe manifest 声明并被评测继承（40 步/60 工具/10 分钟/200k token，已核对真实评测日志的 mount.budget），缺的是"被拦住"与"答错"没有区分 -> EvalTaskOutcome 加 budgetTripped，控制台打 CANCELLED，EVALS.md 标 ⏱ 并在表头统计，机器可读结果保留该字段。③SDK 公开面补预算类型（BudgetState/BudgetTripReason/BudgetLimits），消费方不必再去 import 策略包 |
 | P1 保留选择权 | 完成 | ①@cubus/sdk 与 @cubus/agent-recipe 的入口改成**显式导出**（不再 export *）；②新增公开面测试（public-api.test.ts：只用包名导入，跑通建产品->运行->回放->指标->归档，并自检没有相对导入）；③docs/design/versioning.md 把四个版本号（会话日志/契约/归档/包）的规则与强制手段收成一处；④新支撑包 @cubus/architecture-guard：依赖方向（内核不依赖产品/应用）+ 无循环 + 公开面无 export * + 无跨包相对导入，且自带"守卫非空转"的自证测试 |
 | F3 日志归档 | 完成 | @cubus/sdk 新增 archive.ts：导出成**目录**（manifest.json + 原样 JSONL）+ 逐文件 sha256；导入前校验哈希与格式版本（过新拒绝）、id 冲突默认跳过（--rename 改名）；文件白名单写死（session.jsonl / session.meta.json）杜绝路径穿越；清理默认 **dry-run**（--yes 才删，删前列绝对路径），崩溃现场默认保留（判据是 planSettlement，不是猜字符串）。CLI：pnpm run archive -- --export|--import|--prune。实测：真日志导出 -> 移走原件 -> 导入 -> 指标逐项一致 -> 恢复并继续跑（真模型 17957 tokens）；顺带演示了装配不一致时恢复被拒（allow -> deny） |
@@ -226,6 +227,9 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| setsid 会 fork，退出码丢失 | 用 `setsid -w`（--wait）等子进程并回传其退出码。不带 -w 时 docker exec 拿到的是 setsid 父进程的 0：**每条命令都被看成成功**（实测 `exit 7` 得 0，测试里表现为"安全边界没拦住"） |
+| 负 PID 组杀必须带 -- | `kill -TERM -$p` 会被 dash 当成信号选项解析（实测 exit=2 且一个进程都没杀掉）；要写 `kill -s TERM -- -"$p"`；这些镜像里也没有 /bin/kill |
+| --init 会移动 PID 1 | 加了 --init（tini 做 PID 1）之后，容器主进程 sleep infinity 变成普通子进程（实测 PID 7）：任何"跳过 PID 1"的过滤都会失效，要按 cmdline 识别主进程 |
 | 预算是软上限 | 预算检查在计数加一之后判"是否已超过"，所以最多允许超限一次才拦（实测 --max-steps 4 跑到 5）。有意为之：不打断已经在进行的副作用。CLI 与评测都把 tripped 原因写进报告 |
 | 归属是 additive 的可选字段 | sessionId 以可选字段进 ToolExecutionContext：不改工具语义、不是模型可见内容、老调用方不受影响；策略（审批）自己决定用不用 |
 | 依赖只能向下 | 内核不依赖产品/应用，产品不依赖应用；内核**可以**依赖接缝（接缝是内核拥有的契约）。由 @cubus/architecture-guard 强制；已知例外显式列出并写理由（当前一条：装配器挂载预算策略） |
@@ -336,10 +340,10 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
 - 本地（local-unconfined）仍无文件边界：那是设计上的诚实档位，要边界就用 Docker Host（C4 已完成）。
-- Docker Host 目前只能被 embedding/测试使用：CLI 还没有 --sandbox docker 入口（属 P6/P7 交付面），因此产品默认仍是本地档。
-- 会话/容器数量上限尚未限制：C6 限制的是并发运行数，同时存在的会话（= Docker 容器）数量属 app 级策略，留给 P6 多会话服务一起设计。
-- 容器取消只杀 docker exec 进程组：容器内孤儿进程会活到会话销毁；要更强语义需在容器内做进程组管理（C4b 候选）。
-- 默认镜像 digest 是常量（node@sha256:c3de60…）：升级基础镜像要手动改常量并跑一遍集成测试。
+- Docker Host 目前只能被 embedding/测试使用：CLI 还没有 --sandbox docker 入口（属 A 方向的交付面，本分支按规划不动）。**Host 自身的会话生命周期已补齐**：取消杀容器内进程组、镜像升级流程与预检、容器数上限。
+- 会话/容器数量上限：**Host 侧已限**（maxContainers，默认 4，超限快速失败）；app 级的多会话服务策略仍留给 A 方向。
+- ~~容器取消只杀 docker exec 进程组~~：已清（第三批）——容器内进程组管理与组杀、--init 回收孤儿，并有真容器回归测试。
+- 默认镜像 digest 仍是常量（node@sha256:c3de60…），但现在有**明确升级流程**（ADR §12 决定 3）与**镜像预检测试**：换代必须跑集成测试，假设失效会立刻红。
 - 容器网络只有 none（C1 决定 2）：需要装依赖的仓库目前只能在工作区外先装好。
 - 装配快照记录 recipe 身份/能力/策略档，但工作区路径不在其中（它是 Host 的环境事实，不是 recipe 配置）；要追溯「哪次评测跑了哪个目录」目前靠 EVALS.md 与临时目录名，等 D1 的格式版本一起加环境字段。
 - manifest 的 evaluation 声明已由 harness 校验套件真实注册（D2 关闭）；运行时仍不做跨包套件检查（内核不依赖评测包，属有意设计）。
@@ -354,24 +358,21 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - ~~工作台不存在~~（E1–E6 已完成：SSE + 单页 UI + 审批 + 恢复视图）。仍然只有回环访问、无鉴权（ADR §6 已写明暴露前置）。
 
-## 10. 下一步：清完剩余地基债 -> 冻结本分支
+## 10. 下一步：冻结终检（第四批）
 
-第二批已清（会话归属 + 评测可见性）。剩余地基债按此顺序，清完即冻结：
+第三批（Docker 会话生命周期）已清完。剩下的就是**冻结终检**，逐条自检并把结果写在这里：
 
-| 批 | 内容 | 为什么算地基 |
-|---|---|---|
-| 第三批 | **Docker Host 的会话生命周期**：容器内孤儿进程（取消只杀 docker exec 进程组）、镜像 digest 常量的升级流程、同时存在的容器/会话上限 | Host 是"可替换环境"的地基：它现在只能被 embedding 用，且取消语义不完整 |
-| 第四批 | **治理与文档终检**：README 与 handover 全量核对（跑一遍文档里的每条命令）、docs/design 每篇加状态标注（哪些已实现 / 哪些是决策历史）、技术债清单终审 | 冻结的含义是"接手人照着文档能跑起来"；文档错了等于没冻结 |
-| 决策项 | **费用（美元）**：token 事实已完整落日志（含缓存命中）。换算成钱需要价格表（会过期、各家不同）——建议明确记为"由使用方决定"，而不是内置一张会过期的表 | 这是"决定"，不是"债"；写清楚比做出来更诚实 |
-| 可选 | EVALS.md 夜跑 CI（需要仓库 secret，属凭据决策，需要你点头） | 不是冻结前置 |
-
-**冻结判据**（逐条自检并把结果记进 handover）：
-
-1. 从干净克隆开始：pnpm install --frozen-lockfile + pnpm run check 全绿；
-2. README 里每条命令都能跑通（metrics / archive / workbench / cubus / eval）；
-3. docs/design 每篇有状态标注，且与代码现状一致（无自相矛盾）；
+1. 干净克隆：pnpm install --frozen-lockfile + pnpm run check 全绿（不依赖本机残留）；
+2. README 的每条命令实跑一遍（cubus / workbench / metrics / archive / eval:golden / eval:real）；
+3. docs/design 每篇加状态标注（已实现 / 决策历史 / 未实现），并核对与代码现状一致；
 4. 技术债清单终审：每条要么有明确状态，要么有明确理由；
-5. 所有已知限制（本地档非沙箱、回环无鉴权、费用需价目表、会话归属已补）都能在 README / handover 里查到。
+5. 已知限制汇总（README + handover 都能查到）：本地档非沙箱、回环无鉴权、费用需价目表、评测夜跑需凭据决定、Docker Host 尚未接到 CLI 入口（属 A 方向规划）。
+
+**费用（美元）的处理**（决策项，建议照此写死）：日志已完整记录 token 事实（prompt / completion / cached）。
+不内置价目表 —— 价格会变、各家不同，内置一张表迟早是错的。README 写明"换算成钱由使用方决定"，
+并把 token 列进指标与评测表（已完成）。
+
+**冻结之后**：A 方向（coding agent 产品化）由你另行规划；本分支作为"运行时地基 + 参考产品"定格。
 ## 11. 对下一个接手者（人或 agent）的三句话
 
 1. 先跑 pnpm install --frozen-lockfile 和 pnpm run check，必须全绿才能动手；

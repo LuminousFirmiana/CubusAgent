@@ -41,12 +41,9 @@ importers:
       '@cubus/host-local':
         specifier: workspace:*
         version: link:../../hosts/local
-      '@cubus/llm':
+      '@cubus/llm-deepseek':
         specifier: workspace:*
-        version: link:../../seams/llm
-      '@cubus/llm-retry':
-        specifier: workspace:*
-        version: link:../../policies/llm-retry
+        version: link:../../providers/llm-deepseek
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/coding-agent
@@ -63,6 +60,9 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/tools
     devDependencies:
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
       '@cubus/session-jsonl':
         specifier: workspace:*
         version: link:../../providers/session-jsonl
@@ -84,12 +84,9 @@ importers:
       '@cubus/host-local':
         specifier: workspace:*
         version: link:../../hosts/local
-      '@cubus/llm':
+      '@cubus/llm-deepseek':
         specifier: workspace:*
-        version: link:../../seams/llm
-      '@cubus/llm-retry':
-        specifier: workspace:*
-        version: link:../../policies/llm-retry
+        version: link:../../providers/llm-deepseek
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/coding-agent
@@ -105,6 +102,10 @@ importers:
       '@cubus/tools':
         specifier: workspace:*
         version: link:../../plugins/tools
+    devDependencies:
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
 
   packages/core/agent-loop:
     dependencies:
@@ -172,6 +173,9 @@ importers:
       '@cubus/agent-recipe':
         specifier: workspace:*
         version: link:../../core/agent-recipe
+      '@cubus/credentials':
+        specifier: workspace:*
+        version: link:../../seams/credentials
       '@cubus/git':
         specifier: workspace:*
         version: link:../../seams/git
@@ -184,9 +188,9 @@ importers:
       '@cubus/llm':
         specifier: workspace:*
         version: link:../../seams/llm
-      '@cubus/llm-retry':
+      '@cubus/llm-deepseek':
         specifier: workspace:*
-        version: link:../../policies/llm-retry
+        version: link:../../providers/llm-deepseek
       '@cubus/recipe-reference-agent':
         specifier: workspace:*
         version: link:../../recipes/reference-agent
@@ -291,12 +295,6 @@ importers:
         specifier: workspace:*
         version: link:../../core/session
 
-  packages/policies/llm-retry:
-    dependencies:
-      '@cubus/llm':
-        specifier: workspace:*
-        version: link:../../seams/llm
-
   packages/policies/tool-approval:
     dependencies:
       '@cubus/agent-recipe':
@@ -317,6 +315,18 @@ importers:
       '@cubus/tools':
         specifier: workspace:*
         version: link:../../plugins/tools
+
+  packages/providers/llm-deepseek:
+    dependencies:
+      '@cubus/credentials':
+        specifier: workspace:*
+        version: link:../../seams/credentials
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
 
   packages/providers/session-jsonl:
     dependencies:

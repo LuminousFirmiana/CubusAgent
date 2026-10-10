@@ -3,7 +3,7 @@ import { createInteractiveToolApproval } from '@cubus/tool-approval'
 import type { ApprovalEvent } from '@cubus/tool-approval'
 import { ScriptedAdapter } from '@cubus/llm'
 import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
-import { SessionRuntime } from '@cubus/sdk'
+import { readSessionEvents, SessionRuntime } from '@cubus/sdk'
 import { withToolApprovalHost } from '@cubus/tool-approval'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { startWorkbenchServer } from '../src/server.ts'
@@ -84,32 +84,37 @@ async function waitForPending(server: { url: string }, timeoutMs = 10_000) {
   throw new Error('no pending approval appeared')
 }
 
-async function toolResultText(server: { url: string }, callId: string): Promise<string> {
-  const detail = await fetch(server.url + '/api/sessions/ap1')
-  void detail
-  // 直接读日志投影：审批结果是 tool/result
-  const events = await fetch(server.url + '/api/sessions/ap1/events')
-  const reader = events.body?.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let text = ''
-  while (reader) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    for (const block of buffer.split('\n\n')) {
-      const dataLine = block.split('\n').find(line => line.startsWith('data: '))
-      if (dataLine === undefined) continue
-      const event = JSON.parse(dataLine.slice(6)) as { type?: string; id?: string; output?: { text?: string } }
-      if (event.type === 'tool/result' && event.id === callId) {
-        text = event.output?.text ?? ''
-        await reader.cancel()
-        return text
-      }
-    }
-    buffer = buffer.slice(buffer.lastIndexOf('\n\n') + 2)
+/**
+ * 等回合闭合（日志里出现 turn/end）。
+ *
+ * 为什么必须等：测试提前结束时清理临时目录会与"循环仍在追加事件"赛跑（表现为 ENOTEMPTY）。
+ * 等回合闭合既消除了竞态，也让断言发生在稳定状态上。
+ */
+async function waitForTurnEnd(timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const { events } = await readSessionEvents(join(sessions, 'ap1', 'session.jsonl'))
+    if (events.some(event => event.type === 'turn/end')) return
+    await new Promise(resolve => setTimeout(resolve, 20))
   }
-  return text
+  throw new Error('turn never closed')
+}
+
+/**
+ * 从**日志文件**读某个工具调用的结果（不是从 SSE 流）。
+ *
+ * 早先这版走 SSE：整套测试并发跑时会因推送时序偶发失败。断言应当读事实源（日志），
+ * 而不是和推送时序赛跑；顺带也证明了"日志是唯一事实源"在实际测试里很好用。
+ */
+async function toolResultText(callId: string, timeoutMs = 10_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const { events } = await readSessionEvents(join(sessions, 'ap1', 'session.jsonl'))
+    const result = events.find(event => event.type === 'tool/result' && event.id === callId)
+    if (result?.type === 'tool/result') return result.output.text
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  throw new Error('tool result for ' + callId + ' never landed in the session log')
 }
 
 test('an asked tool call runs once the page allows it', async () => {
@@ -130,9 +135,10 @@ test('an asked tool call runs once the page allows it', async () => {
   expect(resolved).toMatchObject({ outcome: 'allow', by: 'user' })
 
   // 工具真的执行了：结果里是文件内容，不是拒绝
-  const text = await toolResultText(server, 'c1')
+  const text = await toolResultText('c1')
   expect(text).toContain('hello')
   expect(text).not.toContain('denied')
+  await waitForTurnEnd()
   void events
 })
 
@@ -147,29 +153,24 @@ test('a denied tool call is recorded as denied, distinct from an execution failu
     body: JSON.stringify({ decision: 'deny' }),
   })
 
-  const text = await toolResultText(server, 'c1')
+  const text = await toolResultText('c1')
   expect(text).toContain('tool denied by approval policy: read_file')
   expect(text).toContain('the user rejected this tool call')
   // 与"批准了但执行失败"文案区分
   expect(text).not.toContain('approved but execution failed')
+  await waitForTurnEnd()
 })
 
 test('an unanswered tool call is denied by default when the timeout fires', async () => {
   const { server } = await startAsk(60)
   await runTask(server)
 
-  const text = await (async () => {
-    const deadline = Date.now() + 10_000
-    while (Date.now() < deadline) {
-      const current = await toolResultText(server, 'c1')
-      if (current !== '') return current
-      await new Promise(resolve => setTimeout(resolve, 50))
-    }
-    return ''
-  })()
+  // 超时路径：等结果落进日志（helper 自己会等；这里不再和时序赛跑）
+  const text = await toolResultText('c1')
 
   expect(text).toContain('tool denied by approval policy: read_file')
   expect(text).toContain('timeout: no answer within 60ms')
+  await waitForTurnEnd()
   // 超时后没有待回答项残留
   const payload = (await (await fetch(server.url + '/api/approvals')).json()) as { pending: unknown[] }
   expect(payload.pending).toEqual([])

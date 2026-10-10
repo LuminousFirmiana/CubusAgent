@@ -1,7 +1,7 @@
 {
-  "name": "@cubus/llm-retry",
+  "name": "@cubus/llm-deepseek",
   "version": "0.0.0",
-  "description": "Abort-aware bounded retry policy for typed LLM failures",
+  "description": "DeepSeek provider: one HTTP/SSE request per call, plus environment/credential wiring",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,6 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@cubus/llm": "workspace:*"
+    "@cubus/credentials": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/session": "workspace:*"
   }
 }

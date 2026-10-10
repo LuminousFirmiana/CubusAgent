@@ -17,13 +17,18 @@ import { sessionMetrics } from '@cubus/sdk'
 import { copyFixtureRepo } from './fixtures.ts'
 import { compareFingerprints, goldenPathFor, parseGolden } from './fingerprint.ts'
 import { runRepairTask } from './harness.ts'
-import { createAdapterFactory, loadEnvFile, modelName, optionValue, requireApiKey, scriptArgs } from './model.ts'
+import { createAdapterFactory, optionValue, readSettings, scriptArgs } from './model.ts'
 import { renderLatestResult } from './results.ts'
 import { loadSuiteTasks } from './suites.ts'
 
-loadEnvFile()
-const apiKey = requireApiKey()
-const model = modelName()
+const settings = await readSettings()
+if (settings.apiKey === undefined) {
+  console.error('DEEPSEEK_API_KEY is required (process environment or repository .env)')
+  process.exit(2)
+}
+const apiKey = settings.apiKey
+const model = settings.model
+const adapterFactory = await createAdapterFactory(apiKey, model)
 const args = scriptArgs()
 
 /**
@@ -81,7 +86,7 @@ for (const fixture of selected) {
   const result = await runRepairTask({
     repoDir: join(workDir, 'repo'),
     sessionsDir: join(workDir, 'sessions'),
-    adapterFactory: createAdapterFactory(apiKey, model),
+    adapterFactory,
     testCommand: fixture.spec.testCommand,
   })
   const durationMs = Date.now() - startedAt

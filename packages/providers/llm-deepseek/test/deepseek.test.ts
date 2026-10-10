@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
+import { LlmError } from '@cubus/llm'
+import type { LlmRequest } from '@cubus/llm'
 import { DeepSeekAdapter } from '../src/deepseek.ts'
-import { LlmError } from '../src/errors.ts'
 import type { Transport } from '../src/deepseek.ts'
-import type { LlmRequest } from '../src/types.ts'
 
 const fixturePath = join(import.meta.dirname, 'fixtures', 'deepseek-stream.txt')
 

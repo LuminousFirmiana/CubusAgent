@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：P1「保留选择权」完成 —— 公开面收敛、依赖方向与公开面由测试强制、版本规则成文。本文件是"接手这个项目的第一份读物"。
+> 最后更新：地基债第一批清完（缝里不再住实现、模型接线三份合一、死代码删除、抖动测试改稳）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -133,15 +133,18 @@ packages/core/agent-recipe/       typed Host/Recipe 契约与可回卷组合根
 packages/providers/session-jsonl/ JSONL 会话存储 provider
 packages/hosts/local/             本地单进程 Host（每会话 LLM + JSONL）
 packages/policies/tool-approval/  provider-neutral 工具审批 seam + Host/Tool 装饰器
-packages/policies/llm-retry/      provider-neutral 模型有界重试 wrapper
+packages/policies/budget/          预算策略：步数/工具/时长/token 上限
 packages/recipes/reference-agent/ 领域无关参考 Agent（add_numbers，无 fs/shell/repo）
 packages/recipes/coding-agent/   正式 Coding Agent Recipe（受信工作区 + 四工具）
 packages/recipes/repair-eval/     由 Coding Recipe 工厂派生的修复评测变体
 packages/apps/cli/                Coding Agent headless CLI 应用入口（含运行前后只读 Git 变更报告）
-packages/seams/llm/               模型接缝（接口 + 两个 provider）
+packages/apps/workbench/          工作台：HTTP + SSE + 单页 UI + 指标/归档 CLI
+packages/support/architecture-guard/ 仓库级守卫：依赖方向、公开面、跨包相对导入
+packages/seams/llm/               模型接缝（只有契约 + 一个测试替身；实现见 providers）
 packages/seams/git/               只读 Git 工作区状态 seam（Service Definition）
 packages/evals/evals/             修复任务评测：fixtures/bug-repos/* 自描述夹具 + 无 key 门禁 + 真模型分数表
 packages/providers/git-cli/       git CLI 只读 provider（走 subprocess seam）
+packages/providers/llm-deepseek/   DeepSeek provider（一次请求）+ env/凭据接线（唯一一份）
 packages/plugins/tools/           真工具（fs/subprocess seam + 四工具）
 packages/sdk/sdk/                 SDK（协议/传输/服务端/会话运行时）
 packages/evals/evals/             评测（harness + fixtures + 真模型入口）
@@ -231,7 +234,7 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 时间戳要能钉住 | 事件带 at 之后，同一脚本仍产出逐字节一致的日志，但必须注入时钟（测试里的 makeClock）；这与 generateId 的注入同理 —— 不确定的东西要能被钉住，否则确定性回放的测试会随机变红 |
 | 指标只从日志算 | 不引入第二份事实源：所有数字都由会话日志推导，同一个目录随时可重算（命令行与界面不会各说各话）。分母为 0 的比率是 null（没有数据），不是 0（会被误读成确实没发生） |
 | 算不出来的就写出来 | metrics 报告末尾固定列出 duration 与 retry rate 两项缺口及原因；宁可显示 n/a，也不给一个看着漂亮的近似值 |
-| 接缝里住着提供方 | @cubus/llm 同时含接口（types.ts）与 DeepSeek 适配器（deepseek.ts）：违反「缝只有契约、实现放 providers/*」的一致性（其他接缝都遵守）。修法：把适配器挪到 packages/providers/llm-deepseek（P2 顺手做） |
+| 接缝里住着提供方 | @cubus/llm 同时含接口（types.ts）与 DeepSeek 适配器（deepseek.ts）：违反「缝只有契约、实现放 providers/*」的一致性（其他接缝都遵守）。已修（地基债第一批：适配器搬到 packages/providers/llm-deepseek，接缝只剩契约 + 测试替身） |
 | 包索引导出两个 main 会撞车 | metrics.ts 与 archive.ts 都导出 main，index 里 export * 两次直接类型报错；CLI 入口的 main 不该是包 API，改成显式导出解析/渲染函数 |
 | JSON 同键会静默覆盖 | SDK 的 package.json 里 @cubus/tools 出现了两次（加依赖时撞的）：JSON 取最后一个，肉眼与 typecheck 都发现不了。加依赖后要扫一眼重复键 |
 | 配置文件严格解析 | 未知键/类型错误一律报错并指出键名：拼错的配置被静默忽略比报错更糟（用户会以为它生效了）。--init 不覆盖已有配置（用户手改过的不能被悄悄重置） |
@@ -314,6 +317,17 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 
 ## 9. 已知问题 / 技术债（接手后可以处理）
 
+### 9.0 最近清掉的一批（2026-10-09，地基债）
+| 债 | 怎么清的 |
+|---|---|
+| 缝里住着实现 | DeepSeek 适配器从 @cubus/llm 搬到 @cubus/providers/llm-deepseek；接缝现在只有契约 + 测试替身，并留下自己的契约测试（错误分类、脚本模型） |
+| 模型接线三份复制（176 行） | 合并到 @cubus/llm-deepseek 的 wiring：env 优先级 + 凭据租约 + 工厂一份；CLI/workbench/evals 全部改用它；顺带修掉"读配置会改 process.env"的老行为 |
+| 重试有两个拥有者 | 删除 @cubus/policies/llm-retry（F4b 后已无人使用）：重试唯一拥有者是循环；留着等于邀请再引入一层看不见的重试；旧 ADR 标注为"实现已迁移" |
+| 抖动的审批测试 | 断言从 SSE 时序改为读日志（事实源），并等 turn/end 再结束（消除与清理目录的竞态）；隔离与全量各跑多次稳定 |
+| 包索引导出两个 main / JSON 同键 | 已在前几步修掉（显式导出、去重） |
+
+
+
 - run.ts 真模型评测：已有最多 3 次模型尝试，但无总预算/工具步数上限（跑飞了只能手动 Ctrl-C）；失败后需人工读日志。
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
 - Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
@@ -326,16 +340,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 容器网络只有 none（C1 决定 2）：需要装依赖的仓库目前只能在工作区外先装好。
 - 装配快照记录 recipe 身份/能力/策略档，但工作区路径不在其中（它是 Host 的环境事实，不是 recipe 配置）；要追溯「哪次评测跑了哪个目录」目前靠 EVALS.md 与临时目录名，等 D1 的格式版本一起加环境字段。
 - manifest 的 evaluation 声明已由 harness 校验套件真实注册（D2 关闭）；运行时仍不做跨包套件检查（内核不依赖评测包，属有意设计）。
-- 恢复与结算（D3）尚未实现：崩溃留下的未闭合区间与孤儿工具调用目前只能人工读日志（D1 已给出规则表）。
+- ~~恢复与结算尚未实现~~（D3 已完成：结算 + resume + 装配身份校验；E6 做了恢复视图）。
 - 评测：真模型分数表记录通过率与耗时，但不记录 token/费用（adapter 与日志都还没有 usage 字段）——要报成本先补 usage 落日志。
 - 评测：真模型全量跑目前是手动命令（pnpm run eval:real）；做成夜跑 CI 需要把 DEEPSEEK_API_KEY 作为仓库 secret，属于凭据决策，未擅自添加。
 - LLM provider：DeepSeek 已有 typed 错误和有界重试；其他供应商尚未接入，thinking 字段归一化表（vLLM/Qwen 等）未做。
-- 会话日志：无 SQLite/索引，查询靠全量读；无 SESSION_FORMAT_VERSION 信封。
+- 会话日志：无 SQLite/索引，查询靠全量读（规模上来才疼）；~~无格式版本信封~~（D3 已有 sidecar 版本，规则见 docs/design/versioning.md）。
 - 评测集：已有 7 个 fixture（7 类 bug）+ 自描述 fixture.json + 无 key 门禁；仍需攒到 30-50 个，并补 golden trajectory 回归门禁（roadmap D4）与真实仓库级任务（多文件、依赖安装）。
 - 循环：模型与工具执行均可取消且能闭合日志；但已完成的文件副作用不回滚，模型重试耗尽或产出部分 chunk 后失败仍会留下未闭合 step；无自动 resume/settlement 和压缩。
 - subprocess：Unix 本地 provider 能终止进程组；Windows 首版只能终止直接子进程，可靠的跨平台进程树隔离留给 P5 Docker provider。
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
-- 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
+- ~~工作台不存在~~（E1–E6 已完成：SSE + 单页 UI + 审批 + 恢复视图）。仍然只有回环访问、无鉴权（ADR §6 已写明暴露前置）。
 
 ## 10. 下一步：P2 —— 让 A 能被人用
 
@@ -347,7 +361,7 @@ P1 把「门留着」这件事做完了（公开面收敛、依赖方向强制�
 | **A2** | 打包分发：选发布物（npm 包 / 单文件二进制 / Docker 镜像）+ 版本号 + 升级与回滚。**开工前先讨论**交付目标/凭据/回滚（AGENTS.md 要求） | 干净机器一条命令装、一条命令跑；升级/回滚各演练一次 |
 | **A3** | CLI 补 --resume 与会话列表（工作台已有恢复，无头场景缺一条腿） | 崩一次 -> CLI 恢复并接着跑 |
 | **A4** | UI 日用化：会话切换、任务历史、审批键盘操作、错误可读 | 连续 5 个任务自评顺畅 |
-| **顺手** | 把 DeepSeek 适配器从接缝挪到 packages/providers/llm-deepseek（技术债：缝里不该住实现） | 移动后依赖方向守卫仍绿 |
+| **顺手** | ~~把 DeepSeek 适配器挪到 providers~~（已完成）；剩余：模型接线的第二家 provider 适配（等真要接别家时做） | 新 provider 只依赖接缝即可接入 |
 
 之后才是 B 的对外部分（由真实使用者反馈决定冻结哪些 API、要不要多租户），以及 F5（可选通知集成）。
 ## 11. 对下一个接手者（人或 agent）的三句话

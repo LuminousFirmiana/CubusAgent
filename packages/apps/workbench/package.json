@@ -20,12 +20,14 @@
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
-    "@cubus/llm": "workspace:*",
-    "@cubus/llm-retry": "workspace:*",
+    "@cubus/llm-deepseek": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*",
     "@cubus/sdk": "workspace:*",
     "@cubus/session": "workspace:*",
     "@cubus/tool-approval": "workspace:*",
     "@cubus/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/llm": "workspace:*"
   }
 }

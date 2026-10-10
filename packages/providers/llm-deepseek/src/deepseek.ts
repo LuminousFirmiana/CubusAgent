@@ -1,6 +1,7 @@
 import type { LlmUsage } from '@cubus/session'
-import type { LlmAdapter, LlmChunk, LlmRequest, LlmToolCall } from './types.ts'
-import { LlmError } from './errors.ts'
+// provider 只依赖**接缝**（@cubus/llm）：接口与错误类型都从那里来
+import { LlmError } from '@cubus/llm'
+import type { LlmAdapter, LlmChunk, LlmRequest, LlmToolCall } from '@cubus/llm'
 
 /**
  * transport 注入点：默认用全局 fetch；测试注入重放 fixture 的替身。

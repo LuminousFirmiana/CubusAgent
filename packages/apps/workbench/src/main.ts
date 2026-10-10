@@ -20,7 +20,13 @@ import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import { createInteractiveToolApproval, createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
 import type { InteractiveApproval } from '@cubus/tool-approval'
-import { createModelAdapterFactory, loadEnvFile, MODEL_CREDENTIAL_NAME, readDeepSeekEnvironment } from './config.ts'
+import {
+  createDeepSeekAdapterFactory,
+  loadDeepSeekEnvFile,
+  MODEL_CREDENTIAL_NAME,
+  readDeepSeekEnvironment,
+} from '@cubus/llm-deepseek'
+import type { DeepSeekEnvironment } from '@cubus/llm-deepseek'
 import {
   configPathFrom,
   readWorkbenchConfig,
@@ -249,21 +255,23 @@ async function main(args: readonly string[]): Promise<number> {
   }
   await mkdir(sessionsDir, { recursive: true })
 
-  // .env：先看工作区，再看仓库根（两级都试，缺了就让下面的 key 检查报明确错误）
-  loadEnvFile(join(workspace, '.env'), process.env)
-  loadEnvFile(join(dirname(new URL(import.meta.url).pathname), '..', '..', '..', '..', '.env'), process.env)
-  const model = parsed.overrides.model ?? loaded?.config.model
-  if (model !== undefined && process.env['DEEPSEEK_MODEL'] === undefined) {
-    process.env['DEEPSEEK_MODEL'] = model
+  // 模型设置优先级：命令行/配置文件 > 进程环境 > 工作区 .env > 仓库根 .env
+  // （readDeepSeekEnvironment(env, file) = 进程环境优先，其次该文件；仓库根再垫在下面）
+  const fromRepository = await loadDeepSeekEnvFile(join(dirname(new URL(import.meta.url).pathname), '..', '..', '..', '..', '.env'))
+  const fromProcessAndWorkspace = await readDeepSeekEnvironment(process.env, join(workspace, '.env'))
+  const overrides = parsed.overrides.model ?? loaded?.config.model
+  const settings: DeepSeekEnvironment = {
+    ...fromRepository,
+    ...fromProcessAndWorkspace,
+    ...(overrides === undefined ? {} : { DEEPSEEK_MODEL: overrides }),
   }
-  const settings = readDeepSeekEnvironment(process.env)
 
   const credentials = new LocalCredentials({
     sources: { [MODEL_CREDENTIAL_NAME]: () => settings.DEEPSEEK_API_KEY },
   })
-  let adapterFactory: Awaited<ReturnType<typeof createModelAdapterFactory>>
+  let adapterFactory: Awaited<ReturnType<typeof createDeepSeekAdapterFactory>>
   try {
-    adapterFactory = await createModelAdapterFactory({ credentials, settings, maxAttempts: options.maxAttempts })
+    adapterFactory = await createDeepSeekAdapterFactory({ credentials, settings })
   } catch (error) {
     if (error instanceof CredentialsError) {
       throw new WorkbenchUsageError('DEEPSEEK_API_KEY is required in the environment or repository .env')

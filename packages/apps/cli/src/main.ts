@@ -7,8 +7,12 @@ import {
   runCodingCommand,
 } from './coding.ts'
 import { createTerminalApprovalPrompter } from './approval.ts'
-import { defaultEnvFile, loadDeepSeekEnvironment } from './config.ts'
-import { createModelAdapterFactory, MODEL_CREDENTIAL_NAME } from './model.ts'
+import {
+  createDeepSeekAdapterFactory,
+  MODEL_CREDENTIAL_NAME,
+  readDeepSeekEnvironment,
+} from '@cubus/llm-deepseek'
+import { defaultEnvFile } from './config.ts'
 
 const output = { write: (line: string) => process.stdout.write(line + '\n') }
 
@@ -44,14 +48,10 @@ async function main(args: readonly string[]): Promise<number> {
       credentials,
       // runCodingCommand calls this only after argument, trust, and workspace checks pass.
       async prepareAdapterFactory() {
-        const settings = await loadDeepSeekEnvironment(process.env, defaultEnvFile())
+        const settings = await readDeepSeekEnvironment(process.env, defaultEnvFile())
         modelCredential = settings.DEEPSEEK_API_KEY
         try {
-          return await createModelAdapterFactory({
-            credentials,
-            settings,
-            maxAttempts: options.maxModelAttempts ?? 3,
-          })
+          return await createDeepSeekAdapterFactory({ credentials, settings })
         } catch (error) {
           if (error instanceof CredentialsError) {
             throw new CliUsageError('DEEPSEEK_API_KEY is required in the environment or repository .env')

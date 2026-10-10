@@ -19,12 +19,17 @@ import {
   renderGolden,
 } from './fingerprint.ts'
 import { runRepairTask } from './harness.ts'
-import { createAdapterFactory, loadEnvFile, modelName, optionValue, requireApiKey, scriptArgs } from './model.ts'
+import { createAdapterFactory, optionValue, readSettings, scriptArgs } from './model.ts'
 import { loadSuite } from './suites.ts'
 
-loadEnvFile()
-const apiKey = requireApiKey()
-const model = modelName()
+const settings = await readSettings()
+if (settings.apiKey === undefined) {
+  console.error('DEEPSEEK_API_KEY is required (process environment or repository .env)')
+  process.exit(2)
+}
+const apiKey = settings.apiKey
+const model = settings.model
+const adapterFactory = await createAdapterFactory(apiKey, model)
 const args = scriptArgs()
 
 const taskId = optionValue(args, '--task')
@@ -56,7 +61,7 @@ await copyFixtureRepo(fixture, join(workDir, 'repo'))
 const result = await runRepairTask({
   repoDir: join(workDir, 'repo'),
   sessionsDir: join(workDir, 'sessions'),
-  adapterFactory: createAdapterFactory(apiKey, model),
+  adapterFactory,
   testCommand: fixture.spec.testCommand,
 })
 

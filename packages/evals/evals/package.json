@@ -16,11 +16,12 @@
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
+    "@cubus/credentials": "workspace:*",
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
-    "@cubus/llm-retry": "workspace:*",
+    "@cubus/llm-deepseek": "workspace:*",
     "@cubus/recipe-reference-agent": "workspace:*",
     "@cubus/recipe-repair-eval": "workspace:*",
     "@cubus/sdk": "workspace:*",

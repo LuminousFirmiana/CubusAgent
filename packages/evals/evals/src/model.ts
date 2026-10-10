@@ -1,7 +1,11 @@
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DeepSeekAdapter } from '@cubus/llm'
+import { LocalCredentials } from '@cubus/credentials'
 import type { LlmAdapter } from '@cubus/llm'
+import {
+  createDeepSeekAdapterFactory,
+  MODEL_CREDENTIAL_NAME,
+  readDeepSeekEnvironment,
+} from '@cubus/llm-deepseek'
 
 /**
  * 真模型评测的公共装配（run.ts 与 golden.ts 共用）。
@@ -10,44 +14,31 @@ import type { LlmAdapter } from '@cubus/llm'
  */
 export const repositoryRoot = join(import.meta.dirname, '..', '..', '..', '..')
 
-/** 加载仓库根 .env（不覆盖已存在的环境变量）。缺失时静默，让 key 检查报明确错误。 */
-export function loadEnvFile(): void {
-  try {
-    const raw = readFileSync(join(repositoryRoot, '.env'), 'utf8')
-    for (const line of raw.split('\n')) {
-      const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-      const name = match?.[1]
-      if (match && name !== undefined && process.env[name] === undefined) {
-        process.env[name] = match[2] ?? ''
-      }
-    }
-  } catch {
-    // 没有 .env：交给 requireApiKey 报错
+/**
+ * 读模型设置（进程环境优先，其次仓库根 .env；**不修改 process.env**）。
+ * 缺 key 时返回 undefined，由调用方报明确错误（不在这里 process.exit，便于测试）。
+ */
+export async function readSettings(): Promise<{ apiKey?: string; model: string; baseUrl?: string }> {
+  const settings = await readDeepSeekEnvironment(process.env, join(repositoryRoot, '.env'))
+  return {
+    ...(settings.DEEPSEEK_API_KEY === undefined ? {} : { apiKey: settings.DEEPSEEK_API_KEY }),
+    model: settings.DEEPSEEK_MODEL ?? 'deepseek-chat',
+    ...(settings.DEEPSEEK_BASE_URL === undefined ? {} : { baseUrl: settings.DEEPSEEK_BASE_URL }),
   }
-}
-
-export function requireApiKey(): string {
-  const apiKey = process.env['DEEPSEEK_API_KEY']
-  if (!apiKey) {
-    console.error('DEEPSEEK_API_KEY is required')
-    process.exit(2)
-  }
-  return apiKey
-}
-
-export function modelName(): string {
-  return process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat'
 }
 
 /**
- * 每个任务一份适配器实例。**不在这里包重试**（F4b）：重试由循环做，
- * 这样每次重试都写进日志；评测侧把 maxAttempts 交给 SessionRuntime 的 retry 选项。
+ * 适配器工厂：走凭据租约（C3 纪律，与 CLI/工作台同一份实现）。
+ * **不在这里包重试**（F4b）：重试由循环做，这样每次重试都写进日志。
  */
-export function createAdapterFactory(apiKey: string, model: string): () => LlmAdapter {
-  return () => new DeepSeekAdapter({
-    baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
-    apiKey,
-    model,
+export async function createAdapterFactory(apiKey: string, model: string): Promise<() => LlmAdapter> {
+  const credentials = new LocalCredentials({ sources: { [MODEL_CREDENTIAL_NAME]: () => apiKey } })
+  return await createDeepSeekAdapterFactory({
+    credentials,
+    settings: {
+      DEEPSEEK_MODEL: model,
+      ...(process.env['DEEPSEEK_BASE_URL'] === undefined ? {} : { DEEPSEEK_BASE_URL: process.env['DEEPSEEK_BASE_URL'] }),
+    },
   })
 }
 

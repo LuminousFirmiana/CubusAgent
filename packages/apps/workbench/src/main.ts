@@ -16,7 +16,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
-import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
+import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import { createInteractiveToolApproval, createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
 import type { InteractiveApproval } from '@cubus/tool-approval'
@@ -294,7 +294,7 @@ async function main(args: readonly string[]): Promise<number> {
       createLocalAgentHost({ adapterFactory, workspaceDir: workspace, credentials }),
       approval,
     ),
-    recipe: codingAgentRecipe,
+    recipe: cubusCodingAgentRecipe,
     recipeOptions: undefined,
     permissionProfile: options.approval,
     // 重试由循环做（F4b）：每次重试进日志

@@ -8,7 +8,7 @@ import type { BudgetLimits, MountSnapshot } from '@cubus/session'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
-import { codingAgentRecipe } from '@cubus/recipe-coding-agent'
+import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
 import { withToolApprovalHost } from '@cubus/tool-approval'
@@ -253,7 +253,7 @@ export async function runCodingCommand(
   dependencies.signal?.throwIfAborted()
   if (adapterFactory === undefined) throw new Error('adapter factory is required')
   // 有效审批档：app 覆盖 > manifest 默认；最终值与来源会进装配快照。
-  const approvalProfile = options.approval ?? codingAgentRecipe.manifest.permission.profile
+  const approvalProfile = options.approval ?? cubusCodingAgentRecipe.manifest.permission.profile
   if (approvalProfile !== 'ask' && approvalProfile !== 'allow' && approvalProfile !== 'deny') {
     throw new CliUsageError('unsupported approval profile: ' + approvalProfile)
   }
@@ -265,7 +265,7 @@ export async function runCodingCommand(
     ...(options.maxDurationMs === undefined ? {} : { maxDurationMs: options.maxDurationMs }),
     ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
   }
-  const mergedBudget: BudgetLimits = { ...codingAgentRecipe.manifest.budget, ...appBudget }
+  const mergedBudget: BudgetLimits = { ...cubusCodingAgentRecipe.manifest.budget, ...appBudget }
   const budget = Object.keys(mergedBudget).length === 0 ? undefined : mergedBudget
 
   const runtime = new SessionRuntime({
@@ -279,7 +279,7 @@ export async function runCodingCommand(
       }),
       approval,
     ),
-    recipe: codingAgentRecipe,
+    recipe: cubusCodingAgentRecipe,
     recipeOptions: undefined,
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(budget === undefined ? {} : { budget }),

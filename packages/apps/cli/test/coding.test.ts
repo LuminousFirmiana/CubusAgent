@@ -411,7 +411,7 @@ test('the mount snapshot records the manifest default profile, and an app overri
   // 没给 --approval：默认档来自 manifest，来源记 manifest。
   const fromManifest = await run(undefined)
   expect(fromManifest?.permission).toEqual({ profile: 'ask', source: 'manifest' })
-  expect(fromManifest?.recipe).toEqual({ id: 'coding-agent', version: '1.0.0', contractVersion: 1 })
+  expect(fromManifest?.recipe).toEqual({ id: 'cubus-coding-agent', version: '0.1.0', contractVersion: 1 })
   expect(fromManifest?.capabilities.map(capability => capability.kind + ':' + capability.provider)).toEqual([
     'approval:tool-approval',
     'fs:local',

@@ -1,0 +1,25 @@
+{
+  "name": "@cubus/recipe-cubus-coding-agent",
+  "version": "0.0.0",
+  "description": "CubusCodingAgent product recipe: the coding agent product assembled on the Cubus runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/recipe-coding-agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/cordis": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
+    "@cubus/tool-approval": "workspace:*",
+    "@cubus/tool-registry": "workspace:*",
+    "@cubus/tools": "workspace:*"
+  }
+}

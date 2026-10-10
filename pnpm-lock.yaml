@@ -47,6 +47,9 @@ importers:
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/coding-agent
+      '@cubus/recipe-cubus-coding-agent':
+        specifier: workspace:*
+        version: link:../../recipes/cubus-coding-agent
       '@cubus/sdk':
         specifier: workspace:*
         version: link:../../sdk/sdk
@@ -90,6 +93,9 @@ importers:
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/coding-agent
+      '@cubus/recipe-cubus-coding-agent':
+        specifier: workspace:*
+        version: link:../../recipes/cubus-coding-agent
       '@cubus/sdk':
         specifier: workspace:*
         version: link:../../sdk/sdk
@@ -361,6 +367,28 @@ importers:
       '@cubus/cordis':
         specifier: workspace:*
         version: link:../../../vendor/cordis
+
+  packages/recipes/cubus-coding-agent:
+    dependencies:
+      '@cubus/recipe-coding-agent':
+        specifier: workspace:*
+        version: link:../coding-agent
+    devDependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+      '@cubus/system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@cubus/tool-approval':
+        specifier: workspace:*
+        version: link:../../policies/tool-approval
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+      '@cubus/tools':
+        specifier: workspace:*
+        version: link:../../plugins/tools
 
   packages/recipes/reference-agent:
     dependencies:

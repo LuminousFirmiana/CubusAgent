@@ -22,6 +22,7 @@
     "@cubus/host-local": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*",
+    "@cubus/recipe-cubus-coding-agent": "workspace:*",
     "@cubus/sdk": "workspace:*",
     "@cubus/session": "workspace:*",
     "@cubus/tool-approval": "workspace:*",

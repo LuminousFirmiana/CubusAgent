@@ -1,7 +1,7 @@
 # CubusAgent 交接文档
 
-> 最后更新：**冻结检查完成（第四批）** —— 干净克隆全绿、README 每条命令实跑、10 篇设计文档加实现标注、技术债终审（§9）。
-> 本文件是"接手这个项目的第一份读物"；冻结结论见 §10。
+> 最后更新：**S1 产品身份（CubusCodingAgent）** —— 从冻结版另起 `feat/coding-agent` 分支，产品有了自己的身份（id/版本/提示词）与验收路径。
+> 本文件是"接手这个项目的第一份读物"；冻结结论见 §10，产品路线见 docs/design/coding-agent-product.md §8。
 
 ## 1. 这个项目是什么
 
@@ -15,7 +15,7 @@
 
 修 bug 的 Coding Agent 评测只是第一条高强度纵向验收链，用来证明内核真的能调用工具完成外部任务；它不是 CubusAgent 的产品定义。
 
-当前阶段（v1.0 开发中）：**通用原型已毕业，正式 Coding Agent 已有可运行 CLI、逐工具审批、模型暂态重试和端到端取消，下一步补 Git 变更报告**。技术路线：自研内核 + vendored cordis 底座（B 路线，决策记录见第 6 节）。
+当前阶段：**运行时地基已冻结（v1.0 = 通用原型 + 参考产品），现在在它之上开发编码 Agent 产品 CubusCodingAgent**。产品能力按 docs/design/coding-agent-product.md §8 逐步落地：MCP 延迟加载 → 上下文压缩 → 跨会话记忆 → Agent Skills → 权限规则与本地 OS 沙箱 → 多 Agent 协作。技术路线：自研内核 + vendored cordis 底座（B 路线，决策记录见第 6 节）。
 
 ## 2. 当前状态总览
 
@@ -50,6 +50,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| **S1 产品身份** | 完成 | 从冻结版另起 `feat/coding-agent` 分支：新增 @cubus/recipe-cubus-coding-agent（产品 id `cubus-coding-agent@0.1.0`、自己的提示词、四工具、审批默认 `ask`），CLI 与工作台改为装配该产品——装配快照因此能回答"这次跑的是哪个产品"。产品包**只声明**（提示词/工具面/审批档/预算），装配逻辑仍来自通用工厂 @cubus/recipe-coding-agent：`repair-eval` 与产品共用同一工厂，不复制装配。docs/design/coding-agent-product.md 增 §7（产品身份与验收）与 §8（目标能力 S2–S6 及各自的复现方式：每步都必须能用日志或评测出结论）。 |
 | 地基债第三批 | 完成 | ①**取消不再留孤儿**：容器内命令改由 `setsid -w` 起独立进程组并记录组号，取消/超时后按组 `kill -s TERM -- -$p` -> KILL；`docker run --init` 让被杀孤儿被回收。真容器集成测试断言"取消后容器内无存活进程且容器仍可用"。②**镜像升级流程**：DEFAULT_DOCKER_IMAGE 的升级四步写进 sandbox ADR，并新增镜像预检集成测试（核对 sh/setsid/cat/rm/sleep 与全部边界）——镜像换代让假设失效时立刻红。③**容器上限**：Host 新增 maxContainers（默认 4）与 DockerContainerLimitError，超限快速失败、释放后名额回收（集成测试覆盖） |
 | 地基债第二批 | 完成 | ①会话归属：ToolExecutionContext 加可选 sessionId（seam additive），循环从 runtime 插件的 session 描述符透传，审批项带 sessionId 并显示在工作台卡片上（实测与真实会话 id 一致）。②评测跑飞的可见性：预算本就由 recipe manifest 声明并被评测继承（40 步/60 工具/10 分钟/200k token，已核对真实评测日志的 mount.budget），缺的是"被拦住"与"答错"没有区分 -> EvalTaskOutcome 加 budgetTripped，控制台打 CANCELLED，EVALS.md 标 ⏱ 并在表头统计，机器可读结果保留该字段。③SDK 公开面补预算类型（BudgetState/BudgetTripReason/BudgetLimits），消费方不必再去 import 策略包 |
 | P1 保留选择权 | 完成 | ①@cubus/sdk 与 @cubus/agent-recipe 的入口改成**显式导出**（不再 export *）；②新增公开面测试（public-api.test.ts：只用包名导入，跑通建产品->运行->回放->指标->归档，并自检没有相对导入）；③docs/design/versioning.md 把四个版本号（会话日志/契约/归档/包）的规则与强制手段收成一处；④新支撑包 @cubus/architecture-guard：依赖方向（内核不依赖产品/应用）+ 无循环 + 公开面无 export * + 无跨包相对导入，且自带"守卫非空转"的自证测试 |
@@ -78,7 +79,7 @@
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：355 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：370 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。62 个测试文件、27 个测试包、28 个包，分支 `feat/coding-agent`（自 `Cubus-v1.0` 冻结版另起）。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 

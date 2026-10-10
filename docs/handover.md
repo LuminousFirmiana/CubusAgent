@@ -1,6 +1,7 @@
 # CubusAgent 交接文档
 
-> 最后更新：地基债第三批清完（Docker 取消能杀容器内进程组、镜像升级有流程与预检、容器数有上限）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：**冻结检查完成（第四批）** —— 干净克隆全绿、README 每条命令实跑、10 篇设计文档加实现标注、技术债终审（§9）。
+> 本文件是"接手这个项目的第一份读物"；冻结结论见 §10。
 
 ## 1. 这个项目是什么
 
@@ -321,58 +322,91 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 23. Host 装饰器在协商路径下必须只转发自己拥有的 offerings：把不属于自己的项一起传给内层 Host，会让同一服务（ctx.provide 同名键）注册两次并在装配期抛错。（B4 被测试抓到）
 24. 子进程环境必须用白名单，不能用名字黑名单：黑名单（KEY|SECRET|TOKEN|PASSWORD）会被「换个名字」绕过 —— 真实实验里 HARMLESS_CREDENTIAL 原样传给了子进程。白名单 + 显式凭据注入才是边界。（C3 修复）
 25. TS 的 private 只是编译期标注，运行期仍是可枚举属性：持有 apiKey 的字段若用 private，JSON.stringify(adapter) 会带出明文。持密字段要用 ES 私有字段（#field）。（C3 修复）
+## 9. 技术债与已知限制（终审：2026-10-09 冻结检查）
 
-## 9. 已知问题 / 技术债（接手后可以处理）
+> 读法：**已清**是历史（保留是为了不再犯）；**有意设计**是"就该这样"，附理由；**待办**是真的还没做，附触发条件。
+> 冻结判据之一是"每条要么有明确状态，要么有明确理由" —— 这一节就是那条判据的产出。
 
-### 9.0 最近清掉的一批（2026-10-09，地基债）
+### 9.1 已清（地基债三批）
+
 | 债 | 怎么清的 |
 |---|---|
-| 缝里住着实现 | DeepSeek 适配器从 @cubus/llm 搬到 @cubus/providers/llm-deepseek；接缝现在只有契约 + 测试替身，并留下自己的契约测试（错误分类、脚本模型） |
-| 模型接线三份复制（176 行） | 合并到 @cubus/llm-deepseek 的 wiring：env 优先级 + 凭据租约 + 工厂一份；CLI/workbench/evals 全部改用它；顺带修掉"读配置会改 process.env"的老行为 |
-| 重试有两个拥有者 | 删除 @cubus/policies/llm-retry（F4b 后已无人使用）：重试唯一拥有者是循环；留着等于邀请再引入一层看不见的重试；旧 ADR 标注为"实现已迁移" |
-| 抖动的审批测试 | 断言从 SSE 时序改为读日志（事实源），并等 turn/end 再结束（消除与清理目录的竞态）；隔离与全量各跑多次稳定 |
-| 包索引导出两个 main / JSON 同键 | 已在前几步修掉（显式导出、去重） |
+| 缝里住着实现 | DeepSeek 适配器搬到 @cubus/providers/llm-deepseek；接缝只剩契约 + 测试替身，并留下自己的契约测试 |
+| 模型接线三份复制（176 行） | 合并到 @cubus/llm-deepseek 的 wiring（env 优先级 + 凭据租约 + 工厂）；顺带修掉"读配置会改 process.env" |
+| 重试有两个拥有者 | 删除 @cubus/policies/llm-retry（F4b 后无人使用）：重试唯一拥有者是循环 |
+| 抖动的审批测试 | 断言改读日志（事实源）+ 等 turn/end 再清理；隔离与全量多次稳定 |
+| 审批项无会话归属 | ToolExecutionContext.sessionId（additive）→ 循环透传 → 审批项带 sessionId → 工作台显示 |
+| 评测跑飞看着像答错 | EvalTaskOutcome.budgetTripped：控制台 CANCELLED、EVALS.md 标 ⏱、机器可读结果保留 |
+| 容器取消留孤儿 | 容器内进程组管理与组杀（setsid -w + kill -- -pgid）+ docker run --init 回收；真容器回归测试 |
+| 镜像升级无流程 | ADR §12 决定 3 的四步流程 + 镜像预检集成测试（sh/setsid/cat/rm/sleep 与全部边界） |
+| 同时存在的容器无上限 | Host 的 maxContainers（默认 4）+ DockerContainerLimitError，释放后名额回收（集成测试） |
+| 包索引撞车 / JSON 同键 / 公开面不受控 / 依赖方向靠自觉 | 显式导出 + @cubus/architecture-guard（依赖方向、无循环、无 export *、无跨包相对导入） |
+| 测试写死本机目录名 | 干净副本检查抓出（断言改成相对测试文件算出的仓库根）；同类问题已扫过一遍 |
+| 指标/归档找不到日志 | 三个入口（CLI / 工作台 / metrics / archive）统一默认 ~/.cubus/sessions；--init 现在尊重 --workspace |
 
+### 9.2 有意设计（不是债）
 
+| 事项 | 为什么这样 |
+|---|---|
+| 本地档（local-unconfined）无文件边界 | 诚实的档位：本地自有仓库、人就在旁边时强制容器成本高于收益；要边界就用 Docker Host，装配快照里能看到 unconfined |
+| 预算上限是**软**的（最多超限一次） | 计数先加再判超限，为的是不打断已经在进行的副作用；tripped 原因写进报告 |
+| 运行时不做跨包评测套件检查 | 内核不依赖评测包（依赖方向守卫会拦住）；套件注册由 harness 校验 |
+| 工作台只监听回环、无鉴权 | v1 明确不做对外暴露；要暴露需先补令牌 + Origin 校验 + 强制 ask + TLS（ADR §6） |
+| 费用（美元）不内置价目表 | token 事实已完整落日志（含缓存命中）；价格会变、各家不同，内置一张表迟早是错的 —— 换算由使用方决定 |
+| 会话日志无索引（全量读） | 规模未到；需要时再引入索引，不动事件词汇 |
+| 已完成的文件副作用不回滚 | 取消 = 停止 + 闭合日志；回滚语义没定义前不做（ADR：取消契约） |
+| golden 记录当次真实轨迹 | 同模型重跑也可能不同（实测少读三次文件）→ 门禁默认 guardrails（判分 + 文件集 + 调用预算），不比对工具序列 |
 
-- 评测预算：**已有**（recipe manifest 声明 40 步/60 工具/10 分钟/200k token，评测继承；已核对真实评测日志）。跑飞现在会被拦住并标成 CANCELLED/⏱，不再"看着像答错"。仍待办：失败后要人工读日志（logPath 已记录，但没有自动摘要）；上限是**软**的（见下一条决策）。
-- 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
-- Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
-- Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
-- 本地（local-unconfined）仍无文件边界：那是设计上的诚实档位，要边界就用 Docker Host（C4 已完成）。
-- Docker Host 目前只能被 embedding/测试使用：CLI 还没有 --sandbox docker 入口（属 A 方向的交付面，本分支按规划不动）。**Host 自身的会话生命周期已补齐**：取消杀容器内进程组、镜像升级流程与预检、容器数上限。
-- 会话/容器数量上限：**Host 侧已限**（maxContainers，默认 4，超限快速失败）；app 级的多会话服务策略仍留给 A 方向。
-- ~~容器取消只杀 docker exec 进程组~~：已清（第三批）——容器内进程组管理与组杀、--init 回收孤儿，并有真容器回归测试。
-- 默认镜像 digest 仍是常量（node@sha256:c3de60…），但现在有**明确升级流程**（ADR §12 决定 3）与**镜像预检测试**：换代必须跑集成测试，假设失效会立刻红。
-- 容器网络只有 none（C1 决定 2）：需要装依赖的仓库目前只能在工作区外先装好。
-- 装配快照记录 recipe 身份/能力/策略档，但工作区路径不在其中（它是 Host 的环境事实，不是 recipe 配置）；要追溯「哪次评测跑了哪个目录」目前靠 EVALS.md 与临时目录名，等 D1 的格式版本一起加环境字段。
-- manifest 的 evaluation 声明已由 harness 校验套件真实注册（D2 关闭）；运行时仍不做跨包套件检查（内核不依赖评测包，属有意设计）。
-- ~~恢复与结算尚未实现~~（D3 已完成：结算 + resume + 装配身份校验；E6 做了恢复视图）。
-- 评测：真模型分数表记录通过率与耗时，但不记录 token/费用（adapter 与日志都还没有 usage 字段）——要报成本先补 usage 落日志。
-- 评测：真模型全量跑目前是手动命令（pnpm run eval:real）；做成夜跑 CI 需要把 DEEPSEEK_API_KEY 作为仓库 secret，属于凭据决策，未擅自添加。
-- LLM provider：DeepSeek 已有 typed 错误和有界重试；其他供应商尚未接入，thinking 字段归一化表（vLLM/Qwen 等）未做。
-- 会话日志：无 SQLite/索引，查询靠全量读（规模上来才疼）；~~无格式版本信封~~（D3 已有 sidecar 版本，规则见 docs/design/versioning.md）。
-- 评测集：已有 7 个 fixture（7 类 bug）+ 自描述 fixture.json + 无 key 门禁；仍需攒到 30-50 个，并补 golden trajectory 回归门禁（roadmap D4）与真实仓库级任务（多文件、依赖安装）。
-- 循环：模型与工具执行均可取消且能闭合日志；但已完成的文件副作用不回滚，模型重试耗尽或产出部分 chunk 后失败仍会留下未闭合 step；无自动 resume/settlement 和压缩。
-- subprocess：Unix 本地 provider 能终止进程组；Windows 首版只能终止直接子进程，可靠的跨平台进程树隔离留给 P5 Docker provider。
-- 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
-- ~~工作台不存在~~（E1–E6 已完成：SSE + 单页 UI + 审批 + 恢复视图）。仍然只有回环访问、无鉴权（ADR §6 已写明暴露前置）。
+### 9.3 待办（真的还没做）
 
-## 10. 下一步：冻结终检（第四批）
+| 待办 | 触发条件 / 归属 |
+|---|---|
+| CLI 无交互式多轮、无 --resume、无 patch 级 diff | A 方向（coding agent 产品化）规划内 |
+| Docker Host 未接进入口（--sandbox docker） | A 方向；Host 自身已补齐（见 9.1） |
+| 容器网络只有 none | 需要"沙箱内装依赖"时做域名白名单；现在在工作区外先装好 |
+| 评测集 30 个：还缺真实仓库级任务（多文件、依赖安装） | 评测继续扩时 |
+| 评测夜跑 CI | 需要把 key 作为仓库 secret —— 凭据决策，等确认 |
+| 失败后要人工读日志（无自动摘要） | 有人抱怨时做；logPath 已记录 |
+| 装配快照不含工作区路径 | 属 Host 环境事实；真要追溯"哪次评测跑了哪个目录"时加环境字段（会触发格式版本递增） |
+| 其他模型供应商未接入（thinking 归一化表） | 接第二家时做；接缝与 provider 分层已就位 |
+| 循环无上下文压缩（compaction） | 长任务需要时；会改事件词汇，属架构改动，先讨论 |
+| Windows 本地档的 /dev/null 行数统计 | 要正式支持 Windows 时 |
+## 10. 冻结检查结果（2026-10-09，第四批）
 
-第三批（Docker 会话生命周期）已清完。剩下的就是**冻结终检**，逐条自检并把结果写在这里：
+**判据 → 结果**（逐条实跑，不是"应该没问题"）：
 
-1. 干净克隆：pnpm install --frozen-lockfile + pnpm run check 全绿（不依赖本机残留）；
-2. README 的每条命令实跑一遍（cubus / workbench / metrics / archive / eval:golden / eval:real）；
-3. docs/design 每篇加状态标注（已实现 / 决策历史 / 未实现），并核对与代码现状一致；
-4. 技术债清单终审：每条要么有明确状态，要么有明确理由；
-5. 已知限制汇总（README + handover 都能查到）：本地档非沙箱、回环无鉴权、费用需价目表、评测夜跑需凭据决定、Docker Host 尚未接到 CLI 入口（属 A 方向规划）。
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | 干净克隆：frozen install + check 全绿 | ✅ 在 mktemp 目录里复制"提交物"（排除 node_modules / .git / .env / references），install exit=0、check exit=0、365 测试、0 警告 0 错误 |
+| 2 | README 每条命令实跑 | ✅ 见下 |
+| 3 | docs/design 每篇有状态与实现标注 | ✅ 10 篇都加了"实现：已落地 / 决策历史 / 未实现"一行，并与代码核对 |
+| 4 | 技术债终审 | ✅ §9 重写为"已清 / 有意设计 / 待办"三类 |
+| 5 | 已知限制可在 README 与 handover 查到 | ✅ README §安全模型 + §会话日志 + 本节 §9.2 |
 
-**费用（美元）的处理**（决策项，建议照此写死）：日志已完整记录 token 事实（prompt / completion / cached）。
-不内置价目表 —— 价格会变、各家不同，内置一张表迟早是错的。README 写明"换算成钱由使用方决定"，
-并把 token 列进指标与评测表（已完成）。
+**README 命令实跑记录**（真模型，2026-10-09）：
 
-**冻结之后**：A 方向（coding agent 产品化）由你另行规划；本分支作为"运行时地基 + 参考产品"定格。
+| 命令 | 结果 |
+|---|---|
+| pnpm install / check | ✅ 365 测试全绿 |
+| workbench -- --init | ✅ 写出配置；重复执行拒绝覆盖（提示 --force）；**--workspace 现在生效**（原先被静默忽略） |
+| workbench（仅配置启动） | ✅ 打印 http://127.0.0.1:4173，/api 列出端点，/ 返回单页 UI |
+| workbench -- --workspace ... --approval allow | ✅ 真任务跑完（7 步 / 9 工具 / 13,469 token / 12.2s） |
+| cubus -- coding ... | ✅ 真任务修好 add-bug；日志落在 ~/.cubus/sessions |
+| eval:real -- --task add-bug | ✅ 1/1 passed（7.6s，deepseek-chat） |
+| eval:golden -- --task add-bug | ✅ 可跑，但**会改写 golden**（当次真实轨迹；本次模型少读 3 次文件）→ 已把语义写进 EVALS.md 与 README；快照已恢复，无 key 门禁 81 测试全绿 |
+| metrics（无参数） | ✅ 找到 ~/.cubus/sessions（2 会话）；修前必须显式 --sessions |
+| archive -- --export | ✅ 导出 → 导入到新目录 → 指标逐项一致 |
+
+**检查过程中发现并立刻修掉的问题**（这就是终检的价值）：
+
+1. **测试写死本机目录名**：`defaultEnvFile` 的测试断言路径以 `CubusAgent` 结尾 → 干净副本必红。改成相对测试文件算出的仓库根，并加"不依赖 cwd"的断言。
+2. **--init 静默忽略 --workspace**：显式参数被丢掉，配置里写的是 cwd。改成尊重显式参数 + 测试钉住。
+3. **会话目录三套默认值**：CLI 用 ~/.cubus/sessions、工作台用系统临时目录、metrics/archive 直接报错。统一为 `配置 > ~/.cubus/sessions`（README 随之简化，无参数也能跑）。
+4. **README 的 metrics/archive 命令对新用户会失败**：因 3 而修。
+
+**冻结结论**：本分支（Cubus-v1.0）作为"运行时地基 + 参考产品"定格。之后 A 方向（coding agent 产品化）另行规划；
+任何改动仍守 AGENTS.md 的一步一锁与"云端未绿不得开始下一步"。
+
 ## 11. 对下一个接手者（人或 agent）的三句话
 
 1. 先跑 pnpm install --frozen-lockfile 和 pnpm run check，必须全绿才能动手；

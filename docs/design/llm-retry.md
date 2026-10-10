@@ -5,6 +5,7 @@
 > `@cubus/policies/llm-retry` 包**搬进了循环**（`@cubus/agent-loop` 的 retry.ts，F4b）：
 > 重试是**请求事实**，必须写进会话日志（`request/retry`），两层包装会让重试不可见。
 > 旧包已删除，本文件保留为决策历史。
+> 实现：**决策历史** —— 语义仍在用（错误分类 + 只重试未产出 chunk 的瞬时失败），但实现已搬进 @cubus/agent-loop；独立包已删除。
 
 ## 1. 边界
 

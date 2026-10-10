@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import { parseArchiveCommand, renderPrunePlan } from '../src/archive.ts'
@@ -25,8 +25,9 @@ test('the command line picks exactly one mode and validates its arguments', () =
   expect(() => parseArchiveCommand(['--export', '/tmp/out', '--prune'], '/tmp/sessions'))
     .toThrow('pick exactly one of --export / --import / --prune')
   expect(() => parseArchiveCommand(['--export'], '/tmp/sessions')).toThrow('--export requires a value')
-  expect(() => parseArchiveCommand(['--prune'], undefined))
-    .toThrow('no sessions directory: pass --sessions <dir> or set "sessionsDir" in ~/.cubus/config.json')
+  // 没给 --sessions 也没配 sessionsDir 时回落到与 CLI/工作台一致的默认位置（而不是报错）
+  expect(parseArchiveCommand(['--prune'], undefined))
+    .toMatchObject({ sessionsDir: join(homedir(), '.cubus', 'sessions') })
   expect(() => parseArchiveCommand(['--prune', '--older-than-days', '-1'], '/tmp/sessions'))
     .toThrow('--older-than-days must be a non-negative integer')
   expect(() => parseArchiveCommand(['--nope'], '/tmp/sessions')).toThrow('unknown option: --nope')

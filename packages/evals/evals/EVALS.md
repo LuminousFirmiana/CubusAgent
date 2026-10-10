@@ -4,6 +4,10 @@
 无 key 的假模型门禁在每次 push 的 CI 里运行（pnpm run check，见 test/fixtures.test.ts）。
 生成命令：pnpm run eval:real（加 -- <fixture-id> 只跑一个）。
 
+注意：golden 记录的是**当次真实轨迹**（judge / 事件序列 / 工具序列 / 文件集）。同一模型重跑也可能不同
+（实测：模型少读了三次文件）。因此门禁默认是 guardrails 级 —— 判分 + 改动文件集 + 调用预算，
+**不比对工具序列**（strict 级只适合确定性回放，例如无 key 的参考修复）。
+
 ## 2026-10-09 05:36 UTC · deepseek-chat · 1 fixtures · 1/1 passed (100%)
 
 | fixture | bug 类型 | 结果 | 耗时 | 会话日志 |

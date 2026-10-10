@@ -2,6 +2,7 @@
 
 > 状态：Accepted（2026-10-09）。§12 记录了四项已确认的决定。这是 roadmap C 阶段（C1–C6，P5 共享安全层）的设计依据。
 > 前置：[recipe-capabilities.md](recipe-capabilities.md)（能力协商，Accepted）。
+> 实现：**已落地**（含第三批的取消组杀、镜像升级流程、容器上限）。**未实现**：容器网络白名单（v1 只有 --network none）。
 
 ## 1. 背景：现在的安全姿态是"知情确认"，不是"强制边界"
 

@@ -1,6 +1,7 @@
 # Coding Agent 产品契约
 
 > 状态：Accepted（2026-08-24）。这是 P4 的产品边界，不修改通用 Agent 内核。
+> 实现：**已落地** —— @cubus/recipe-coding-agent 是 CLI 与工作台共同使用的产品定义（提示词、四工具、权限档、预算）。
 
 ## 1. 产品目标
 

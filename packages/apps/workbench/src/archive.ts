@@ -9,7 +9,8 @@
  * 1. **删除默认是 dry-run**：不加 --yes 只打印计划（含绝对路径），由人确认；
  * 2. 崩溃现场（未闭合回合）默认保留：那可能是有用的现场，不该被"清理"掉。
  */
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import {
   applyPrune,
   exportSessions,
@@ -104,11 +105,9 @@ export function parseArchiveCommand(
   }
 
   if (mode === undefined) throw new ArchiveUsageError('pick one of --export <dir> / --import <dir> / --prune')
-  if (sessionsDir === undefined) {
-    throw new ArchiveUsageError('no sessions directory: pass --sessions <dir> or set "sessionsDir" in ~/.cubus/config.json')
-  }
   return {
-    sessionsDir: resolve(sessionsDir),
+    // 与 CLI/工作台同一个默认位置：~/.cubus/sessions（规则只有一条：配置 > 默认）
+    sessionsDir: resolve(sessionsDir ?? join(homedir(), '.cubus', 'sessions')),
     mode,
     ...(path === undefined ? {} : { path: resolve(path) }),
     sessionIds,

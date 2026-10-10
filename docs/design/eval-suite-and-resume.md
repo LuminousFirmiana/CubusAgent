@@ -2,6 +2,7 @@
 
 > 状态：Accepted（2026-10-09）。§7 记录了五项已确认的决定。这是 roadmap D 阶段（D1–D4）的设计依据。
 > 前置：[recipe-capabilities.md](recipe-capabilities.md)（B 阶段，Accepted）、[sandbox-seam.md](sandbox-seam.md)（C 阶段，Accepted）。
+> 实现：**已落地** —— @cubus/evals（30 个夹具 + golden 指纹 + 门禁）、结算与恢复（D3）、恢复视图（E6）。
 
 ## 1. 背景：两笔欠账
 

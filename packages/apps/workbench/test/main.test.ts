@@ -1,4 +1,4 @@
-import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { isWithin, parseWorkbenchCommand, resolveWorkbenchOptions, WORKBENCH_COMMAND_HELP } from '../src/main.ts'
@@ -19,6 +19,8 @@ test('the command line parses flags into overrides (validation happens after mer
     .toThrow('--port must be a non-negative integer')
   expect(parseWorkbenchCommand(['--init', '--config', '/tmp/c.json', '--force']))
     .toMatchObject({ init: true, force: true, configFlag: '/tmp/c.json' })
+  // --workspace 是显式参数：--init 时必须带上它（早先被静默忽略，配置里写的是 cwd）
+  expect(parseWorkbenchCommand(['--init', '--workspace', '/tmp/repo']).overrides.workspace).toBe('/tmp/repo')
 
   const parsed = parseWorkbenchCommand(['--workspace', '/tmp/x', '--approval', 'deny', '--port', '4180', '--max-attempts', '5'])
   expect(parsed.overrides).toMatchObject({ workspace: '/tmp/x', approval: 'deny', port: 4180, maxAttempts: 5 })
@@ -42,7 +44,7 @@ test('effective options come from the command line, then the config file, then d
   })
   expect(fromConfig).toEqual({
     workspace: '/tmp/from-config',
-    sessionsDir: join(tmpdir(), 'cubus-workbench-sessions'),
+    sessionsDir: join(homedir(), '.cubus', 'sessions'),
     approval: 'ask',
     approvalTimeoutMs: 30_000,
     port: 4999,

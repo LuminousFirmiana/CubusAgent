@@ -7,7 +7,8 @@
  *
  * 只读日志，不改任何东西；算不出来的指标（耗时、重试率）在报告末尾写明原因。
  */
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { collectMetrics } from '@cubus/sdk'
 import type { MetricsSummary } from '@cubus/sdk'
 import { configPathFrom, readWorkbenchConfig } from './config-file.ts'
@@ -48,12 +49,11 @@ export function parseMetricsCommand(
     }
     throw new MetricsUsageError('unknown option: ' + String(arg))
   }
-  if (sessionsDir === undefined) {
-    throw new MetricsUsageError(
-      'no sessions directory: pass --sessions <dir> or set "sessionsDir" in ' + '~/.cubus/config.json',
-    )
+  // 与 CLI/工作台同一个默认位置：~/.cubus/sessions（都走"配置 > 默认"这一条规则）
+  return {
+    sessionsDir: resolve(sessionsDir ?? join(homedir(), '.cubus', 'sessions')),
+    json,
   }
-  return { sessionsDir: resolve(sessionsDir), json }
 }
 
 function percent(value: number | null): string {

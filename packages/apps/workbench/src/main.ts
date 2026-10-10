@@ -12,7 +12,7 @@
  * 2. **会话目录必须在工作区之外**：agent 的 bash 工具能写工作区，日志不该在它的射程内。
  */
 import { mkdir, realpath } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
@@ -189,7 +189,9 @@ export function resolveWorkbenchOptions(
 
   return {
     workspace,
-    sessionsDir: overrides.sessionsDir ?? config?.sessionsDir ?? join(tmpdir(), 'cubus-workbench-sessions'),
+    // 与 CLI 同一个默认位置：~/.cubus/sessions（持久、可找、和 ~/.cubus/config.json 同处）。
+    // 早先这里是系统临时目录：重启可能被清理，metrics/archive 也就找不到日志了。
+    sessionsDir: overrides.sessionsDir ?? config?.sessionsDir ?? join(homedir(), '.cubus', 'sessions'),
     approval,
     approvalTimeoutMs: approvalTimeoutSeconds * 1000,
     port: overrides.port ?? config?.port ?? 4173,
@@ -230,7 +232,9 @@ async function main(args: readonly string[]): Promise<number> {
   })
 
   if (parsed.init) {
-    const outcome = await writeWorkbenchConfig(configPath, process.cwd(), { force: parsed.force })
+    // --workspace 显式给了就用它；没给才回落到当前目录（静默忽略显式参数是最糟的选择）
+    const workspaceForInit = parsed.overrides.workspace ?? process.cwd()
+    const outcome = await writeWorkbenchConfig(configPath, workspaceForInit, { force: parsed.force })
     if (outcome === 'exists') {
       process.stderr.write('config already exists: ' + configPath + ' (pass --force to overwrite)\n')
       return 2

@@ -77,10 +77,27 @@ pnpm run workbench
 pnpm run workbench -- --workspace /path/to/repo --approval allow --port 4173   # 不写配置也能跑
 pnpm run cubus -- coding --workspace /path/to/repo --task "修好测试" --trust-workspace   # 一次性任务（不开页面）
 pnpm run eval:real -- --task add-bug        # 真模型评测一个任务（需要 key）
-pnpm run eval:golden -- --task add-bug      # 重新生成该任务的 golden 指纹
-pnpm run metrics                            # 从会话日志算指标（拦截率/重试率/耗时/token）
-pnpm run archive -- --export /tmp/backup    # 备份会话日志（导入用 --import，清理用 --prune，默认 dry-run）
+pnpm run eval:golden -- --task add-bug      # 重新生成该任务的 golden（**记录当次真实轨迹**：
+                                            # 换模型或换一次运行都会不同；CI 用的是 guardrails 级门禁，
+                                            # 只看改动文件集与调用预算，所以不会因为轨迹不同假红）
+# 会话日志默认在 ~/.cubus/sessions（CLI 与工作台一致）；用 --sessions 可以指到别处
+pnpm run metrics                            # 拦截率/重试率/耗时/token
+pnpm run archive -- --export /tmp/backup    # 备份（--import 恢复 / --prune 清理，默认 dry-run）
 ```
+
+## 已知限制（诚实清单）
+
+| 限制 | 现状 / 出路 |
+|---|---|
+| **本地档不是沙箱** | 命令以你的身份运行（装配快照里如实标注 `unconfined`）；要隔离用 Docker Host |
+| **没有打包分发** | 当前是 monorepo 开发态：`pnpm install` 就是"安装"，需要 Node ≥ 22 与仓库源码 |
+| **Docker Host 还没接进入口** | `@cubus/host-docker` 可用（有真容器集成测试），但 CLI/工作台还没有 `--sandbox docker` 开关 |
+| **费用只有 token** | 日志完整记录 prompt/completion/cached token；换算成美元需要价目表（价格会变），由使用方决定 |
+| **CLI 不能恢复会话** | 恢复（结算 + 续跑）目前只在工作台里；CLI 是一次性任务 |
+| **工作台只监听回环** | 无鉴权、无 TLS；要对外必须先补安全前置（令牌 + Origin 校验 + 强制 ask + TLS） |
+| **会话日志无索引** | 查询靠全量读；日志很大时指标/列表会变慢 |
+| **评测夜跑需要凭据决定** | 真模型全量跑目前是手动命令；做成夜跑 CI 需要把 key 作为仓库 secret |
+| **Windows 本地档是二等公民** | 进程树终止与行数统计在 Windows 上能力更弱；可靠隔离走 Docker |
 
 ## 给开发者
 

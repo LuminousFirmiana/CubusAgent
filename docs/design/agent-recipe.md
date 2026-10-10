@@ -1,6 +1,7 @@
 # Agent Host 与 Agent Recipe 契约
 
 > 状态：Accepted（2026-08-24）。这是 P3 通用 Agent 原型的装配边界。
+> 实现：**已落地** —— @cubus/agent-recipe（types / capabilities / snapshot / plugin）；装配失败与快照身份都有测试。
 
 ## 1. 背景
 

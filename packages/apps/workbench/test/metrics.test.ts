@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { summarizeMetrics } from '@cubus/sdk'
 import type { SessionMetrics } from '@cubus/sdk'
@@ -58,8 +60,9 @@ test('a session that needs settlement is flagged in the per-session list', () =>
 test('the command line takes an explicit sessions dir or falls back to the config', () => {
   expect(parseMetricsCommand(['--sessions', '/tmp/x'], undefined)).toEqual({ sessionsDir: '/tmp/x', json: false })
   expect(parseMetricsCommand(['--', '--json'], '/tmp/from-config')).toEqual({ sessionsDir: '/tmp/from-config', json: true })
-  expect(() => parseMetricsCommand([], undefined))
-    .toThrow('no sessions directory: pass --sessions <dir> or set "sessionsDir" in ~/.cubus/config.json')
+  // 没给 --sessions 也没配 sessionsDir 时回落到与 CLI/工作台一致的默认位置（而不是报错）
+  expect(parseMetricsCommand([], undefined))
+    .toEqual({ sessionsDir: join(homedir(), '.cubus', 'sessions'), json: false })
   expect(() => parseMetricsCommand(['--sessions'], '/tmp/x')).toThrow('--sessions requires a value')
   expect(() => parseMetricsCommand(['--nope'], '/tmp/x')).toThrow('unknown option: --nope')
 })

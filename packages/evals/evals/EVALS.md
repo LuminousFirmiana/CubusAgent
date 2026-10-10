@@ -67,3 +67,13 @@
 
 总耗时 6.3s。未通过项需人工看日志定位（会话日志即完整轨迹）。
 
+## 2026-10-10 01:11 UTC · deepseek-chat · 1 tasks (suite repair-eval-v1 v1.1.0) · 1/1 passed (100%)
+
+| fixture | bug 类型 | 结果 | 门禁 | token | 耗时 | 会话日志 |
+|---|---|---|---|---|---|---|
+| add-bug | logic | ✅ | ✅ | 10400 (8064 cached) | 6.7s | /var/folders/gl/dmnnkdn57j97smsm5xwph5j80000gn/T/cubus-eval-add-bug-6moUeX/sessions/15a6ba7b-dfad-4f40-9724-728e6100fdfc/session.jsonl |
+
+token 合计 10400（缓存 8064）—— 与分数同一张表，成本可跟分数一起看。
+
+总耗时 6.7s。未通过项需人工看日志定位（会话日志即完整轨迹）。
+

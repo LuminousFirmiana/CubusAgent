@@ -16,6 +16,7 @@
     "eval:real": "pnpm --filter @cubus/evals run eval:real",
     "eval:golden": "pnpm --filter @cubus/evals run eval:golden",
     "workbench": "node --import tsx/esm packages/apps/workbench/src/main.ts",
+    "metrics": "node --import tsx/esm packages/apps/workbench/src/metrics.ts",
     "workbench:demo": "pnpm --filter @cubus/workbench run demo:api",
     "cubus": "node --import tsx/esm packages/apps/cli/src/main.ts",
     "demo:live": "pnpm --filter @cubus/cli run demo:live"

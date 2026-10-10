@@ -13,6 +13,8 @@ export interface EvalTaskOutcome {
   readonly gate?: EvalGateLevel
   /** 与 golden 的回归门禁结果（没有 golden 的任务缺省）。 */
   readonly regression?: { readonly ok: boolean; readonly differences: readonly string[] }
+  /** 本任务的 token 用量（F4：指标与分数同一张表；读日志里的 usage）。 */
+  readonly tokens?: { readonly total: number; readonly cached: number }
 }
 
 export interface EvalRunSummary {

@@ -107,8 +107,8 @@ test('the machine-readable result carries the suite identity and per-task gates'
     passed: 1,
     total: 2,
     outcomes: [
-      { id: 'add-bug', passed: true, durationMs: 1234, logPath: '/tmp/a/session.jsonl', gate: 'subsequence' },
-      { id: 'off-by-one', passed: false, durationMs: 4321, logPath: '/tmp/b/session.jsonl' },
+      { id: 'add-bug', passed: true, durationMs: 1234, logPath: '/tmp/a/session.jsonl', gate: 'subsequence', tokens: { total: 12006, cached: 9088 } },
+      { id: 'off-by-one', passed: false, durationMs: 4321, logPath: '/tmp/b/session.jsonl', tokens: { total: 0, cached: 0 } },
     ],
   })
 
@@ -120,8 +120,8 @@ test('the machine-readable result carries the suite identity and per-task gates'
     passed: 1,
     total: 2,
     outcomes: [
-      { id: 'add-bug', passed: true, durationMs: 1234, logPath: '/tmp/a/session.jsonl', gate: 'subsequence' },
-      { id: 'off-by-one', passed: false, durationMs: 4321, logPath: '/tmp/b/session.jsonl' },
+      { id: 'add-bug', passed: true, durationMs: 1234, logPath: '/tmp/a/session.jsonl', gate: 'subsequence', tokens: { total: 12006, cached: 9088 } },
+      { id: 'off-by-one', passed: false, durationMs: 4321, logPath: '/tmp/b/session.jsonl', tokens: { total: 0, cached: 0 } },
     ],
   })
   expect(rendered.endsWith('\n')).toBe(true)

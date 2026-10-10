@@ -13,6 +13,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
+import { sessionMetrics } from '@cubus/sdk'
 import { copyFixtureRepo } from './fixtures.ts'
 import { compareFingerprints, goldenPathFor, parseGolden } from './fingerprint.ts'
 import { runRepairTask } from './harness.ts'
@@ -67,6 +68,8 @@ interface FixtureOutcome {
   logPath: string
   /** 与 golden 的门禁对比（没有 golden 的任务缺省）。 */
   regression?: { ok: boolean; differences: readonly string[] }
+  /** 本任务的 token 用量（与分数同一张表）。 */
+  tokens: { total: number; cached: number }
 }
 
 const outcomes: FixtureOutcome[] = []
@@ -94,6 +97,8 @@ for (const fixture of selected) {
       )
     : undefined
 
+  // 指标（F4）：从同一份日志算 token，与判分结果并排放进分数表
+  const metrics = sessionMetrics(fixture.spec.id, result.turnEvents)
   outcomes.push({
     id: fixture.spec.id,
     title: fixture.spec.title,
@@ -101,6 +106,7 @@ for (const fixture of selected) {
     passed: result.passed,
     durationMs,
     logPath: result.logPath,
+    tokens: { total: metrics.tokens.total, cached: metrics.tokens.cached },
     ...(regression === undefined ? {} : { regression: { ok: regression.ok, differences: regression.differences } }),
   })
   console.log(
@@ -123,13 +129,17 @@ lines.push('## ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' U
   ' · ' + String(outcomes.length) + ' fixtures · ' + String(passed) + '/' + String(outcomes.length) +
   ' passed (' + String(percentage) + '%)')
 lines.push('')
-lines.push('| fixture | bug 类型 | 结果 | 门禁 | 耗时 | 会话日志 |')
-lines.push('|---|---|---|---|---|---|')
+lines.push('| fixture | bug 类型 | 结果 | 门禁 | token | 耗时 | 会话日志 |')
+lines.push('|---|---|---|---|---|---|---|')
 for (const outcome of outcomes) {
   const gate = outcome.regression === undefined ? '—' : (outcome.regression.ok ? '✅' : '❌ ' + outcome.regression.differences.join('; '))
   lines.push('| ' + outcome.id + ' | ' + outcome.bugKind + ' | ' + (outcome.passed ? '✅' : '❌') +
-    ' | ' + gate + ' | ' + (outcome.durationMs / 1000).toFixed(1) + 's | ' + outcome.logPath + ' |')
+    ' | ' + gate + ' | ' + outcome.tokens.total + ' (' + outcome.tokens.cached + ' cached)' +
+    ' | ' + (outcome.durationMs / 1000).toFixed(1) + 's | ' + outcome.logPath + ' |')
 }
+lines.push('')
+lines.push('token 合计 ' + String(outcomes.reduce((sum, outcome) => sum + outcome.tokens.total, 0)) + '（缓存 ' +
+  String(outcomes.reduce((sum, outcome) => sum + outcome.tokens.cached, 0)) + '）—— 与分数同一张表，成本可跟分数一起看。')
 lines.push('')
 lines.push('总耗时 ' + totalSeconds + 's。未通过项需人工看日志定位（会话日志即完整轨迹）。')
 lines.push('')
@@ -168,6 +178,7 @@ writeFileSync(latestPath, renderLatestResult({
       logPath: outcome.logPath,
       ...(gate === undefined ? {} : { gate }),
       ...(outcome.regression === undefined ? {} : { regression: outcome.regression }),
+      tokens: outcome.tokens,
     }
   }),
 }), 'utf8')

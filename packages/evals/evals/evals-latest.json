@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-09T12:11:16.373Z",
+  "ranAt": "2026-10-10T01:11:55.134Z",
   "model": "deepseek-chat",
   "suiteId": "repair-eval-v1",
   "suiteVersion": "1.1.0",
@@ -7,14 +7,18 @@
   "total": 1,
   "outcomes": [
     {
-      "id": "falsy-zero",
+      "id": "add-bug",
       "passed": true,
-      "durationMs": 6312,
-      "logPath": "/var/folders/gl/dmnnkdn57j97smsm5xwph5j80000gn/T/cubus-eval-falsy-zero-nJ0aBi/sessions/05661e9e-0020-45a3-908d-f5106fabf3b9/session.jsonl",
+      "durationMs": 6679,
+      "logPath": "/var/folders/gl/dmnnkdn57j97smsm5xwph5j80000gn/T/cubus-eval-add-bug-6moUeX/sessions/15a6ba7b-dfad-4f40-9724-728e6100fdfc/session.jsonl",
       "gate": "guardrails",
       "regression": {
         "ok": true,
         "differences": []
+      },
+      "tokens": {
+        "total": 10400,
+        "cached": 8064
       }
     }
   ]

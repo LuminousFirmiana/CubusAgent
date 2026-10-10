@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：E6 恢复视图完成 —— E 阶段收尾（工作台可用）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：F1 配置与一键启动完成，并补上给人看的 README。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -49,6 +49,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| F1 配置与一键启动 | 完成（打包未做） | 新增 config-file.ts：~/.cubus/config.json（严格解析，拼错的键报错）；优先级 命令行 > 配置 > 默认；--init 生成模板（不覆盖已有，除非 --force）；--config/$CUBUS_CONFIG/XDG/HOME 四种定位；入口不再强制传参；README.md 面向上手（安全模型、日志位置、恢复、配置、已知边界）。实测：全新 HOME + 全新工作区下 --init -> 只跑 pnpm run workbench -> 真模型跑完一轮。**打包/分发（真正的一键安装）未做**：属发布物，按 AGENTS.md 要先讨论交付目标与回滚 |
 | E6 恢复视图 | 完成 | 未打开的会话事件流退化为磁盘回放（末尾一行说明）；详情在会话未打开时不再假装有内存态；UI 给 needsSettlement 的会话加恢复按钮、把结算事件渲染成恢复补写、409 差异原样显示。实测：真模型跑到工具调用时 SIGKILL 服务 -> 重启看到 90 条历史与待恢复 -> 恢复产出三条结算事件 -> 同一会话继续跑完一轮 |
 | E5 审批交互 | 完成 | @cubus/tool-approval 新增 createInteractiveToolApproval：ask 档等待页面回答、**超时默认拒绝**（默认 120s，含排队时间）、全局 FIFO 排队（默认同时 8 项）+ 队列名次、事件订阅；工作台新增 GET /api/approvals 与 POST /api/approvals/:id，SSE 推 approval 控制帧；UI 审批卡片（允许/拒绝 + 超时提示）；CLI --approval ask 与 --approval-timeout |
 | 修复元数据泄漏 | 完成 | E5 实测发现真模型会去读 fixture.json/golden.json（参考修复与指纹！）；新增 copyFixtureRepo 统一复制路径并排除评分元数据，run.ts / golden.ts / 无 key 门禁 / harness 测试全部改用它，并有断言钉死工作区里没有这两个文件 |
@@ -65,12 +66,12 @@
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | E 阶段完成（E1–E6）。下一步 F1：个人交付（一键运行 + 配置 + 日志归档） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 F4：观测指标（拦截率/取消率/重试率/每任务耗时与 token 从日志算出来）—— 量化陈述从此有数据支撑 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：326 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：330 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -217,6 +218,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 配置文件严格解析 | 未知键/类型错误一律报错并指出键名：拼错的配置被静默忽略比报错更糟（用户会以为它生效了）。--init 不覆盖已有配置（用户手改过的不能被悄悄重置） |
+| 方便不放松安全 | 配置文件可以让参数变少，但两条纪律仍在：审批档必须显式（命令行或配置都算）、会话目录必须在工作区之外 |
 | 未打开的会话只读磁盘 | 工作台重启后历史会话没有内存侧状态：事件流退化为一次性磁盘回放（末尾一行说明），详情不返回快照/预算；要实时与结算就 resume —— 与日志是唯一事实源一致 |
 | 审批超时 = 拒绝 | 等待上限从请求创建算起（排队时间也算），默认 120s；超时写进结果的文案，与“用户拒绝”“批准后执行失败”在日志里一眼可分 |
 | 审批项暂无会话归属 | ToolExecutionContext 只有 signal，没有 sessionId，因此并发会话下的审批项只按工具名与参数区分；把 sessionId 加进执行上下文是后续小步（已记技术债） |
@@ -318,16 +321,16 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：F1 个人交付（roadmap F）
+## 10. 下一步：F4 观测指标（roadmap F）
 
-E 阶段完成：工作台能创建/运行/观察会话、看改动、在页面上审批、恢复崩溃会话。F 阶段把它变成日常能用的东西：
+F1 让工作台能一键跑起来，F2（重启恢复）已由 D3/E6 覆盖。接下来把「量化陈述」变成有数据支撑的事实：
 
-1. **一键运行**：默认参数合理（工作区/审批档/端口），一条命令起服务；
-2. **配置**：工作区/审批/超时/端口/模型从配置文件读取（~/.cubus/config.json），命令行覆盖配置；
-3. **日志归档**：会话目录的可迁移打包（含 sidecar 版本），以及哪些会话可以删的说明；
-4. **给人看的 README**：三条命令跑起来，不是给开发者看的。
+1. **指标从日志算**：拦截率（approval deny / 总数）、取消率（turn 被取消 / 总回合）、重试率（llm-retry 的重试次数）、每任务耗时与 token（含缓存命中）；
+2. 落点：`@cubus/evals` 增加一个纯函数模块 + CLI（`pnpm run metrics`），输入会话日志目录，输出 JSON 与人类可读表；
+3. 与评测的关系：EVALS.md 的分数表旁边加上这些指标（同一批运行既有分数也有成本）；
+4. 验收：拿已有会话日志算出真实数字（不是示例），并且这些数字可复现（纯函数 + 固定输入测试）。
 
-F 之后如果继续：把 sessionId 加进 ToolExecutionContext（审批归属）、usage 的费用换算、以及把工作台暴露到回环之外所需的安全前置（ADR §6）。
+之后：F3（日志归档导出/导入）、F5（可选的通知/PR 集成）。
 
 ## 11. 对下一个接手者（人或 agent）的三句话
 

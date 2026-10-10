@@ -21,7 +21,14 @@ export function withToolApproval(tool: Tool, approval: ToolApprovalService): Too
     ...tool,
     async execute(args, context) {
       context.signal.throwIfAborted()
-      const decision = await approval.decide({ toolName: tool.name, args }, context)
+      const decision = await approval.decide(
+        {
+          toolName: tool.name,
+          args,
+          ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
+        },
+        context,
+      )
       context.signal.throwIfAborted()
       if (decision.outcome === 'deny') {
         throw new ToolApprovalDeniedError(tool.name, decision.reason)

@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：地基债第一批清完（缝里不再住实现、模型接线三份合一、死代码删除、抖动测试改稳）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：地基债第二批清完（审批项带会话归属、评测跑飞可见且可拦、SDK 补预算类型导出）。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -49,6 +49,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| 地基债第二批 | 完成 | ①会话归属：ToolExecutionContext 加可选 sessionId（seam additive），循环从 runtime 插件的 session 描述符透传，审批项带 sessionId 并显示在工作台卡片上（实测与真实会话 id 一致）。②评测跑飞的可见性：预算本就由 recipe manifest 声明并被评测继承（40 步/60 工具/10 分钟/200k token，已核对真实评测日志的 mount.budget），缺的是"被拦住"与"答错"没有区分 -> EvalTaskOutcome 加 budgetTripped，控制台打 CANCELLED，EVALS.md 标 ⏱ 并在表头统计，机器可读结果保留该字段。③SDK 公开面补预算类型（BudgetState/BudgetTripReason/BudgetLimits），消费方不必再去 import 策略包 |
 | P1 保留选择权 | 完成 | ①@cubus/sdk 与 @cubus/agent-recipe 的入口改成**显式导出**（不再 export *）；②新增公开面测试（public-api.test.ts：只用包名导入，跑通建产品->运行->回放->指标->归档，并自检没有相对导入）；③docs/design/versioning.md 把四个版本号（会话日志/契约/归档/包）的规则与强制手段收成一处；④新支撑包 @cubus/architecture-guard：依赖方向（内核不依赖产品/应用）+ 无循环 + 公开面无 export * + 无跨包相对导入，且自带"守卫非空转"的自证测试 |
 | F3 日志归档 | 完成 | @cubus/sdk 新增 archive.ts：导出成**目录**（manifest.json + 原样 JSONL）+ 逐文件 sha256；导入前校验哈希与格式版本（过新拒绝）、id 冲突默认跳过（--rename 改名）；文件白名单写死（session.jsonl / session.meta.json）杜绝路径穿越；清理默认 **dry-run**（--yes 才删，删前列绝对路径），崩溃现场默认保留（判据是 planSettlement，不是猜字符串）。CLI：pnpm run archive -- --export|--import|--prune。实测：真日志导出 -> 移走原件 -> 导入 -> 指标逐项一致 -> 恢复并继续跑（真模型 17957 tokens）；顺带演示了装配不一致时恢复被拒（allow -> deny） |
 | F4b 时间戳与循环级重试 | 完成 | 词汇：turn/start 与 turn/end 加可选 at（ISO）；新增 request/retry 事件；SESSION_FORMAT_VERSION 2 -> 3（新增事件类型算一次递增）。重试改为循环拥有（LoopConfig.retry + SDK options.retry）：每次重试写进日志，CLI/工作台/评测不再在适配器外套 withLlmRetry（避免双重拥有者）。指标补齐：重试率（重试/模型请求）与回合耗时（只算两端有时间戳的正常闭合回合，恢复结算的不计） |
@@ -225,6 +226,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 预算是软上限 | 预算检查在计数加一之后判"是否已超过"，所以最多允许超限一次才拦（实测 --max-steps 4 跑到 5）。有意为之：不打断已经在进行的副作用。CLI 与评测都把 tripped 原因写进报告 |
+| 归属是 additive 的可选字段 | sessionId 以可选字段进 ToolExecutionContext：不改工具语义、不是模型可见内容、老调用方不受影响；策略（审批）自己决定用不用 |
 | 依赖只能向下 | 内核不依赖产品/应用，产品不依赖应用；内核**可以**依赖接缝（接缝是内核拥有的契约）。由 @cubus/architecture-guard 强制；已知例外显式列出并写理由（当前一条：装配器挂载预算策略） |
 | 公开面是显式清单 | 只有 @cubus/sdk 与 @cubus/agent-recipe 承载对外契约，入口必须逐名导出：新名字要写进清单，评审时看得见；两个包的内部路径不是 API。外部是否够用由「只用包名的产品测试」证明 |
 | 归档是目录不是压缩包 | 日志保持原样 JSONL（人能读、能 diff），不引依赖；完整性靠 manifest 的 sha256，导入时逐文件核对（改一个字节就拒绝） |
@@ -241,7 +244,7 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 方便不放松安全 | 配置文件可以让参数变少，但两条纪律仍在：审批档必须显式（命令行或配置都算）、会话目录必须在工作区之外 |
 | 未打开的会话只读磁盘 | 工作台重启后历史会话没有内存侧状态：事件流退化为一次性磁盘回放（末尾一行说明），详情不返回快照/预算；要实时与结算就 resume —— 与日志是唯一事实源一致 |
 | 审批超时 = 拒绝 | 等待上限从请求创建算起（排队时间也算），默认 120s；超时写进结果的文案，与“用户拒绝”“批准后执行失败”在日志里一眼可分 |
-| 审批项暂无会话归属 | ToolExecutionContext 只有 signal，没有 sessionId，因此并发会话下的审批项只按工具名与参数区分；把 sessionId 加进执行上下文是后续小步（已记技术债） |
+| ~~审批项暂无会话归属~~ | 已清（地基债第二批）：ToolExecutionContext.sessionId（可选、additive）-> 循环透传 -> 审批项带 sessionId -> 工作台卡片显示会话前缀 |
 | 工作区不含评分元数据 | 参考修复（fixture.json）与 golden 指纹（golden.json）绝不进任务工作区：真模型会主动去读它们（E5 实测），那会让评测失效 |
 | 差异视图只记基线、不缓存报告 | 运行前记一次 Git 基线（内存），报告在请求时按需计算：界面看到的永远是当前工作区与那次基线的差；与 CLI 同源（同一 provider、同一段 summary 渲染） |
 | 界面无状态 = 刷新等价 | 前端不缓存任何状态：打开会话就是“订阅日志（先回放、后实时）”，因此刷新页面 = 重新回放同一份日志。真实验收：同一会话两条连接的事件帧逐帧一致（358 帧） |
@@ -328,7 +331,7 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 
 
 
-- run.ts 真模型评测：已有最多 3 次模型尝试，但无总预算/工具步数上限（跑飞了只能手动 Ctrl-C）；失败后需人工读日志。
+- 评测预算：**已有**（recipe manifest 声明 40 步/60 工具/10 分钟/200k token，评测继承；已核对真实评测日志）。跑飞现在会被拦住并标成 CANCELLED/⏱，不再"看着像答错"。仍待办：失败后要人工读日志（logPath 已记录，但没有自动摘要）；上限是**软**的（见下一条决策）。
 - 组合：Host/Recipe 已成为 typed 装配入口，但尚无 Recipe 身份的持久化与 resume；按 ADR 留到 session resume 设计，不在 P3 修改事件词汇。
 - Coding Agent CLI：已有一次性任务、Ctrl-C 取消、日志结算、只读 Git 变更报告与实时事件渲染（chunk 逐行、工具卡片、结果行）；仍无交互式多轮、session resume、patch 级 diff；思考增量未进入实时视图；工具卡片样式仍在 CLI 内实现，未下放到 tool 定义。
 - Git 报告：未跟踪文件行数依赖 /dev/null（Windows 待 P5）；行数不区分用户既有改动与 agent 改动（用 changed/preexisting 分类字段区分）；重命名会按新旧路径各记一条，无 rename 语义。
@@ -351,19 +354,24 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - ~~工作台不存在~~（E1–E6 已完成：SSE + 单页 UI + 审批 + 恢复视图）。仍然只有回环访问、无鉴权（ADR §6 已写明暴露前置）。
 
-## 10. 下一步：P2 —— 让 A 能被人用
+## 10. 下一步：清完剩余地基债 -> 冻结本分支
 
-P1 把「门留着」这件事做完了（公开面收敛、依赖方向强制、版本规则成文）。接下来按 A 方向推进：
+第二批已清（会话归属 + 评测可见性）。剩余地基债按此顺序，清完即冻结：
 
-| 步 | 内容 | 验收 |
+| 批 | 内容 | 为什么算地基 |
 |---|---|---|
-| **A1** | Docker 沙箱接进入口：--sandbox docker（CLI 与工作台）+ 预检（docker 在不在、镜像能不能拉、失败提示）+ 诚实告知当前边界 | 用 --sandbox docker 真跑一个任务；越界读失败、无网络、退出后无容器残留 |
-| **A2** | 打包分发：选发布物（npm 包 / 单文件二进制 / Docker 镜像）+ 版本号 + 升级与回滚。**开工前先讨论**交付目标/凭据/回滚（AGENTS.md 要求） | 干净机器一条命令装、一条命令跑；升级/回滚各演练一次 |
-| **A3** | CLI 补 --resume 与会话列表（工作台已有恢复，无头场景缺一条腿） | 崩一次 -> CLI 恢复并接着跑 |
-| **A4** | UI 日用化：会话切换、任务历史、审批键盘操作、错误可读 | 连续 5 个任务自评顺畅 |
-| **顺手** | ~~把 DeepSeek 适配器挪到 providers~~（已完成）；剩余：模型接线的第二家 provider 适配（等真要接别家时做） | 新 provider 只依赖接缝即可接入 |
+| 第三批 | **Docker Host 的会话生命周期**：容器内孤儿进程（取消只杀 docker exec 进程组）、镜像 digest 常量的升级流程、同时存在的容器/会话上限 | Host 是"可替换环境"的地基：它现在只能被 embedding 用，且取消语义不完整 |
+| 第四批 | **治理与文档终检**：README 与 handover 全量核对（跑一遍文档里的每条命令）、docs/design 每篇加状态标注（哪些已实现 / 哪些是决策历史）、技术债清单终审 | 冻结的含义是"接手人照着文档能跑起来"；文档错了等于没冻结 |
+| 决策项 | **费用（美元）**：token 事实已完整落日志（含缓存命中）。换算成钱需要价格表（会过期、各家不同）——建议明确记为"由使用方决定"，而不是内置一张会过期的表 | 这是"决定"，不是"债"；写清楚比做出来更诚实 |
+| 可选 | EVALS.md 夜跑 CI（需要仓库 secret，属凭据决策，需要你点头） | 不是冻结前置 |
 
-之后才是 B 的对外部分（由真实使用者反馈决定冻结哪些 API、要不要多租户），以及 F5（可选通知集成）。
+**冻结判据**（逐条自检并把结果记进 handover）：
+
+1. 从干净克隆开始：pnpm install --frozen-lockfile + pnpm run check 全绿；
+2. README 里每条命令都能跑通（metrics / archive / workbench / cubus / eval）；
+3. docs/design 每篇有状态标注，且与代码现状一致（无自相矛盾）；
+4. 技术债清单终审：每条要么有明确状态，要么有明确理由；
+5. 所有已知限制（本地档非沙箱、回环无鉴权、费用需价目表、会话归属已补）都能在 README / handover 里查到。
 ## 11. 对下一个接手者（人或 agent）的三句话
 
 1. 先跑 pnpm install --frozen-lockfile 和 pnpm run check，必须全绿才能动手；

@@ -127,7 +127,8 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
           return config.recipe.mount(recipeContext, config.recipeOptions)
         },
       })
-      await ctx.plugin(agentLoopPlugin, config.loop ?? {})
+      // 会话 id 交给循环：策略（审批）据此知道"是哪个会话在请求"
+      await ctx.plugin(agentLoopPlugin, { sessionId: config.session.id, ...config.loop })
 
       const log = ctx.get('sessionLog')
       if (log === undefined) {

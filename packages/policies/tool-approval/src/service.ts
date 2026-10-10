@@ -4,6 +4,8 @@ import type { ToolExecutionContext } from '@cubus/tool-registry'
 export interface ToolApprovalRequest {
   toolName: string
   args: unknown
+  /** 发起这次调用的会话（可选；多会话并发时用于归属展示与控制）。 */
+  sessionId?: string
 }
 
 export interface ToolApprovalDecision {

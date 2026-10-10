@@ -20,6 +20,25 @@ test('allow and deny profiles answer immediately, like the static policy', async
   expect(allow.list()).toEqual({ pending: [], queued: 0 })
 })
 
+test('the pending item carries the session it came from (attribution)', async () => {
+  const approval = createInteractiveToolApproval({ profile: 'ask', generateId: () => 'a1' })
+  const deciding = approval.decide(
+    { toolName: 'bash', args: { command: 'ls' }, sessionId: 'session-42' },
+    { signal: new AbortController().signal },
+  )
+
+  expect(approval.list().pending[0]).toMatchObject({ id: 'a1', sessionId: 'session-42', toolName: 'bash' })
+  approval.resolve('a1', 'allow')
+  await deciding
+
+  // 没有会话信息时不伪造字段（直接调用 decide 的场景）
+  const unattributed = createInteractiveToolApproval({ profile: 'ask', generateId: () => 'a2' })
+  const pendingDeciding = unattributed.decide(request, { signal: new AbortController().signal })
+  expect(unattributed.list().pending[0]).not.toHaveProperty('sessionId')
+  unattributed.resolve('a2', 'allow')
+  await pendingDeciding
+})
+
 test('ask waits for a user decision and reports it as an event', async () => {
   const approval = createInteractiveToolApproval({ profile: 'ask', generateId: () => 'a1' })
   const events: ApprovalEvent[] = []

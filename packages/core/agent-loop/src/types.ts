@@ -30,6 +30,8 @@ export interface LoopConfig {
   retry?: LoopRetryOptions
   /** 时钟注入：默认 Date.now（时间戳只用于耗时指标，不参与投影）。 */
   now?: () => number
+  /** 本循环服务的会话 id：交给工具执行上下文（策略据此知道会话归属）。 */
+  sessionId?: string
 }
 
 /** 收件箱里的一条待处理输入。 */

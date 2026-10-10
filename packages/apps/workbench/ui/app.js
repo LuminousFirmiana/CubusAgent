@@ -253,6 +253,7 @@ function approvalCard(approval) {
   const name = document.createElement('div')
   name.className = 'name'
   name.textContent = '需要审批：' + approval.toolName +
+    (approval.sessionId ? '（会话 ' + approval.sessionId.slice(0, 8) + '）' : '') +
     (approval.queuePosition > 0 ? '（排队第 ' + approval.queuePosition + ' 位）' : '')
   const args = document.createElement('pre')
   args.textContent = JSON.stringify(approval.args)

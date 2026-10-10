@@ -2,6 +2,7 @@ import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import type { GitChangeReport } from '@cubus/git'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { SessionRuntime } from '@cubus/sdk'
+import type { BudgetLimits, BudgetTripReason } from '@cubus/sdk'
 import type { LlmAdapter } from '@cubus/llm'
 import { repairEvalRecipe, REPAIR_EVAL_SUITE } from '@cubus/recipe-repair-eval'
 import type { SessionEvent } from '@cubus/session'
@@ -23,6 +24,8 @@ export interface RepairTaskOptions {
   adapterFactory: () => LlmAdapter
   /** 判分测试命令；默认 node --test test/。 */
   testCommand?: string
+  /** app 级预算覆盖（默认取 recipe manifest 的预算：40 步 / 60 工具 / 10 分钟 / 200k token）。 */
+  budget?: BudgetLimits
   generateId?: () => string
 }
 
@@ -37,6 +40,13 @@ export interface EvalRunResult {
   testOutput: string
   /** 工作区变更（A1 只读 Git 报告）：行为指纹的文件集来源。 */
   changes: GitChangeReport
+  /**
+   * 被预算拦住的原因（若有）。
+   *
+   * 与"答错了"必须区分：预算拦住说明任务**跑飞了**（或上限太紧），
+   * 而不是模型修得不对 —— 两者在分数表里要能一眼看出。
+   */
+  budgetTripped?: BudgetTripReason
   /** 行为指纹（D4）：回归门禁的比较对象。 */
   fingerprint: BehaviorFingerprint
 }
@@ -95,6 +105,8 @@ export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunRes
     permissionProfile: 'allow',
     // 重试由循环做（F4b）：评测也能从日志里看到重试次数
     retry: { maxAttempts: 3 },
+    // 预算：默认取 manifest 声明（评测同样不该跑飞）；app 可覆盖（测试用紧上限）
+    ...(opts.budget === undefined ? {} : { budget: opts.budget }),
     ...(opts.generateId === undefined ? {} : { generateId: opts.generateId }),
   })
 
@@ -110,10 +122,12 @@ export async function runRepairTask(opts: RepairTaskOptions): Promise<EvalRunRes
   })
   const passed = testResult.exitCode === 0
   const changes = await git.report(opts.repoDir, baseline)
+  const tripped = runtime.budgetState(session.id)?.tripped
 
   return {
     passed,
     changes,
+    ...(tripped === undefined ? {} : { budgetTripped: tripped }),
     fingerprint: behaviorFingerprint({
       events: run.turnEvents,
       judge: passed ? 'pass' : 'fail',

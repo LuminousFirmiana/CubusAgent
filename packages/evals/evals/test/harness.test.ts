@@ -19,6 +19,32 @@ function makeIdGen() {
   return () => 'id' + String(++n)
 }
 
+test('a runaway task is stopped by the budget and reported as cancelled, not as a wrong answer', async () => {
+  const repo = await copyFixture()
+  // 脚本"停不下来"：每一步都要求再跑一次 bash（真跑飞的样子）
+  const runaway = Array.from({ length: 50 }, (_, index) => ({
+    steps: [{ chunk: { toolCalls: [{ id: 'c' + String(index), name: 'bash', args: { command: 'node -e "0"' } }] } }],
+  }))
+
+  const result = await runRepairTask({
+    repoDir: repo,
+    sessionsDir: dir,
+    adapterFactory: () => new ScriptedAdapter(runaway),
+    generateId: makeIdGen(),
+    // app 级上限（比 manifest 默认更紧）：两条工具步就够看出被拦住了
+    budget: { maxToolCalls: 2 },
+  })
+
+  expect(result.passed).toBe(false)
+  expect(result.budgetTripped).toBe('max-tool-calls')
+  // 回合仍然闭合（预算取消也要留下可恢复/可结算的日志）
+  expect(result.turnEvents.some(event => event.type === 'turn/end')).toBe(true)
+  // 精确语义：计数先加、再判"是否超过上限"，因此**允许超限一次**才拦
+  // （有意为之：不打断已经在进行的副作用；代价是上限是"软"的，最多多一次）
+  const toolResults = result.turnEvents.filter(event => event.type === 'tool/result')
+  expect(toolResults.length).toBe(3)
+})
+
 async function copyFixture(): Promise<string> {
   const target = join(dir, 'repo')
   // 与 run.ts/golden.ts/无 key 门禁同一条复制路径（排除评分元数据）
@@ -60,6 +86,7 @@ test('scripted repair agent fixes the bug and passes scoring', async () => {
   })
 
   expect(result.passed).toBe(true)
+  expect(result.budgetTripped).toBeUndefined()
   expect(result.assistantText).toBe('已修复：add 函数从减法改为加法，测试通过。')
   expect(result.turnEvents.filter(e => e.type === 'step/start')).toHaveLength(4)
 

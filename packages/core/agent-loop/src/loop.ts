@@ -45,6 +45,8 @@ export class Loop {
   private readonly generateId: () => string
   private readonly retry: ResolvedRetryOptions
   private readonly now: () => number
+  /** 本循环服务的会话（让审批等策略知道会话归属）。 */
+  private readonly sessionId: string | undefined
 
   constructor(config: LoopConfig) {
     this.log = config.log
@@ -57,6 +59,7 @@ export class Loop {
     this.generateId = config.generateId ?? randomUUID
     this.retry = resolveRetryOptions(config.retry)
     this.now = config.now ?? Date.now
+    this.sessionId = config.sessionId
   }
 
   /** 事件时间戳（F4b）：只用于耗时指标，不参与任何投影。 */
@@ -241,7 +244,10 @@ export class Loop {
         outputText = `unknown tool: ${call.name}`
       } else {
         try {
-          outputText = await tool.execute(call.args, { signal })
+          outputText = await tool.execute(call.args, {
+            signal,
+            ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }),
+          })
         } catch (error) {
           ok = false
           if (signal.aborted) {

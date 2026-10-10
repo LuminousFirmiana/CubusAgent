@@ -15,6 +15,8 @@ import type { ToolApprovalDecision, ToolApprovalRequest, ToolApprovalService } f
 
 export interface PendingApproval {
   readonly id: string
+  /** 发起这次调用的会话（可能缺省：老上下文或直接调用 decide 的场景）。 */
+  readonly sessionId?: string
   readonly toolName: string
   readonly args: unknown
   readonly requestedAt: string
@@ -149,6 +151,7 @@ export function createInteractiveToolApproval(options: InteractiveApprovalOption
         const waiter: Waiter = {
           approval: {
             id: generateId(),
+            ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
             toolName: request.toolName,
             args: request.args,
             requestedAt: new Date(startedAt).toISOString(),

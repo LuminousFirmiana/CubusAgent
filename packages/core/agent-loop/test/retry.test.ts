@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import { LlmError } from '@cubus/llm'
 import type { LlmAdapter } from '@cubus/llm'
 import { SessionLogFile } from '@cubus/session-jsonl'
+import type { Tool } from '@cubus/tool-registry'
 import { echoTool } from '../src/echo-tool.ts'
 import { Loop } from '../src/loop.ts'
 
@@ -87,6 +88,39 @@ test('a non-retryable failure is not retried, and neither is a failure after the
   expect(attempts).toBe(1)
   expect((await second.log.read()).events.some(event => event.type === 'request/retry')).toBe(false)
   await second.cleanup()
+})
+
+test('the tool execution context carries the session id (approval attribution)', async () => {
+  const { log, cleanup } = await makeLog()
+  const seen: (string | undefined)[] = []
+  const probe: Tool = {
+    name: 'probe',
+    description: 'records the execution context',
+    parameters: { type: 'object', properties: {} },
+    execute(_args, context) {
+      seen.push(context.sessionId)
+      return 'ok'
+    },
+  }
+  // 第一次请求要调工具；之后空回复让回合收束（否则会一直调工具 —— 那正是"跑飞"）
+  let requests = 0
+  const adapter: LlmAdapter = {
+    provider: 'probe',
+    model: 'probe',
+    async *stream() {
+      requests += 1
+      if (requests > 1) return
+      yield { toolCalls: [{ id: 'c1', name: 'probe', args: {} }] }
+    },
+  }
+
+  const loop = new Loop({ log, adapter, tools: [probe], sessionId: 'session-7' })
+  await loop.submit([{ type: 'text', text: '跑一下工具' }])
+
+  expect(seen).toEqual(['session-7'])
+  const events = (await log.read()).events
+  expect(events.filter(event => event.type === 'tool/result').map(event => event.ok)).toEqual([true])
+  await cleanup()
 })
 
 test('the loop writes timestamps on turn boundaries (duration metrics need them)', async () => {

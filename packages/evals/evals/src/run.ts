@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { repairEvalRecipe } from '@cubus/recipe-repair-eval'
 import { sessionMetrics } from '@cubus/sdk'
+import type { BudgetTripReason } from '@cubus/sdk'
 import { copyFixtureRepo } from './fixtures.ts'
 import { compareFingerprints, goldenPathFor, parseGolden } from './fingerprint.ts'
 import { runRepairTask } from './harness.ts'
@@ -75,6 +76,8 @@ interface FixtureOutcome {
   regression?: { ok: boolean; differences: readonly string[] }
   /** 本任务的 token 用量（与分数同一张表）。 */
   tokens: { total: number; cached: number }
+  /** 被预算拦住的原因（跑飞 ≠ 答错）。 */
+  budgetTripped?: BudgetTripReason
 }
 
 const outcomes: FixtureOutcome[] = []
@@ -112,10 +115,11 @@ for (const fixture of selected) {
     durationMs,
     logPath: result.logPath,
     tokens: { total: metrics.tokens.total, cached: metrics.tokens.cached },
+    ...(result.budgetTripped === undefined ? {} : { budgetTripped: result.budgetTripped }),
     ...(regression === undefined ? {} : { regression: { ok: regression.ok, differences: regression.differences } }),
   })
   console.log(
-    (result.passed ? 'PASS' : 'FAIL') + '  ' +
+    (result.budgetTripped === undefined ? (result.passed ? 'PASS' : 'FAIL') : 'CANCELLED') + '  ' +
     fixture.spec.id.padEnd(20) + ' ' +
     (durationMs / 1000).toFixed(1) + 's  ' +
     fixture.spec.title,
@@ -126,19 +130,22 @@ for (const fixture of selected) {
 }
 
 const passed = outcomes.filter(outcome => outcome.passed).length
+const cancelled = outcomes.filter(outcome => outcome.budgetTripped !== undefined).length
 const percentage = Math.round((passed / outcomes.length) * 100)
 const totalSeconds = (outcomes.reduce((sum, outcome) => sum + outcome.durationMs, 0) / 1000).toFixed(1)
 
 const lines: string[] = []
 lines.push('## ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC · ' + model +
   ' · ' + String(outcomes.length) + ' fixtures · ' + String(passed) + '/' + String(outcomes.length) +
-  ' passed (' + String(percentage) + '%)')
+  ' passed (' + String(percentage) + '%)' +
+  (cancelled === 0 ? '' : ' · ⏱ ' + String(cancelled) + ' cancelled by budget'))
 lines.push('')
 lines.push('| fixture | bug 类型 | 结果 | 门禁 | token | 耗时 | 会话日志 |')
 lines.push('|---|---|---|---|---|---|---|')
 for (const outcome of outcomes) {
   const gate = outcome.regression === undefined ? '—' : (outcome.regression.ok ? '✅' : '❌ ' + outcome.regression.differences.join('; '))
-  lines.push('| ' + outcome.id + ' | ' + outcome.bugKind + ' | ' + (outcome.passed ? '✅' : '❌') +
+  // 被预算拦住的任务标 ⏱（不是 ✅/❌）：跑飞与答错必须能区分
+  lines.push('| ' + outcome.id + ' | ' + outcome.bugKind + ' | ' + (outcome.budgetTripped !== undefined ? '⏱' : outcome.passed ? '✅' : '❌') +
     ' | ' + gate + ' | ' + outcome.tokens.total + ' (' + outcome.tokens.cached + ' cached)' +
     ' | ' + (outcome.durationMs / 1000).toFixed(1) + 's | ' + outcome.logPath + ' |')
 }

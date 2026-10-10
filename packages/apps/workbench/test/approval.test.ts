@@ -76,7 +76,7 @@ async function waitForPending(server: { url: string }, timeoutMs = 10_000) {
   while (Date.now() < deadline) {
     const response = await fetch(server.url + '/api/approvals')
     if (response.ok) {
-      const payload = (await response.json()) as { pending: { id: string; toolName: string }[] }
+      const payload = (await response.json()) as { pending: { id: string; toolName: string; sessionId?: string }[] }
       if (payload.pending.length > 0) return payload.pending[0]!
     }
     await new Promise(resolve => setTimeout(resolve, 25))
@@ -124,6 +124,8 @@ test('an asked tool call runs once the page allows it', async () => {
 
   const pending = await waitForPending(server)
   expect(pending.toolName).toBe('read_file')
+  // 归属（P1 地基债）：待回答项带着它来自哪个会话，多会话并发时才区分得开
+  expect(pending.sessionId).toBe('ap1')
 
   const response = await fetch(server.url + '/api/approvals/' + pending.id, {
     method: 'POST',

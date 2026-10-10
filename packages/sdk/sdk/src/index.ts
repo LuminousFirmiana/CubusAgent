@@ -40,5 +40,8 @@ export {
   planPrune,
 } from './archive.ts'
 export type { ArchivedFile, ArchivedSession, ArchiveManifest, ImportResult, PrunePlan } from './archive.ts'
+// 预算是运行时的既有能力：它的**类型**属于公开面（消费者不必去 import 策略包）
+export type { BudgetState, BudgetTripReason } from '@cubus/budget'
+export type { BudgetLimits } from '@cubus/session'
 export { createRunnerMethods, SessionRuntime } from './runner.ts'
 export type { ResumeOptions, ResumeResult, RunResult, SessionInfo, SessionRuntimeOptions } from './runner.ts'

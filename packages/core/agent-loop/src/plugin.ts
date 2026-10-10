@@ -27,6 +27,8 @@ export interface AgentLoopPluginConfig {
   retry?: LoopRetryOptions
   /** 时钟注入（时间戳只用于耗时指标）。 */
   now?: () => number
+  /** 本循环服务的会话 id（交给工具执行上下文，供审批等策略使用）。 */
+  sessionId?: string
 }
 
 /**
@@ -61,6 +63,7 @@ export const agentLoopPlugin = {
       ...(config.generateId ? { generateId: config.generateId } : {}),
       ...(config.retry === undefined ? {} : { retry: config.retry }),
       ...(config.now === undefined ? {} : { now: config.now }),
+      ...(config.sessionId === undefined ? {} : { sessionId: config.sessionId }),
     })
     ctx.provide('loop', loop)
   },

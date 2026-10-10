@@ -79,6 +79,7 @@ pnpm run cubus -- coding --workspace /path/to/repo --task "修好测试" --trust
 pnpm run eval:real -- --task add-bug        # 真模型评测一个任务（需要 key）
 pnpm run eval:golden -- --task add-bug      # 重新生成该任务的 golden 指纹
 pnpm run metrics                            # 从会话日志算指标（拦截率/重试率/耗时/token）
+pnpm run archive -- --export /tmp/backup    # 备份会话日志（导入用 --import，清理用 --prune，默认 dry-run）
 ```
 
 ## 给开发者

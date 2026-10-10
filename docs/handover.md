@@ -1,6 +1,6 @@
 # CubusAgent 交接文档
 
-> 最后更新：F3 日志归档完成（导出/导入/清理，默认 dry-run）。本文件是"接手这个项目的第一份读物"。
+> 最后更新：P1「保留选择权」完成 —— 公开面收敛、依赖方向与公开面由测试强制、版本规则成文。本文件是"接手这个项目的第一份读物"。
 
 ## 1. 这个项目是什么
 
@@ -49,6 +49,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| P1 保留选择权 | 完成 | ①@cubus/sdk 与 @cubus/agent-recipe 的入口改成**显式导出**（不再 export *）；②新增公开面测试（public-api.test.ts：只用包名导入，跑通建产品->运行->回放->指标->归档，并自检没有相对导入）；③docs/design/versioning.md 把四个版本号（会话日志/契约/归档/包）的规则与强制手段收成一处；④新支撑包 @cubus/architecture-guard：依赖方向（内核不依赖产品/应用）+ 无循环 + 公开面无 export * + 无跨包相对导入，且自带"守卫非空转"的自证测试 |
 | F3 日志归档 | 完成 | @cubus/sdk 新增 archive.ts：导出成**目录**（manifest.json + 原样 JSONL）+ 逐文件 sha256；导入前校验哈希与格式版本（过新拒绝）、id 冲突默认跳过（--rename 改名）；文件白名单写死（session.jsonl / session.meta.json）杜绝路径穿越；清理默认 **dry-run**（--yes 才删，删前列绝对路径），崩溃现场默认保留（判据是 planSettlement，不是猜字符串）。CLI：pnpm run archive -- --export|--import|--prune。实测：真日志导出 -> 移走原件 -> 导入 -> 指标逐项一致 -> 恢复并继续跑（真模型 17957 tokens）；顺带演示了装配不一致时恢复被拒（allow -> deny） |
 | F4b 时间戳与循环级重试 | 完成 | 词汇：turn/start 与 turn/end 加可选 at（ISO）；新增 request/retry 事件；SESSION_FORMAT_VERSION 2 -> 3（新增事件类型算一次递增）。重试改为循环拥有（LoopConfig.retry + SDK options.retry）：每次重试写进日志，CLI/工作台/评测不再在适配器外套 withLlmRetry（避免双重拥有者）。指标补齐：重试率（重试/模型请求）与回合耗时（只算两端有时间戳的正常闭合回合，恢复结算的不计） |
 | F4 观测指标 | 完成（5/6，费用待价目表） | @cubus/sdk 新增 metrics.ts（纯函数：回合/取消/恢复结算/步数/工具成功失败/审批拦截/按工具名/token 含缓存；分母为 0 的比率是 null 而不是 0）；pnpm run metrics -- --sessions <dir> [--json]（复用工作台配置里的 sessionsDir）；评测分数表新增 token 列（分数与成本同表）。真实数字：E5 的 ask 会话 12 次调用 / 5 次审批拦截 = 41.7% / 16648 tokens（缓存 79.9%）；E6 崩溃会话显示恢复结算 1 次。算不出来的两项：耗时（日志无时间戳）与重试率（llm-retry 不写日志），都需词汇/接线变更，待确认 |
@@ -69,12 +70,12 @@
 | C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
 | C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
 | C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
-| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 F5：可选通知/PR 集成（产品扩展，可选）；之后是技术债清单（sessionId 进 ToolExecutionContext、费用价目表、回环外暴露的安全前置） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 P2：A1 Docker 沙箱入口（--sandbox docker + 预检）-> A2 打包分发（需先讨论交付目标/凭据/回滚）-> A3 CLI --resume -> A4 UI 日用化 |
 | P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
 | P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
 | P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
 
-**测试现状**：348 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
+**测试现状**：355 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。34 个测试文件、20 个测试包、28 个包，分支 Cubus-v1.0。
 
 **参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
 
@@ -221,6 +222,8 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 并发上限在 Runtime 层 | 会话内串行早有（S2.3a runTail），C6 加的是跨会话上限；排队发生在「轮到本会话」之后，因此不会占着名额空等 |
 | 队列状态经 SDK 暴露、不由 CLI 打印 | 单进程单次运行的 CLI 不可能排队（它自己就是唯一调用者）；runtime.concurrency() 面向 P6 的多会话服务端 |
 | 门禁默认不比工具身份 | 实测一次判分通过、修复正确、文件集一致的运行因「用 bash cat 读文件而不是 read_file」被判红 —— 工具身份是实现选择；默认档 guardrails = 判分 + 文件集 + 调用预算（ADR §4.4 有修订记录） |
+| 依赖只能向下 | 内核不依赖产品/应用，产品不依赖应用；内核**可以**依赖接缝（接缝是内核拥有的契约）。由 @cubus/architecture-guard 强制；已知例外显式列出并写理由（当前一条：装配器挂载预算策略） |
+| 公开面是显式清单 | 只有 @cubus/sdk 与 @cubus/agent-recipe 承载对外契约，入口必须逐名导出：新名字要写进清单，评审时看得见；两个包的内部路径不是 API。外部是否够用由「只用包名的产品测试」证明 |
 | 归档是目录不是压缩包 | 日志保持原样 JSONL（人能读、能 diff），不引依赖；完整性靠 manifest 的 sha256，导入时逐文件核对（改一个字节就拒绝） |
 | 删除必须先出计划 | 清理默认 dry-run 并打印**绝对路径**；删崩溃现场要显式 --include-crashed（它的判据是 planSettlement，不是字符串启发式）；applyPrune 逐个复核目标确实在 sessions 目录内 |
 | 导入是不可信输入 | 归档只允许白名单文件（因此不存在路径穿越）、会话 id 必须匹配安全字符集、格式版本过新一律拒绝 —— 与读取规则一致 |
@@ -228,6 +231,7 @@ pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 
 | 时间戳要能钉住 | 事件带 at 之后，同一脚本仍产出逐字节一致的日志，但必须注入时钟（测试里的 makeClock）；这与 generateId 的注入同理 —— 不确定的东西要能被钉住，否则确定性回放的测试会随机变红 |
 | 指标只从日志算 | 不引入第二份事实源：所有数字都由会话日志推导，同一个目录随时可重算（命令行与界面不会各说各话）。分母为 0 的比率是 null（没有数据），不是 0（会被误读成确实没发生） |
 | 算不出来的就写出来 | metrics 报告末尾固定列出 duration 与 retry rate 两项缺口及原因；宁可显示 n/a，也不给一个看着漂亮的近似值 |
+| 接缝里住着提供方 | @cubus/llm 同时含接口（types.ts）与 DeepSeek 适配器（deepseek.ts）：违反「缝只有契约、实现放 providers/*」的一致性（其他接缝都遵守）。修法：把适配器挪到 packages/providers/llm-deepseek（P2 顺手做） |
 | 包索引导出两个 main 会撞车 | metrics.ts 与 archive.ts 都导出 main，index 里 export * 两次直接类型报错；CLI 入口的 main 不该是包 API，改成显式导出解析/渲染函数 |
 | JSON 同键会静默覆盖 | SDK 的 package.json 里 @cubus/tools 出现了两次（加依赖时撞的）：JSON 取最后一个，肉眼与 typecheck 都发现不了。加依赖后要扫一眼重复键 |
 | 配置文件严格解析 | 未知键/类型错误一律报错并指出键名：拼错的配置被静默忽略比报错更糟（用户会以为它生效了）。--init 不覆盖已有配置（用户手改过的不能被悄悄重置） |
@@ -333,21 +337,19 @@ Reference 是设计证据和失败案例，不是待合并的上游。我们吸�
 - 权限：ask/allow/deny 已覆盖 Coding 工具执行，但审批不限制被允许命令的系统权限；真正的文件/网络/进程隔离仍是 P5 Docker provider。
 - 工作台：不存在（P6）；不能在 profile 体系完成前让 Web 入口反向定义内核。
 
-## 10. 下一步：F5（可选）与技术债
+## 10. 下一步：P2 —— 让 A 能被人用
 
-F1–F4 与 F3 都已落地：一键跑、配置、指标、归档。剩下两件可选/欠账：
+P1 把「门留着」这件事做完了（公开面收敛、依赖方向强制、版本规则成文）。接下来按 A 方向推进：
 
-1. **F5 通知/PR 集成（可选）**：任务结束后发一条通知（或开 PR）。它需要：凭据（GitHub token，走 credentials seam）、
-   一个"任务完成"的扩展点（现在没有 after-turn 钩子）、以及失败重试与幂等（通知不能重复发）。
-   这是产品扩展，**建议先确认要哪种集成**（PR / IM / 邮件）再动。
-2. **技术债（按价值排序）**：
-   - 把 sessionId 加进 ToolExecutionContext：审批项的会话归属（E5 的已知限制）；
-   - 费用价目表：把 token 换算成钱（F4 的最后 1/6）；
-   - 工作台暴露到回环之外的安全前置：令牌鉴权 + Origin 校验 + 强制 ask + TLS（ADR §6）；
-   - Docker Host 接进 CLI/工作台（--sandbox docker）；
-   - 评测集继续扩（30 -> 50）并补齐新任务的 golden。
+| 步 | 内容 | 验收 |
+|---|---|---|
+| **A1** | Docker 沙箱接进入口：--sandbox docker（CLI 与工作台）+ 预检（docker 在不在、镜像能不能拉、失败提示）+ 诚实告知当前边界 | 用 --sandbox docker 真跑一个任务；越界读失败、无网络、退出后无容器残留 |
+| **A2** | 打包分发：选发布物（npm 包 / 单文件二进制 / Docker 镜像）+ 版本号 + 升级与回滚。**开工前先讨论**交付目标/凭据/回滚（AGENTS.md 要求） | 干净机器一条命令装、一条命令跑；升级/回滚各演练一次 |
+| **A3** | CLI 补 --resume 与会话列表（工作台已有恢复，无头场景缺一条腿） | 崩一次 -> CLI 恢复并接着跑 |
+| **A4** | UI 日用化：会话切换、任务历史、审批键盘操作、错误可读 | 连续 5 个任务自评顺畅 |
+| **顺手** | 把 DeepSeek 适配器从接缝挪到 packages/providers/llm-deepseek（技术债：缝里不该住实现） | 移动后依赖方向守卫仍绿 |
 
-**记账**：以上任一项开工前，先在本文件与 roadmap 里写明验收判据。
+之后才是 B 的对外部分（由真实使用者反馈决定冻结哪些 API、要不要多租户），以及 F5（可选通知集成）。
 ## 11. 对下一个接手者（人或 agent）的三句话
 
 1. 先跑 pnpm install --frozen-lockfile 和 pnpm run check，必须全绿才能动手；

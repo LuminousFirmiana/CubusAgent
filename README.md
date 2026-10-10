@@ -88,6 +88,7 @@ pnpm run archive -- --export /tmp/backup    # 备份会话日志（导入用 --i
 - 接手先读：[docs/handover.md](docs/handover.md)（状态、决策、坑、技术债、下一步）
 - 路线图：[docs/roadmap.md](docs/roadmap.md)
 - 设计决策（ADR）：[docs/design/](docs/design/) —— 能力协商、沙箱与凭据、评测与恢复、工作台事件流协议
+- 版本规则（日志格式 / manifest 契约 / 公开 API / 归档）：[docs/design/versioning.md](docs/design/versioning.md)
 - 一键检查：`pnpm run check`（typecheck + lint + test；CI 每次 push 跑同一入口）
 
 ### 已知边界（诚实清单）

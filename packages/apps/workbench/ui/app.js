@@ -195,8 +195,18 @@ async function refreshDetail(id) {
   if (detail.summary && detail.summary.recipe) parts.push('recipe ' + detail.summary.recipe.id + '@' + detail.summary.recipe.version)
   parts.push('事件 ' + (detail.summary ? detail.summary.eventCount : '?'))
   if (detail.budget) {
-    parts.push('步 ' + detail.budget.steps + ' · 工具 ' + detail.budget.toolCalls + ' · tokens ' + detail.budget.tokens +
-      ' · ' + (detail.budget.elapsedMs / 1000).toFixed(1) + 's')
+    // 用量带上限：步数/工具/token 是**会话级**累计，时长是**本次运行**用时。
+    const limits = detail.summary && detail.summary.budget ? detail.summary.budget : {}
+    const used = (value, limit) => (limit === undefined ? String(value) : value + '/' + limit)
+    const seconds = (value, limit) =>
+      (value / 1000).toFixed(1) + 's' + (limit === undefined ? '' : '/' + String(limit / 1000) + 's')
+    parts.push(
+      '步 ' + used(detail.budget.steps, limits.maxSteps) +
+      ' · 工具 ' + used(detail.budget.toolCalls, limits.maxToolCalls) +
+      ' · tokens ' + used(detail.budget.tokens, limits.maxTokens) +
+      ' · ' + seconds(detail.budget.elapsedMs, limits.maxDurationMs) +
+      (detail.budget.tripped === undefined ? '' : ' · 已触发 ' + detail.budget.tripped),
+    )
   }
   if (detail.run) {
     parts.push(detail.run.finishedAt ? '上次运行已结束' : '运行中…')
@@ -206,6 +216,16 @@ async function refreshDetail(id) {
   el('recipe').textContent = detail.summary && detail.summary.recipe
     ? detail.summary.recipe.id + '@' + detail.summary.recipe.version
     : '—'
+  // 服务端重启后，历史会话在本进程里是"没打开"的（只有磁盘回放），直接运行会被拒绝。
+  // 给一个显式入口把它打开：恢复 = 重新装配（身份必须一致）+ 结算未闭合区间。
+  const isOpen = detail.budget !== undefined || detail.snapshot !== undefined
+  if (!isOpen) {
+    const open = document.createElement('button')
+    open.textContent = '继续此会话'
+    open.style.marginLeft = '10px'
+    open.onclick = () => resumeSession(id)
+    el('meta').append(open)
+  }
   return detail
 }
 

@@ -27,7 +27,13 @@ function assertPositiveInteger(value: number, name: string): void {
 export class BudgetPolicy {
   readonly limits: BudgetLimits
   private readonly onTrip: (reason: BudgetTripReason) => void
-  private readonly startedAt: number
+  /**
+   * 时长窗口的起点。**不是装配时刻**：工作台里一个会话能反复运行，装配时刻起算会让
+   * "打开超过 10 分钟的会话"之后每次运行都被判超时。窗口挂在回合边界上（回合 = 一次运行）。
+   */
+  private windowStartedAt: number
+  /** 回合闭合的时刻；有值表示"当前不在回合里"，此时不判时长。 */
+  private windowEndedAt: number | undefined
   private steps = 0
   private toolCalls = 0
   private tokens = 0
@@ -53,7 +59,10 @@ export class BudgetPolicy {
     }
     this.limits = limits
     this.onTrip = options.onTrip
-    this.startedAt = options.now ?? Date.now()
+    this.windowStartedAt = options.now ?? Date.now()
+    // 还没进回合 = 窗口是闭合的：会话闲置多久都不算"跑飞"，elapsedMs 也从 0 起算。
+    this.windowEndedAt = this.windowStartedAt
+    // 历史只计数：恢复续跑时窗口从"这次恢复"起算（崩溃前那段墙钟无法也无需累计）
     for (const event of options.history ?? []) this.count(event)
   }
 
@@ -66,8 +75,25 @@ export class BudgetPolicy {
     }
   }
 
-  /** 观察一条已落盘的事件（插件订阅日志而来）。 */
+  /**
+   * 观察一条已落盘的事件（插件订阅日志而来）。
+   *
+   * 回合边界同时是**时长窗口**的边界：
+   * - `turn/start`：开新窗口、清掉上一回合的超限结论（步数/工具/token 仍跨回合累计）；
+   * - `turn/end`：闭合窗口（此后不判时长，空闲时间不算预算）；
+   * - 其余事件：计数并评估。
+   */
   observe(event: SessionEvent, now: number = Date.now()): void {
+    if (event.type === 'turn/start') {
+      this.windowStartedAt = now
+      this.windowEndedAt = undefined
+      this.trippedReason = undefined
+      return
+    }
+    if (event.type === 'turn/end') {
+      this.windowEndedAt = now
+      return
+    }
     this.count(event)
     this.check(now)
   }
@@ -85,7 +111,12 @@ export class BudgetPolicy {
     const { maxSteps, maxToolCalls, maxDurationMs, maxTokens } = this.limits
     if (maxSteps !== undefined && this.steps > maxSteps) return 'max-steps'
     if (maxToolCalls !== undefined && this.toolCalls > maxToolCalls) return 'max-tool-calls'
-    if (maxDurationMs !== undefined && now - this.startedAt > maxDurationMs) return 'max-duration'
+    // 时长只在**回合内**评估：会话开着不管多久都不算"跑飞"（工作台里会话是长期开着的）。
+    // 步数 / 工具 / token 是会话级累计值，照旧在任何事件上评估。
+    if (
+      maxDurationMs !== undefined && this.windowEndedAt === undefined &&
+      now - this.windowStartedAt > maxDurationMs
+    ) return 'max-duration'
     if (maxTokens !== undefined && this.tokens > maxTokens) return 'max-tokens'
     return undefined
   }
@@ -95,7 +126,8 @@ export class BudgetPolicy {
       steps: this.steps,
       toolCalls: this.toolCalls,
       tokens: this.tokens,
-      elapsedMs: Math.max(0, now - this.startedAt),
+      // 回合结束后冻结为"本次运行用时"（工作台/CLI 展示的就是这个数）
+      elapsedMs: Math.max(0, (this.windowEndedAt ?? now) - this.windowStartedAt),
       ...(this.trippedReason === undefined ? {} : { tripped: this.trippedReason }),
     }
   }

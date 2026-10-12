@@ -91,9 +91,15 @@ function negotiate(
 function actualContributions(ctx: Context): ActualContributions {
   const promptService = ctx.get('systemPrompt') as SystemPromptService | undefined
   const toolService = ctx.get('tools') as ToolRegistryService | undefined
+  const tools = toolService?.snapshot() ?? []
+  const sources: Record<string, string> = {}
+  for (const tool of tools) {
+    if (tool.source !== undefined) sources[tool.name] = tool.source
+  }
   return {
     promptFragmentIds: (promptService?.list() ?? []).map(fragment => fragment.id),
-    toolNames: (toolService?.snapshot() ?? []).map(tool => tool.name),
+    toolNames: tools.map(tool => tool.name),
+    ...(Object.keys(sources).length === 0 ? {} : { toolSources: sources }),
   }
 }
 

@@ -58,7 +58,8 @@ interface AgentRecipeManifest {
   requires: readonly CapabilityRequirement[]
 
   prompt: { fragmentId: string }                       // 静态基座片段的稳定 id
-  tools: readonly string[]                             // 声明的工具名集合
+  tools: readonly string[]                             // 声明的工具名集合（内建工具逐个写）
+  toolSources?: readonly string[]                       // S2.1：动态工具来源（如 ['mcp']），其工具不必逐个申报
   permission: { profile: string }                      // 默认策略档；app 可覆盖
   evaluation: { suite: string }                        // 评测套件 id
   presentation: { label: string; description?: string; icon?: string }
@@ -92,12 +93,30 @@ B4 起所有 manifest 都是完整声明式契约（类型层面必填，legacy 
 | 校验 | 规则 | 失败类型 |
 |---|---|---|
 | prompt 基座 | `prompt.fragmentId` 必须已被注册 | `RecipeDeclarationMismatchError` |
-| 工具集合 | 注册的工具名集合 **等于** `tools` 声明集合 | 同上，错误列出两侧差集 |
+| 工具集合 | 注册的工具名集合 **等于** `tools` 声明集合，**例外**：带来源标签且该来源已写进 `toolSources` 的工具无需逐个申报（S2.1，见下） | 同上，错误列出两侧差集；越界项带上 `(source x)` |
 | 评测套件 | `evaluation.suite` 必须在评测包已注册（仅评测运行时校验） | 同上 |
 | manifest 自身 | 字段合法性：契约版本可识别、kind 属于闭集、同名 kind 不重复、字符串非空、必填子集齐全 | `RecipeManifestError` |
 | 装配快照 | config 必须是纯 JSON 值（拒绝类实例/函数）；会话必须有 session-log provider 才能记录快照 | `MountSnapshotError` |
 
 理由：声明若允许与实现不同，"声明式"就退化成注释。集合相等比包含更严格也更可预测（插件多注册一个工具必须显式声明）。
+
+### 5.1 动态工具来源（S2.1）
+
+MCP 这类工具来源**运行时才知道**自己有哪些工具，名字事先写不进 `tools`。为既支持它们、又不放弃"公开面不许悄悄变宽"，引入两个 additive 字段：
+
+- 工具贡献带**来源标签**：`toolContribution(tool, { source: 'mcp' })`（缺省 = 内建，必须逐个申报）；
+- manifest 加**来源声明**：`toolSources: ['mcp']`。
+
+判定表：
+
+| 情况 | 判定 |
+|---|---|
+| 声明了但没注册 | **失败**（防漏挂） |
+| 注册了但没声明，来源在 `toolSources` 里 | 放行（动态工具的正常路径） |
+| 注册了但没声明，来源不在清单里 | **失败**（含无来源标签的内建工具） |
+| 没写 `toolSources` | 与引入该字段之前**完全一致** |
+
+来源标签**不是模型可见内容**：不进工具定义、不进请求、不进投影，只用于装配期校验与审计。`contractVersion` 保持 1（新增可选字段）；旧构建读到 `toolSources` 不认识，会把动态工具判为 `undeclared` 而装配失败 —— **fail-closed 而不是静默放行**，这正是期望方向。设计背景见 [mcp-seam.md](mcp-seam.md) §3。
 
 ## 6. 协商算法（纯函数，可单测）
 

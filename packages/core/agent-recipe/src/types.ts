@@ -27,8 +27,16 @@ export interface AgentRecipeManifest {
   readonly requires: readonly CapabilityRequirement[]
   /** 静态基座提示词片段的稳定 id（必须由 mount 注册）。 */
   readonly prompt: { readonly fragmentId: string }
-  /** 声明的工具名集合（必须与注册集合相等）。 */
+  /** 声明的工具名集合（内建工具必须逐个写；必须与注册集合相等，见 toolSources）。 */
   readonly tools: readonly string[]
+  /**
+   * 动态工具来源声明（可选、additive，S2.1）。
+   *
+   * 来自这些来源的工具**允许"注册了但没逐个申报"**（MCP 工具的名字运行时才知道，事先写不出来）。
+   * 没在这份清单里的来源，其工具仍然是"注册了但没声明" → 装配失败：公开面不许悄悄变宽。
+   * 不写这个字段的产品，校验行为与今天完全一致。
+   */
+  readonly toolSources?: readonly string[]
   /** 默认审批档；app 可覆盖（优先级 app > manifest），最终值与来源进装配快照。 */
   readonly permission: { readonly profile: string }
   /** 默认预算上限（C5）：app 可覆盖或收紧；实际生效值进装配快照。 */

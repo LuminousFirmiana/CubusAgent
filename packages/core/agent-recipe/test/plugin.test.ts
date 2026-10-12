@@ -201,3 +201,63 @@ test('rejects an incomplete Recipe manifest before mounting any effects', () => 
   })).toThrow(RecipeManifestError)
   expect(harness.order).toEqual([])
 })
+
+/** 动态来源的装配路径：产品声明 toolSources 才能挂带来源的工具。 */
+async function assembleWithSource(
+  toolSources: readonly string[] | undefined,
+): Promise<{ ok: true } | { ok: false, message: string }> {
+  const adapter: LlmAdapter = {
+    provider: 'recipe-test',
+    model: 'scripted',
+    async *stream() {
+      yield { delta: 'done' }
+    },
+  }
+  const harness = makeHost(adapter)
+  const remoteTool: Tool = {
+    name: 'linear__create_issue',
+    description: 'Create an issue through an external tool source.',
+    parameters: { type: 'object' },
+    execute: () => 'created',
+  }
+  const recipe: AgentRecipe<void> = {
+    manifest: {
+      contractVersion: 1,
+      id: 'dynamic-tools',
+      version: '1.0.0',
+      displayName: 'Dynamic Tools',
+      requires: [{ kind: 'llm', features: ['tool-calling'] }, { kind: 'session-log' }],
+      prompt: { fragmentId: 'role' },
+      tools: [],
+      ...(toolSources === undefined ? {} : { toolSources }),
+      permission: { profile: 'ask' },
+    },
+    async mount(ctx) {
+      await ctx.plugin(systemPromptContribution({ id: 'role', text: 'Use whatever tools exist.' }))
+      await ctx.plugin(toolContribution(remoteTool, { source: 'mcp' }))
+    },
+  }
+
+  try {
+    await new Context().plugin(createAgentRuntimePlugin({
+      host: harness.host,
+      recipe,
+      recipeOptions: undefined,
+      session: Object.freeze({ id: 's1', directory: '/sessions/s1', logPath: '/sessions/s1/session.jsonl' }),
+    }))
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: (error as Error).message }
+  }
+}
+
+test('a declared tool source lets dynamically discovered tools assemble', async () => {
+  expect(await assembleWithSource(['mcp'])).toEqual({ ok: true })
+})
+
+test('the same tool without the source declaration fails assembly (no silent widening)', async () => {
+  const result = await assembleWithSource(undefined)
+  expect(result.ok).toBe(false)
+  expect(result.ok === false ? result.message : '')
+    .toContain('registered but not declared [linear__create_issue (source mcp)]')
+})

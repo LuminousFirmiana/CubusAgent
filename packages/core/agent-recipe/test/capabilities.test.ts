@@ -236,6 +236,45 @@ test('declaration verification catches a missing prompt fragment and eval suite'
   })).toThrow('declares evaluation suite "repair-v1"')
 })
 
+test('tools from a declared dynamic source may be registered without naming each one', () => {
+  const manifest = declarative({ toolSources: ['mcp'] })
+  expect(() => validateManifest(manifest)).not.toThrow()
+  expect(() => verifyDeclarations(manifest, {
+    promptFragmentIds: ['demo/base'],
+    toolNames: ['read_file', 'linear__create_issue'],
+    toolSources: { linear__create_issue: 'mcp' },
+  })).not.toThrow()
+})
+
+test('tools from an undeclared source are still drift, in three flavours', () => {
+  // ① 产品没声明任何来源：带来源的多余工具照旧报错
+  expect(() => verifyDeclarations(declarative(), {
+    promptFragmentIds: ['demo/base'],
+    toolNames: ['read_file', 'linear__create_issue'],
+    toolSources: { linear__create_issue: 'mcp' },
+  })).toThrow('registered but not declared [linear__create_issue (source mcp)]')
+
+  // ② 声明了别的来源：不在清单里的来源依旧报错
+  expect(() => verifyDeclarations(declarative({ toolSources: ['other'] }), {
+    promptFragmentIds: ['demo/base'],
+    toolNames: ['read_file', 'remote'],
+    toolSources: { remote: 'mcp' },
+  })).toThrow('registered but not declared [remote (source mcp)]')
+
+  // ③ 没有来源标签的多余工具 = 内建但没申报，也照旧报错
+  expect(() => verifyDeclarations(declarative({ toolSources: ['mcp'] }), {
+    promptFragmentIds: ['demo/base'],
+    toolNames: ['read_file', 'sneaky'],
+  })).toThrow('registered but not declared [sneaky]')
+})
+
+test('toolSources must be non-empty and unique when declared', () => {
+  expect(() => validateManifest(declarative({ toolSources: [''] })))
+    .toThrow('manifest.toolSources contains an empty source')
+  expect(() => validateManifest(declarative({ toolSources: ['mcp', 'mcp'] })))
+    .toThrow('manifest.toolSources contains duplicates')
+})
+
 test('budget limits must be positive integers when declared', () => {
   expect(() => validateManifest(declarative({ budget: { maxSteps: 0 } })))
     .toThrow('manifest.budget.maxSteps must be a positive integer')

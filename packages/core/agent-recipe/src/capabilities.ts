@@ -195,6 +195,16 @@ export function validateManifest(manifest: AgentRecipeManifest): void {
     throw new RecipeManifestError(id, 'manifest.tools contains duplicates')
   }
 
+  const toolSources = manifest.toolSources ?? []
+  for (const source of toolSources) {
+    if (source.trim() === '') {
+      throw new RecipeManifestError(id, 'manifest.toolSources contains an empty source')
+    }
+  }
+  if (new Set(toolSources).size !== toolSources.length) {
+    throw new RecipeManifestError(id, 'manifest.toolSources contains duplicates')
+  }
+
   if (manifest.prompt !== undefined && manifest.prompt.fragmentId.trim() === '') {
     throw new RecipeManifestError(id, 'manifest.prompt.fragmentId must be a non-empty string')
   }
@@ -293,6 +303,11 @@ export function resolveCapabilities(input: CapabilityResolutionInput): Capabilit
 export interface ActualContributions {
   readonly promptFragmentIds: readonly string[]
   readonly toolNames: readonly string[]
+  /**
+   * 工具名 → 来源标签（可选、additive，S2.1）：只登记带来源的动态工具；
+   * 缺省表示这些工具都是内建，必须在 manifest.tools 里逐个申报。
+   */
+  readonly toolSources?: Readonly<Record<string, string>>
   /** 评测运行时提供；无评测上下文时省略 = 不校验评测套件。 */
   readonly evaluationSuites?: readonly string[]
 }
@@ -312,8 +327,16 @@ export function verifyDeclarations(manifest: AgentRecipeManifest, actual: Actual
 
   const declared = new Set(manifest.tools)
   const registered = new Set(actual.toolNames)
+  const allowedSources = new Set(manifest.toolSources ?? [])
   const missing = [...declared].filter(name => !registered.has(name)).sort()
-  const undeclared = [...registered].filter(name => !declared.has(name)).sort()
+  // 注册了但没逐个申报：只有"来源已声明"的动态工具才放行，其余照旧算越界。
+  const undeclared = [...registered]
+    .filter(name => !declared.has(name) && !allowedSources.has(actual.toolSources?.[name] ?? ''))
+    .map(name => {
+      const source = actual.toolSources?.[name]
+      return source === undefined ? name : name + ' (source ' + source + ')'
+    })
+    .sort()
   if (missing.length > 0 || undeclared.length > 0) {
     throw new RecipeDeclarationMismatchError(
       manifest.id,

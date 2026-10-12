@@ -32,10 +32,12 @@
 
 **冲突**：[`verifyDeclarations`](../../packages/core/agent-recipe/src/capabilities.ts) 要求 `manifest.tools` 与实际注册的工具名**集合相等**（多一个、少一个都装配失败），而 MCP 工具是运行时才发现、数量不定的。直接注册会被判 `registered but not declared`。
 
-**解法**（两处 additive 变更）：
+**解法**（两处 additive 变更，**已落地：S2.1**）：
 
 1. 工具贡献带**来源元数据**：`toolContribution(tool, { source: 'mcp' })`（可选字段，缺省表示"产品自带的内建工具"）；工具注册表快照保留它。
 2. manifest 新增**可选字段** `toolSources?: readonly string[]`（例如 `['mcp']`）：声明"本产品还会在运行时暴露这些来源的工具"。
+
+已实现并通过测试：`toolContribution(tool, { source })`、`manifest.toolSources`、新的校验规则（含装配级用例：同一个工具，声明了来源能装配、没声明则装配失败）。契约细节见 [recipe-capabilities.md](recipe-capabilities.md) §5.1。
 
 新的校验规则（其余不变）：
 

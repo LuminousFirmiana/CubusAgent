@@ -1,0 +1,17 @@
+{
+  "name": "@cubus/mcp",
+  "version": "0.0.0",
+  "description": "MCP tool source: minimal JSON-RPC client over stdio and Streamable HTTP",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "node --import tsx/esm examples/connect-demo.ts"
+  },
+  "dependencies": {}
+}

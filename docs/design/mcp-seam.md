@@ -2,7 +2,7 @@
 
 > 状态：Draft（2026-10-10，S2.0）。落地前请评审 §3 的契约决定。
 > 前置：[recipe-capabilities.md](recipe-capabilities.md)（能力协商与装配期校验，Accepted）、[coding-agent-product.md](coding-agent-product.md) §8（产品目标能力）。
-> 实现：**未实现**。本文是 S2.1–S2.4 的设计依据。
+> 实现：**部分落地** —— S2.1（工具来源契约）与 S2.2（连接层 `@cubus/mcp`）已完成；S2.3（暴露与检索）与 S2.4（fixture/工作台/数字）待做。
 
 ## 1. 目标与"怎么算做完了"
 
@@ -75,7 +75,8 @@
 - **传输**：stdio（本地子进程）与 Streamable HTTP；SSE 作为 HTTP 的兼容回退。
 - **时机**：app 在装配**之前**连接（或注入已连接的客户端），把结果（成功/失败、工具数）带进装配参数 → 进快照。连接失败**不阻塞装配**：告警 + 空清单 + 快照记录 `connected: false`。
 - **凭据**：stdio 的 env 与 HTTP 的 header 由 credentials 接缝发放；快照与日志只出现凭据名字。
-- **回收**：stdio 子进程随会话结束终止，按**进程组**终止（复用 subprocess seam 的取消语义），不留孤儿；HTTP 连接关闭。
+- **回收**：stdio 子进程随会话结束终止，按**进程组**终止（spawn 时 detached 自成进程组，关闭 `kill(-pid)` TERM → 宽限 1.5s → KILL），不留孤儿；HTTP 连接关闭。
+- **实现备注（S2.2）**：stdio 客户端**不走 subprocess seam** —— seam 目前是"一次执行、拿结果"的语义，而 MCP 需要双工会话；要沙箱覆盖 MCP 子进程，得先把 duplex 会话加进 seam（列入未实现清单）。
 - **不热重载**：会话中途不追加/移除 MCP 工具（清单与 `tools[]` 都保持不变）。服务器掉线时只让 `mcp_call` 返回错误，模型据此换路子——**工具面不抖动**优先于"实时反映"。
 
 ## 7. 测量方案（S2.4）
@@ -101,7 +102,7 @@
 | 小步 | 内容 | 验收 |
 |---|---|---|
 | S2.1 | 契约：工具 `source` 元数据 + `toolSources` 声明 + 新校验规则 | 单测：三种情况（缺声明失败 / 动态来源放行 / 无 toolSources 时行为与今天一致）；现有三个 recipe 不受影响 |
-| S2.2 | 连接层：stdio + Streamable HTTP 客户端、服务器配置、`tools/list` 发现、失败不阻塞 | 单测（假服务器）+ 集成测试（本地 fixture server） |
+| S2.2 | 连接层：stdio + Streamable HTTP 客户端、服务器配置、`tools/list` 发现、失败不阻塞 | **已落地**：@cubus/mcp（自研最小 JSON-RPC 客户端，零新依赖）；11 条测试（含"关闭不留孤儿""连不上只记录不抛""HTTP 会话 id 回传"）；可亲手跑 `pnpm --filter @cubus/mcp run demo` |
 | S2.3 | 暴露与检索：`tool_search` / `mcp_call`、模式判定、清单进 prompt | 单测：模式判定阈值、检索返回、调用参数校验；日志断言：延迟模式下 `tools[]` 只有元工具 |
 | S2.4 | fixture server + 工作台接线 + 数字 | 两条会话对比脚本输出表格；工作台能看到"延迟工具 N 个"与检索卡片 |
 

@@ -334,6 +334,8 @@ importers:
         specifier: workspace:*
         version: link:../../core/session
 
+  packages/providers/mcp: {}
+
   packages/providers/session-jsonl:
     dependencies:
       '@cubus/cordis':

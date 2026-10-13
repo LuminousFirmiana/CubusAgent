@@ -47,18 +47,23 @@ export function lastCompactionIndex(events: readonly SessionEvent[]): number {
 }
 
 /**
- * 把投影边界吸附到"不会切断 tool_use ↔ tool_result 配对"的位置。
+ * 把投影边界吸附到 **step 边界**上：assistant 消息、它的 tool/call 与 tool/result 必须同进同退。
  *
- * 今天只有一种需要吸附的情形：边界正好落在某条 tool/result 上，而它的 tool/call 在边界之前
- * ——此时把边界前移到那条 tool/call，让配对完整。返回**调整后**的下标（生产者应把它记进事件）。
+ * 为什么是 step 而不是"配对"：真模型实测抓到过 —— 边界落在 tool/call 上（不是 result）时，
+ * 保留区里有 tool/result，但那条 assistant（带 tool_calls）被摘掉了，provider 直接 400
+ * （"Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"）。
+ * 所以规则要更粗一档：**要么整个 step 都留下，要么整个 step 被摘要替代**。
+ *
+ * 返回**调整后**的下标（生产者应把它记进事件）。
  */
 export function snapKeepFrom(events: readonly SessionEvent[], keepFrom: number): number {
   const index = clampIndex(keepFrom, events.length)
-  const event = events[index]
-  if (event?.type !== 'tool/result') return index
+  // 从边界往前找：先遇到 step/end = 边界落在已闭合的 step 之后，安全；
+  // 先遇到 step/start = 边界在这个 step 内部，回退到它的起点。
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const candidate = events[cursor]
-    if (candidate?.type === 'tool/call' && candidate.id === event.id) return cursor
+    const event = events[cursor]
+    if (event?.type === 'step/end') return index
+    if (event?.type === 'step/start') return cursor
   }
   return index
 }

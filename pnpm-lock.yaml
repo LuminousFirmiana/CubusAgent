@@ -191,6 +191,9 @@ importers:
       '@cubus/agent-recipe':
         specifier: workspace:*
         version: link:../../core/agent-recipe
+      '@cubus/context-compaction':
+        specifier: workspace:*
+        version: link:../../policies/context-compaction
       '@cubus/credentials':
         specifier: workspace:*
         version: link:../../seams/credentials
@@ -209,6 +212,9 @@ importers:
       '@cubus/llm-deepseek':
         specifier: workspace:*
         version: link:../../providers/llm-deepseek
+      '@cubus/recipe-cubus-coding-agent':
+        specifier: workspace:*
+        version: link:../../recipes/cubus-coding-agent
       '@cubus/recipe-reference-agent':
         specifier: workspace:*
         version: link:../../recipes/reference-agent

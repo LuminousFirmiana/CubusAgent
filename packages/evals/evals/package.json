@@ -12,16 +12,19 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "eval:real": "node --import tsx/esm src/run.ts",
-    "eval:golden": "node --import tsx/esm src/golden.ts"
+    "eval:golden": "node --import tsx/esm src/golden.ts",
+    "eval:retention": "node --import tsx/esm src/retention.ts"
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
+    "@cubus/context-compaction": "workspace:*",
     "@cubus/credentials": "workspace:*",
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",
+    "@cubus/recipe-cubus-coding-agent": "workspace:*",
     "@cubus/recipe-reference-agent": "workspace:*",
     "@cubus/recipe-repair-eval": "workspace:*",
     "@cubus/sdk": "workspace:*",

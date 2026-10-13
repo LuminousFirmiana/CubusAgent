@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-13T12:36:41.061Z",
+  "model": "deepseek-chat",
+  "contextWindow": 2500,
+  "facts": 12,
+  "compactions": 12,
+  "kept": 12,
+  "retentionPercent": 100,
+  "missed": []
+}

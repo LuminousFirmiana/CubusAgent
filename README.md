@@ -109,6 +109,45 @@ pnpm run metrics                            # 拦截率/重试率/耗时/token
 pnpm run archive -- --export /tmp/backup    # 备份（--import 恢复 / --prune 清理，默认 dry-run）
 ```
 
+## 亲手验证上下文压缩（3 分钟）
+
+想亲眼看到"**日志是事实、投影是视图**"，不需要读代码：
+
+```bash
+# 1) 造一个 88KB 的大文件（工具结果一定会被投影截断）
+mkdir -p /tmp/cubus-demo && node -e "const fs=require('fs');const l=[];for(let i=1;i<=2000;i++)l.push(String(i).padStart(4,'0')+' 行：'+'x'.repeat(36));fs.writeFileSync('/tmp/cubus-demo/big.txt',l.join('\n')+'\n')"
+
+# 2) 写一份配置：窗口调到 4000，好让压缩几步之内就发生
+cat > /tmp/cubus-demo/config.json <<'EOF'
+{ "workspace": "/tmp/cubus-demo", "approval": "allow", "contextWindow": 4000, "sessionsDir": "/tmp/cubus-demo/sessions" }
+EOF
+
+# 3) 起工作台，打开 http://127.0.0.1:4178
+pnpm run workbench -- --config /tmp/cubus-demo/config.json --port 4178
+```
+
+页面里点「新建会话」，任务写：
+
+> 用 read_file 读 big.txt，然后回答最后一行的开头数字
+
+应当看到三件事：
+
+1. `read_file` 卡片里写着"共 16156 字符，已省略"——**投影层截断**（单条工具结果超 24k 字符换首尾预览 + 读回指引）；
+2. transcript 里出现 `上下文压缩：… 字摘要替代了前 N 条事件（估算 X → Y token，原因 threshold）`——**第二层压缩**；
+3. 模型仍然答对，而且它可以用 `read_session_log` 把被截断的全文读回来。
+
+再看日志本身（**一条都没少**）：
+
+```bash
+node -e "const fs=require('fs');const f=process.argv[1];const l=fs.readFileSync(f,'utf8').trim().split('\n').map(JSON.parse);console.log('日志里的工具结果:', l.find(e=>e.type==='tool/result').output.text.length, '字符');const c=l.find(e=>e.type==='context/compacted');console.log('压缩事件:', JSON.stringify(c))" /tmp/cubus-demo/sessions/*/session.jsonl
+```
+
+压缩之后还能记住多少？跑保留率评测（真模型，约 20 次调用）：
+
+```bash
+pnpm run eval:retention -- --facts 12 --window 2500   # 实测：压缩 12 次，保留率 12/12 = 100%
+```
+
 ## 已知限制（诚实清单）
 
 | 限制 | 现状 / 出路 |

@@ -262,29 +262,40 @@ test('with several compactions the last one wins, and older ones inside the tail
   ])
 })
 
-test('snapKeepFrom moves the boundary back so a tool pair is never cut in half', () => {
+test('snapKeepFrom moves the boundary back to the step start: a step travels as a whole', () => {
   const turn = toolTurn('t1', 's1', 'c1', '第一轮')
+  const stepStart = turn.findIndex(event => event.type === 'step/start')
   const resultIndex = turn.findIndex(event => event.type === 'tool/result')
   const callIndex = turn.findIndex(event => event.type === 'tool/call')
 
-  expect(snapKeepFrom(turn, resultIndex)).toBe(callIndex)
+  // 落在 tool/result、tool/call、或 step 中间的任何位置：都吸附到这个 step 的起点
+  expect(snapKeepFrom(turn, resultIndex)).toBe(stepStart)
+  expect(snapKeepFrom(turn, callIndex)).toBe(stepStart)
+  expect(snapKeepFrom(turn, stepStart + 3)).toBe(stepStart)
   expect(snapKeepFrom(turn, 0)).toBe(0)
+  // 落在已闭合的 step 之后：安全，不动
+  const stepEnd = turn.findIndex(event => event.type === 'step/end')
+  expect(snapKeepFrom(turn, stepEnd + 1)).toBe(stepEnd + 1)
   expect(snapKeepFrom(turn, turn.length)).toBe(turn.length)
   expect(snapKeepFrom(turn, -5)).toBe(0)
-  // 找不到配对的孤立 result：不吸附（投影会把它丢掉，见下一条测试）
-  const orphan: SessionEvent[] = [ev('tool/result', { id: 'ghost', ok: true, output: { text: 'x' } })]
-  expect(snapKeepFrom(orphan, 0)).toBe(0)
 })
 
-test('a boundary that cuts a pair anyway still yields a valid projection', () => {
+test('a boundary on a tool/call still yields a request a provider accepts', () => {
+  // 真模型实测抓到的 400：边界落在 tool/call 上时，保留区里有 tool 结果却没有带 tool_calls 的 assistant。
+  // 现在的规则是"整个 step 同进同退"，所以工具调用链在投影里始终完整。
   const turn = toolTurn('t1', 's1', 'c1', '第一轮')
-  const resultIndex = turn.findIndex(event => event.type === 'tool/result')
-  // 生产者忘了吸附：投影必须自己防御 —— 孤立的 tool-result 被丢掉，请求仍然合法
-  const events: SessionEvent[] = [...turn, compaction(resultIndex, '摘要')]
+  const callIndex = turn.findIndex(event => event.type === 'tool/call')
+  const snapped = snapKeepFrom(turn, callIndex)
+  const events: SessionEvent[] = [...turn, compaction(snapped, '摘要')]
 
-  expect(deriveMessages(events)).toEqual([
-    { role: 'user', content: [{ type: 'text', text: '摘要' }] },
-  ])
+  const messages = deriveMessages(events)
+  expect(messages[0]).toEqual({ role: 'user', content: [{ type: 'text', text: '摘要' }] })
+  // assistant（带 toolCalls）在 tool-result 之前 —— 这正是 provider 的硬要求
+  const assistantIndex = messages.findIndex(message => message.role === 'assistant')
+  const toolIndex = messages.findIndex(message => message.role === 'tool-result')
+  expect(assistantIndex).toBeGreaterThanOrEqual(0)
+  expect(assistantIndex).toBeLessThan(toolIndex)
+  expect(messages[toolIndex]?.role === 'tool-result' ? messages[toolIndex].content : '').toBe('文件内容')
 })
 
 /** 一个 step 里并行调用多个工具（一个 assistant 消息 + N 组 call/result）。 */

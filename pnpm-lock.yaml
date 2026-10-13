@@ -90,6 +90,9 @@ importers:
       '@cubus/llm-deepseek':
         specifier: workspace:*
         version: link:../../providers/llm-deepseek
+      '@cubus/mcp':
+        specifier: workspace:*
+        version: link:../../providers/mcp
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/coding-agent
@@ -336,6 +339,9 @@ importers:
 
   packages/providers/mcp:
     dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
       '@cubus/cordis':
         specifier: workspace:*
         version: link:../../../vendor/cordis
@@ -345,6 +351,10 @@ importers:
       '@cubus/tool-registry':
         specifier: workspace:*
         version: link:../../core/tool-registry
+    devDependencies:
+      '@cubus/recipe-coding-agent':
+        specifier: workspace:*
+        version: link:../../recipes/coding-agent
 
   packages/providers/session-jsonl:
     dependencies:

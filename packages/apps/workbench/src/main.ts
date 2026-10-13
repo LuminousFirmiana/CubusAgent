@@ -16,6 +16,14 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
+import {
+  buildMcpConfig,
+  connectMcpServers,
+  decideExposureMode,
+  parseMcpServerConfigs,
+  withMcpTools,
+} from '@cubus/mcp'
+import type { McpServerConfig } from '@cubus/mcp'
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import { createInteractiveToolApproval, createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
@@ -42,6 +50,12 @@ export interface WorkbenchCommandOptions {
   readonly approvalTimeoutMs: number
   readonly port: number
   readonly maxAttempts: number
+  /** MCP 服务器清单（配置文件里的 mcpServers，已按 @cubus/mcp 的严格规则解析）。 */
+  readonly mcpServers: readonly McpServerConfig[]
+  /** 上下文窗口（token）：只用于"工具定义全量给还是按需检索"的判定。 */
+  readonly contextWindow: number
+  /** 显式指定暴露模式；缺省按体量判定（native 需要 provider 支持，否则报错）。 */
+  readonly mcpMode?: 'eager' | 'on-demand' | 'native'
 }
 
 /** 命令行给出的覆盖（全部可选：缺的从配置文件取，再缺用默认）。 */
@@ -53,6 +67,7 @@ export interface WorkbenchOverrides {
   readonly port?: number
   readonly maxAttempts?: number
   readonly model?: string
+  readonly mcpMode?: 'eager' | 'on-demand' | 'native'
 }
 
 export interface ParsedWorkbenchCommand {
@@ -94,6 +109,7 @@ export function parseWorkbenchCommand(argv: readonly string[]): ParsedWorkbenchC
     port?: number
     maxAttempts?: number
     model?: string
+    mcpMode?: 'eager' | 'on-demand' | 'native'
   } = {}
   let init = false
   let force = false
@@ -140,6 +156,15 @@ export function parseWorkbenchCommand(argv: readonly string[]): ParsedWorkbenchC
         throw new WorkbenchUsageError('--approval-timeout must be a positive integer (seconds)')
       }
       overrides.approvalTimeoutSeconds = seconds
+      index += 1
+      continue
+    }
+    if (arg === '--mcp-mode') {
+      const value = optionValue(args, index, arg)
+      if (value !== 'eager' && value !== 'on-demand' && value !== 'native') {
+        throw new WorkbenchUsageError('--mcp-mode must be eager, on-demand or native')
+      }
+      overrides.mcpMode = value
       index += 1
       continue
     }
@@ -196,6 +221,10 @@ export function resolveWorkbenchOptions(
     approvalTimeoutMs: approvalTimeoutSeconds * 1000,
     port: overrides.port ?? config?.port ?? 4173,
     maxAttempts: overrides.maxAttempts ?? config?.maxAttempts ?? 3,
+    // MCP 在这里就解析：配置写错要在启动时失败，而不是等第一个会话装配时才发现。
+    mcpServers: parseMcpServerConfigs(config?.mcpServers),
+    contextWindow: config?.contextWindow ?? 128_000,
+    ...(overrides.mcpMode === undefined ? {} : { mcpMode: overrides.mcpMode }),
   }
 }
 
@@ -288,14 +317,31 @@ async function main(args: readonly string[]): Promise<number> {
     ? createInteractiveToolApproval({ profile: 'ask', timeoutMs: options.approvalTimeoutMs })
     : createStaticToolApproval(options.approval, 'workbench --approval ' + options.approval)
 
+  // MCP 工具来源（S2.4）：**装配前**连接，结果同时进装配快照（谁连上了、用了哪种暴露模式）。
+  // 连不上不阻塞启动：失败的服务器在页面上以"未连接"出现，其余照常工作。
+  const mcpConfigs = parseMcpServerConfigs(options.mcpServers)
+  const mcpConnections = await connectMcpServers(mcpConfigs)
+  const mcpMode = mcpConfigs.length === 0
+    ? undefined
+    : decideExposureMode({
+        tools: mcpConnections.tools,
+        contextWindow: options.contextWindow,
+        ...(options.mcpMode === undefined ? {} : { configured: options.mcpMode }),
+      })
+  const mcpRecipe = withMcpTools(cubusCodingAgentRecipe, {
+    connections: mcpConnections,
+    contextWindow: options.contextWindow,
+    ...(options.mcpMode === undefined ? {} : { configured: options.mcpMode }),
+  })
+
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
     host: withToolApprovalHost(
       createLocalAgentHost({ adapterFactory, workspaceDir: workspace, credentials }),
       approval,
     ),
-    recipe: cubusCodingAgentRecipe,
-    recipeOptions: undefined,
+    recipe: mcpRecipe,
+    recipeOptions: mcpMode === undefined ? {} : { mcp: buildMcpConfig(mcpConnections, mcpMode) },
     permissionProfile: options.approval,
     // 重试由循环做（F4b）：每次重试进日志
     retry: { maxAttempts: options.maxAttempts },
@@ -315,9 +361,18 @@ async function main(args: readonly string[]): Promise<number> {
     (options.approval === 'ask' ? ' (timeout ' + String(options.approvalTimeoutMs / 1000) + 's -> deny)' : '') + '\n',
   )
   process.stdout.write('model:     ' + (settings.DEEPSEEK_MODEL ?? 'deepseek-chat') + '\n')
+  if (mcpConnections.connections.length > 0) {
+    process.stdout.write(
+      'mcp:       ' + mcpConnections.connections
+        .map(connection => connection.name + (connection.connected ? '(' + String(connection.tools.length) + ' tools)' : '(failed)'))
+        .join(', ') +
+      '  mode ' + String(mcpMode ?? 'n/a') + '  contextWindow ' + String(options.contextWindow) + '\n',
+    )
+  }
 
   const shutdown = async (): Promise<void> => {
     await server.close()
+    await mcpConnections.close()
     process.exit(0)
   }
   process.once('SIGINT', () => { void shutdown() })

@@ -19,6 +19,16 @@ export interface WorkbenchConfigFile {
   readonly maxAttempts?: number
   /** 仅在没有 DEEPSEEK_MODEL 环境变量时生效。 */
   readonly model?: string
+  /**
+   * MCP 服务器清单（S2.4）。完整校验在 @cubus/mcp 的 parseMcpServerConfigs 里做
+   * （名字唯一、stdio 必须有 command、http 必须有 url……），这里只保证是个数组。
+   */
+  readonly mcpServers?: unknown
+  /**
+   * 上下文窗口（token）：只用于"工具定义全量给还是按需检索"的判定。
+   * 缺省 128k（保守值，宁可早一点走按需）。
+   */
+  readonly contextWindow?: number
 }
 
 export const CONFIG_ENV_VAR = 'CUBUS_CONFIG'
@@ -31,6 +41,8 @@ const KNOWN_KEYS: readonly string[] = [
   'sessionsDir',
   'maxAttempts',
   'model',
+  'mcpServers',
+  'contextWindow',
 ]
 
 /** 配置路径：--config > $CUBUS_CONFIG > $XDG_CONFIG_HOME/cubus/config.json > ~/.cubus/config.json */
@@ -70,6 +82,8 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
     sessionsDir?: string
     maxAttempts?: number
     model?: string
+    mcpServers?: unknown
+    contextWindow?: number
   } = {}
 
   const workspace = record['workspace']
@@ -102,6 +116,22 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
       throw new Error(source + ': "model" must be a non-empty string')
     }
     config.model = model
+  }
+
+  const mcpServers = record['mcpServers']
+  if (mcpServers !== undefined) {
+    if (!Array.isArray(mcpServers)) {
+      throw new Error(source + ': "mcpServers" must be an array of server objects')
+    }
+    config.mcpServers = mcpServers
+  }
+
+  const contextWindow = record['contextWindow']
+  if (contextWindow !== undefined) {
+    if (typeof contextWindow !== 'number' || !Number.isInteger(contextWindow) || contextWindow < 1_000) {
+      throw new Error(source + ': "contextWindow" must be an integer of at least 1000 tokens')
+    }
+    config.contextWindow = contextWindow
   }
 
   for (const key of ['approvalTimeoutSeconds', 'maxAttempts'] as const) {

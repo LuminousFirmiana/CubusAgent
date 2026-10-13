@@ -1,3 +1,4 @@
+import type { AgentRecipe } from '@cubus/agent-recipe'
 import type { Context } from '@cubus/cordis'
 import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
@@ -295,5 +296,87 @@ export async function mountMcpExposure(
       },
     }
     await ctx.plugin(toolContribution(tool, { source: MCP_TOOL_SOURCE }))
+  }
+}
+
+/** 一台 MCP 服务器进装配快照的摘要（**不含凭据**，只写事实）。 */
+export interface McpServerSummary {
+  readonly name: string
+  readonly transport: 'stdio' | 'http'
+  readonly connected: boolean
+  readonly toolCount: number
+  readonly error?: string
+}
+
+/** 进 `session/mount.config` 的 MCP 事实：连了哪些服务器、多少工具、用哪种暴露模式。 */
+export interface McpRecipeConfig {
+  readonly servers: readonly McpServerSummary[]
+  readonly mode: McpExposureMode
+  /** 未加载 schema 的工具数（按需模式下等于工具总数）。 */
+  readonly deferredTools: number
+}
+
+/** 装饰后的 Recipe 的装配参数类型（app 传 `{ mcp: buildMcpConfig(...) }`）。 */
+export interface McpMountOptions {
+  readonly mcp?: McpRecipeConfig
+}
+
+export function buildMcpConfig(connections: McpConnections, mode: McpExposureMode): McpRecipeConfig {
+  const servers = connections.connections.map(connection => ({
+    name: connection.name,
+    transport: connection.transport,
+    connected: connection.connected,
+    toolCount: connection.tools.length,
+    ...(connection.error === undefined ? {} : { error: connection.error }),
+  }))
+  return {
+    servers,
+    mode,
+    deferredTools: mode === 'eager' ? 0 : connections.tools.length,
+  }
+}
+
+/**
+ * 给任意产品 Recipe 接上 MCP 工具来源（app 在装配前调用）。
+ *
+ * 它做两件事：①**扩声明**（把两个元工具加进 manifest.tools、把 `mcp` 加进 toolSources
+ * —— 声明面必须包含运行时可能注册的东西，否则装配期校验会拦下）；②**挂载**（先挂产品，
+ * 再挂 MCP 的提示词片段与工具贡献）。
+ *
+ * 模式与连接由 app 决定：这样"同一个产品在不同项目里连不同服务器"不需要改产品代码，
+ * 而"这次连了什么、用了哪种模式"会通过 `recipeOptions.mcp` 进装配快照。
+ */
+export function withMcpTools(
+  recipe: AgentRecipe<void>,
+  options: {
+    readonly connections: McpConnections
+    readonly contextWindow: number
+    readonly configured?: McpExposureMode
+    readonly providerSupportsNative?: boolean
+  },
+): AgentRecipe<McpMountOptions> {
+  const mode = decideExposureMode({
+    tools: options.connections.tools,
+    contextWindow: options.contextWindow,
+    ...(options.configured === undefined ? {} : { configured: options.configured }),
+    ...(options.providerSupportsNative === undefined ? {} : { providerSupportsNative: options.providerSupportsNative }),
+  })
+  const plan = planMcpExposure({ tools: options.connections.tools, mode })
+  const declared = [...new Set([...recipe.manifest.tools, MCP_TOOL_CALL, MCP_TOOL_SEARCH])].sort()
+  const sources = [...new Set([...(recipe.manifest.toolSources ?? []), MCP_TOOL_SOURCE])].sort()
+
+  return {
+    manifest: {
+      ...recipe.manifest,
+      tools: declared,
+      toolSources: sources,
+    },
+    async mount(ctx, recipeOptions) {
+      // 产品自己的 mount 不关心额外的装配参数（它只读 Host 提供的能力）。
+      await recipe.mount(ctx, undefined)
+      if (options.connections.tools.length === 0 && options.connections.connections.length === 0) return
+      await mountMcpExposure(ctx, plan, options.connections)
+      void recipeOptions
+    },
   }
 }

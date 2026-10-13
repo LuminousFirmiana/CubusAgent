@@ -92,7 +92,10 @@ rl.on('line', line => {
         fail(-32602, 'unknown tool: ' + String(name))
         return
       }
-      reply({ content: [{ type: 'text', text: 'echo: ' + String(message.params?.arguments?.text ?? '') }] })
+      // 回显 schema 里真实存在的字段（query/owner），text 仅为兼容旧测试保留。
+      const args = message.params?.arguments ?? {}
+      const payload = args.query ?? args.text ?? args.owner ?? ''
+      reply({ content: [{ type: 'text', text: 'echo: ' + String(payload) }] })
       return
     }
     default:

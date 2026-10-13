@@ -42,3 +42,5 @@ export {
   searchTools,
 } from './expose.ts'
 export type { McpExposureMode, McpExposurePlan } from './expose.ts'
+export { buildMcpConfig, withMcpTools } from './expose.ts'
+export type { McpMountOptions, McpRecipeConfig, McpServerSummary } from './expose.ts'

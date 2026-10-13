@@ -29,8 +29,11 @@ test('a config file is parsed strictly: unknown keys and wrong types are named',
     .toEqual({ workspace: '/tmp/repo', approval: 'ask', port: 4173 })
 
   // 拼错的键必须报错（静默忽略会让用户以为配置生效了）
+  // 报错信息里列出全部已知键（含 MCP 那两个），这样拼错时能一眼看出该写什么
   expect(() => parseWorkbenchConfig('{"workspac":"/tmp/repo"}', 'c.json'))
-    .toThrow('c.json: unknown key "workspac" (known keys: workspace, approval, approvalTimeoutSeconds, port, sessionsDir, maxAttempts, model)')
+    .toThrow('c.json: unknown key "workspac" (known keys: ')
+  expect(() => parseWorkbenchConfig('{"workspac":"/tmp/repo"}', 'c.json'))
+    .toThrow('mcpServers, contextWindow)')
   expect(() => parseWorkbenchConfig('{"approval":"always"}', 'c.json'))
     .toThrow('c.json: "approval" must be one of ask, allow, deny')
   expect(() => parseWorkbenchConfig('{"workspace":""}', 'c.json'))
@@ -64,4 +67,25 @@ test('reading a missing config is fine, writing one refuses to clobber', async (
   expect(await writeWorkbenchConfig(path, '/tmp/repo', { force: true })).toBe('written')
   expect((await readWorkbenchConfig(path))?.config.workspace).toBe('/tmp/repo')
   expect(renderWorkbenchConfigTemplate('/tmp/repo')).toContain('"approval": "ask"')
+})
+
+test('mcpServers and contextWindow are accepted; their shape is checked', () => {
+  const parsed = parseWorkbenchConfig(JSON.stringify({
+    workspace: '/tmp/repo',
+    approval: 'ask',
+    mcpServers: [{ name: 'demo', command: 'node', args: ['server.mjs'] }],
+    contextWindow: 200_000,
+  }), 'test.json')
+  expect(parsed.mcpServers).toEqual([{ name: 'demo', command: 'node', args: ['server.mjs'] }])
+  expect(parsed.contextWindow).toBe(200_000)
+
+  // 只做"是不是数组 / 是不是合理整数"这一层；服务器条目的细节由 @cubus/mcp 严格校验
+  expect(() => parseWorkbenchConfig('{"mcpServers":{}}', 'test.json'))
+    .toThrow('"mcpServers" must be an array of server objects')
+  expect(() => parseWorkbenchConfig('{"contextWindow":10}', 'test.json'))
+    .toThrow('"contextWindow" must be an integer of at least 1000 tokens')
+  // 缺省时两个键都不出现（默认值在 main 里给）
+  const bare = parseWorkbenchConfig('{"workspace":"/tmp/repo","approval":"ask"}', 'test.json')
+  expect(bare.mcpServers).toBeUndefined()
+  expect(bare.contextWindow).toBeUndefined()
 })

@@ -15,8 +15,12 @@
     "demo:expose": "node --import tsx/esm examples/expose-demo.ts"
   },
   "dependencies": {
+    "@cubus/agent-recipe": "workspace:*",
     "@cubus/cordis": "workspace:*",
     "@cubus/system-prompt": "workspace:*",
     "@cubus/tool-registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/recipe-coding-agent": "workspace:*"
   }
 }

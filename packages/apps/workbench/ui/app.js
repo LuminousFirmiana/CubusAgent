@@ -58,8 +58,15 @@ function summarize(event) {
   switch (event.type) {
     case 'session/mount': {
       const m = event.mount
+      // MCP 工具来源（S2.4）：连了几台、多少工具、用哪种暴露模式 —— 都在装配快照里，不是猜的。
+      const mcp = m.config && m.config.mcp
+        ? ' · MCP ' + m.config.mcp.servers.filter(s => s.connected).length + '/' + m.config.mcp.servers.length + ' 台' +
+          ' · ' + (m.config.mcp.mode === 'eager' ? '全量加载' : '按需检索') +
+          (m.config.mcp.deferredTools > 0 ? '（延迟 ' + m.config.mcp.deferredTools + ' 个）' : '')
+        : ''
       return '装配：' + m.recipe.id + '@' + m.recipe.version +
         ' · 权限 ' + m.permission.profile + '(' + m.permission.source + ')' +
+        mcp +
         ' · 能力 ' + m.capabilities.map(c => c.kind + ':' + c.provider).join(', ')
     }
     case 'turn/start': return '回合开始'

@@ -64,12 +64,30 @@ pnpm run workbench
   "port": 4173,
   "sessionsDir": "/path/to/session-logs",
   "maxAttempts": 3,
-  "model": "deepseek-chat"
+  "model": "deepseek-chat",
+  "contextWindow": 128000,
+  "mcpServers": [
+    { "name": "demo", "command": "node", "args": ["/path/to/mcp-server.mjs", "--tools", "120"] },
+    { "name": "remote", "url": "https://example.com/mcp", "headers": { "authorization": "Bearer ..." } }
+  ]
 }
 ```
 
 优先级：**命令行 > 配置文件 > 默认**。配置路径：`--config` > `$CUBUS_CONFIG` >
 `$XDG_CONFIG_HOME/cubus/config.json` > `~/.cubus/config.json`。拼错的键会报错（不会静默忽略）。
+
+### MCP 工具来源
+
+`mcpServers` 里的服务器在工作台启动时连接（连不上只记 `failed`，不阻塞启动）：
+
+- **工具定义怎么给**：默认按体量决定 —— 工具定义总量不到 `contextWindow` 的 10% 就全量放进工具列表，
+  否则只给模型一份**工具名清单**，schema 由 `tool_search` 按需取、`mcp_call` 统一调用；
+  用 `--mcp-mode eager|on-demand|native` 可显式指定（`native` 需要模型侧支持，当前 DeepSeek 不支持会直接报错）。
+- **这次到底怎么装的**：装配快照（会话日志第一条）里记着 `mcp.servers`（名字/传输/连上没有/工具数）、
+  `mcp.mode` 与延迟工具数 —— 页面顶部的"装配："一行显示的就是它。
+- **凭据**：stdio 的 `env` 与 http 的 `headers` 由 app 读入，只有凭据**名字**进快照，值不进日志。
+
+想亲手看：`pnpm --filter @cubus/mcp run demo`（连接层）与 `demo:expose`（两档模式的账）。
 
 ## 命令行
 

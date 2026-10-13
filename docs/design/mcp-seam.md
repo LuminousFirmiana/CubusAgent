@@ -104,6 +104,6 @@
 | S2.1 | 契约：工具 `source` 元数据 + `toolSources` 声明 + 新校验规则 | 单测：三种情况（缺声明失败 / 动态来源放行 / 无 toolSources 时行为与今天一致）；现有三个 recipe 不受影响 |
 | S2.2 | 连接层：stdio + Streamable HTTP 客户端、服务器配置、`tools/list` 发现、失败不阻塞 | **已落地**：@cubus/mcp（自研最小 JSON-RPC 客户端，零新依赖）；11 条测试（含"关闭不留孤儿""连不上只记录不抛""HTTP 会话 id 回传"）；可亲手跑 `pnpm --filter @cubus/mcp run demo` |
 | S2.3 | 暴露与检索：`tool_search` / `mcp_call`、模式判定、清单进 prompt | **已落地**：`decideExposureMode`（阈值 + 显式配置；`native` 无 provider 支持即报错）、`planMcpExposure`、`searchTools`（关键词 / `select:`）、`mountMcpExposure`；测试断言"按需模式下 `tools[]` 里只有两个元工具"、"全量模式下远端工具带 `source: mcp`"；可亲手跑 `pnpm --filter @cubus/mcp run demo:expose` |
-| S2.4 | fixture server + 工作台接线 + 数字 | 两条会话对比脚本输出表格；工作台能看到"延迟工具 N 个"与检索卡片 |
+| S2.4 | fixture server + 工作台接线 + 数字 | **接线已落地**：`withMcpTools` 装饰器 + 工作台 `mcpServers`/`contextWindow`/`--mcp-mode` + 装配行显示 `MCP 1/1 台 · 按需检索（延迟 120 个）`；真实任务下 `tools[]` 只有 6 个工具、模型走 `tool_search` → `mcp_call`。**数字（真实 promptTokens 的两档对比）留待下一步**（见 §7）。 |
 
 每一步仍是：单测 + 集成测试 → `pnpm run check` 全绿 → 显式路径提交 → push → CI 绿 → 更新 handover。

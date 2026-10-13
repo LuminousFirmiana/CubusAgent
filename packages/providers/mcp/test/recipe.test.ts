@@ -82,3 +82,38 @@ test('the snapshot config records which servers connected and which mode was use
     await connections.close()
   }
 }, 20_000)
+
+test('with no MCP server configured the decorator is completely transparent', async () => {
+  // 回归（S2.4）：声明无条件加两个元工具、挂载却有条件跳过 -> 装配期判 "declared but not registered"，
+  // 没配 MCP 的产品连会话都建不出来。声明与实现必须同进同退。
+  const empty = await connectMcpServers([])
+  try {
+    const product = createCodingAgentRecipe({
+      id: 'no-mcp',
+      version: '1.0.0',
+      displayName: 'No MCP',
+      defaultSystemPrompt: 'You are a coding agent.',
+    })
+    const decorated = withMcpTools(product, { connections: empty, contextWindow: 128_000 })
+
+    // 声明面一模一样，toolSources 也不该凭空出现
+    expect(decorated.manifest.tools).toEqual(product.manifest.tools)
+    expect(decorated.manifest.toolSources).toBeUndefined()
+
+    // 挂载后注册集合与声明集合相等（装配期校验不会报 mismatch）
+    const fs = { async readText() { return '' }, async writeText() {} }
+    const subprocess = { async run() { return { exitCode: 0, stdout: '', stderr: '', timedOut: false } } }
+    const ctx = new Context()
+    await ctx.plugin(systemPromptPlugin)
+    await ctx.plugin(toolRegistryPlugin)
+    ctx.provide('fs', fs)
+    ctx.provide('subprocess', subprocess)
+    ctx.provide('workspaceDir', '/workspace')
+    ctx.provide('toolApproval', { profile: 'allow', decide: async () => ({ decision: 'allow' }) } as never)
+    await decorated.mount(ctx, {})
+
+    expect(ctx.tools.snapshot().map(tool => tool.name).sort()).toEqual([...decorated.manifest.tools].sort())
+  } finally {
+    await empty.close()
+  }
+}, 20_000)

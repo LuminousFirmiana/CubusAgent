@@ -362,19 +362,31 @@ export function withMcpTools(
     ...(options.providerSupportsNative === undefined ? {} : { providerSupportsNative: options.providerSupportsNative }),
   })
   const plan = planMcpExposure({ tools: options.connections.tools, mode })
-  const declared = [...new Set([...recipe.manifest.tools, MCP_TOOL_CALL, MCP_TOOL_SEARCH])].sort()
-  const sources = [...new Set([...(recipe.manifest.toolSources ?? []), MCP_TOOL_SOURCE])].sort()
+  /**
+   * **一台服务器都没配时，这个装饰器必须是彻底透明的**：不扩声明、不挂任何东西。
+   *
+   * 踩过的坑（S2.4 回归）：一开始无条件把两个元工具写进声明，只在"有服务器"时才挂载 ——
+   * 于是没配 MCP 的产品装配时被判 "declared but not registered"，新建会话直接 500。
+   * 声明与实现必须同进同退。
+   */
+  const exposing = options.connections.connections.length > 0
+  const declared = exposing
+    ? [...new Set([...recipe.manifest.tools, MCP_TOOL_CALL, MCP_TOOL_SEARCH])].sort()
+    : recipe.manifest.tools
+  const sources = exposing
+    ? [...new Set([...(recipe.manifest.toolSources ?? []), MCP_TOOL_SOURCE])].sort()
+    : recipe.manifest.toolSources
 
   return {
     manifest: {
       ...recipe.manifest,
       tools: declared,
-      toolSources: sources,
+      ...(sources === undefined ? {} : { toolSources: sources }),
     },
     async mount(ctx, recipeOptions) {
       // 产品自己的 mount 不关心额外的装配参数（它只读 Host 提供的能力）。
       await recipe.mount(ctx, undefined)
-      if (options.connections.tools.length === 0 && options.connections.connections.length === 0) return
+      if (!exposing) return
       await mountMcpExposure(ctx, plan, options.connections)
       void recipeOptions
     },

@@ -1,5 +1,13 @@
 import type { ProjectedMessage, ProjectedRequest, ProjectedToolCall, SessionEvent } from './types.ts'
 
+/** 单条工具结果进投影的上限（字符）；超过就换成首尾预览。 */
+export const PROJECTED_TOOL_RESULT_MAX_CHARS = 24_000
+/** 同一个 step 内工具结果合计上限（字符）。 */
+export const PROJECTED_STEP_TOOL_RESULTS_MAX_CHARS = 96_000
+/** 预览保留的头部/尾部字符数。 */
+export const PREVIEW_HEAD_CHARS = 8_000
+export const PREVIEW_TAIL_CHARS = 8_000
+
 /**
  * 从日志事件推导模型可见的消息序列（投影，纯函数）。
  *
@@ -76,6 +84,7 @@ function projectRange(events: SessionEvent[]): ProjectedMessage[] {
   }
 
   const seenCalls = new Set<string>()
+  const stepByCall = new Map<string, string>()
   const messages: ProjectedMessage[] = []
 
   for (const event of events) {
@@ -95,6 +104,7 @@ function projectRange(events: SessionEvent[]): ProjectedMessage[] {
       }
       case 'tool/call':
         seenCalls.add(event.id)
+        stepByCall.set(event.id, event.stepId)
         break
       case 'tool/result':
         if (seenCalls.has(event.id)) {
@@ -111,7 +121,79 @@ function projectRange(events: SessionEvent[]): ProjectedMessage[] {
         break
     }
   }
+  applyToolResultBudget(messages, stepByCall)
   return messages
+}
+
+/**
+ * 第一层压缩：工具结果预算（S3.2）。**只改投影，不改日志** —— 全文仍在 `tool/result` 事件里，
+ * 模型可以按预览里给的 id 用 `read_session_log` 读回。
+ *
+ * 两条规则（都是确定性的，纯函数）：
+ * 1. 单条超过 {@link PROJECTED_TOOL_RESULT_MAX_CHARS} → 换成首尾预览；
+ * 2. 同一个 step 内合计超过 {@link PROJECTED_STEP_TOOL_RESULTS_MAX_CHARS} → 从最长的开始换，直到降到预算内。
+ *
+ * 阈值是**投影规则常量**：改它们会改变旧日志的投影结果，因此属于"必须与版本一起做"的改动
+ * （见 docs/design/context-compaction.md §3 与 versioning.md §2）。
+ */
+export function applyToolResultBudget(
+  messages: ProjectedMessage[],
+  stepByCall: ReadonlyMap<string, string>,
+): void {
+  const indexes: number[] = []
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== 'tool-result') continue
+    indexes.push(index)
+    if (message.content.length > PROJECTED_TOOL_RESULT_MAX_CHARS) {
+      messages[index] = { ...message, content: previewToolResultText(message.content, message.toolCallId) }
+    }
+  }
+
+  // 同一 step 的聚合预算：按长度从大到小截，保证"同样输入同样输出"
+  const byStep = new Map<string, number[]>()
+  for (const index of indexes) {
+    const message = messages[index]
+    if (message?.role !== 'tool-result') continue
+    const stepId = stepByCall.get(message.toolCallId) ?? ''
+    const list = byStep.get(stepId)
+    if (list === undefined) byStep.set(stepId, [index])
+    else list.push(index)
+  }
+  for (const list of byStep.values()) {
+    const total = (): number => list.reduce((sum, index) => {
+      const message = messages[index]
+      return sum + (message?.role === 'tool-result' ? message.content.length : 0)
+    }, 0)
+    if (total() <= PROJECTED_STEP_TOOL_RESULTS_MAX_CHARS) continue
+    const byLength = [...list].sort((left, right) => {
+      const a = messages[left]
+      const b = messages[right]
+      const lengthA = a?.role === 'tool-result' ? a.content.length : 0
+      const lengthB = b?.role === 'tool-result' ? b.content.length : 0
+      return lengthB - lengthA || left - right
+    })
+    for (const index of byLength) {
+      if (total() <= PROJECTED_STEP_TOOL_RESULTS_MAX_CHARS) break
+      const message = messages[index]
+      if (message?.role !== 'tool-result') continue
+      if (message.content.includes(PREVIEW_MARKER)) continue
+      messages[index] = { ...message, content: previewToolResultText(message.content, message.toolCallId) }
+    }
+  }
+}
+
+/** 预览里的标记：模型据此知道"内容被截断了、怎么读回全文"。 */
+export const PREVIEW_MARKER = '[工具输出被截断]'
+
+/** 把一条超长工具结果换成首尾预览 + 读回指引。 */
+export function previewToolResultText(text: string, toolCallId: string): string {
+  const head = text.slice(0, PREVIEW_HEAD_CHARS)
+  const tail = text.slice(Math.max(PREVIEW_HEAD_CHARS, text.length - PREVIEW_TAIL_CHARS))
+  return head +
+    '\n\n' + PREVIEW_MARKER + ' 共 ' + String(text.length) + ' 字符，这里保留前 ' + String(head.length) +
+    ' 与后 ' + String(tail.length) + ' 字符。完整内容用 read_session_log 读回：' +
+    '{"kind":"tool_output","id":"' + toolCallId + '"}（可带 offset/limit 分页）。\n\n' +
+    tail
 }
 
 /**

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { Context } from '@cubus/cordis'
+import type { SessionLog } from '@cubus/session'
 import { systemPromptPlugin } from '@cubus/system-prompt'
 import { createStaticToolApproval } from '@cubus/tool-approval'
 import { toolRegistryPlugin } from '@cubus/tool-registry'
@@ -23,12 +24,13 @@ test('产品提示词是产品自己的那一份，不是通用 coding-agent 提
   expect(cubusCodingAgentRecipe.manifest.prompt.fragmentId).toBe(CUBUS_CODING_AGENT_ID + '.role')
 })
 
-test('工具面由产品声明，装配后与声明一致（四工具）', async () => {
+test('工具面由产品声明，装配后与声明一致（四工具 + 读回工具）', async () => {
   const mount = await mountProduct()
   expect([...cubusCodingAgentRecipe.manifest.tools].sort()).toEqual([
     'bash',
     'edit_file',
     'read_file',
+    'read_session_log',
     'write_file',
   ])
   expect(mount.toolNames).toEqual([...cubusCodingAgentRecipe.manifest.tools].sort())
@@ -64,12 +66,19 @@ async function mountProduct(): Promise<{ prompt: string; toolNames: string[] }> 
   const subprocess: SubprocessProvider = {
     async run() { return { exitCode: 0, stdout: '', stderr: '', timedOut: false } },
   }
+  // 产品声明了 session-log 能力，且 read_session_log 工具依赖它（inject: ['sessionLog','tools']）
+  const sessionLog: SessionLog = {
+    async append() {},
+    async read() { return { events: [], truncated: false } },
+    subscribe() { return () => undefined },
+  }
   const ctx = new Context()
   await ctx.plugin(systemPromptPlugin)
   await ctx.plugin(toolRegistryPlugin)
   ctx.provide('fs', fs)
   ctx.provide('subprocess', subprocess)
   ctx.provide('workspaceDir', '/workspace')
+  ctx.provide('sessionLog', sessionLog)
   ctx.provide('toolApproval', createStaticToolApproval('allow', 'product recipe test'))
   await cubusCodingAgentRecipe.mount(ctx)
   return {

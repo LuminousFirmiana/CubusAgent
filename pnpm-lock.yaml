@@ -307,6 +307,22 @@ importers:
         specifier: workspace:*
         version: link:../../core/session
 
+  packages/policies/context-compaction:
+    dependencies:
+      '@cubus/agent-recipe':
+        specifier: workspace:*
+        version: link:../../core/agent-recipe
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@cubus/tool-registry':
+        specifier: workspace:*
+        version: link:../../core/tool-registry
+    devDependencies:
+      '@cubus/cordis':
+        specifier: workspace:*
+        version: link:../../../vendor/cordis
+
   packages/policies/tool-approval:
     dependencies:
       '@cubus/agent-recipe':
@@ -395,6 +411,9 @@ importers:
 
   packages/recipes/cubus-coding-agent:
     dependencies:
+      '@cubus/context-compaction':
+        specifier: workspace:*
+        version: link:../../policies/context-compaction
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../coding-agent
@@ -402,6 +421,9 @@ importers:
       '@cubus/cordis':
         specifier: workspace:*
         version: link:../../../vendor/cordis
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
       '@cubus/system-prompt':
         specifier: workspace:*
         version: link:../../core/system-prompt

@@ -1,5 +1,12 @@
 import { expect, test } from 'vitest'
-import { deriveMessages, deriveRequest, snapKeepFrom } from '../src/replay.ts'
+import {
+  deriveMessages,
+  deriveRequest,
+  PREVIEW_MARKER,
+  PROJECTED_STEP_TOOL_RESULTS_MAX_CHARS,
+  PROJECTED_TOOL_RESULT_MAX_CHARS,
+  snapKeepFrom,
+} from '../src/replay.ts'
 import type { SessionEvent } from '../src/types.ts'
 
 function ev(type: SessionEvent['type'], extra: Record<string, unknown> = {}): SessionEvent {
@@ -278,4 +285,76 @@ test('a boundary that cuts a pair anyway still yields a valid projection', () =>
   expect(deriveMessages(events)).toEqual([
     { role: 'user', content: [{ type: 'text', text: '摘要' }] },
   ])
+})
+
+/** 一个 step 里并行调用多个工具（一个 assistant 消息 + N 组 call/result）。 */
+function parallelTools(stepId: string, sizes: readonly number[]): SessionEvent[] {
+  const events: SessionEvent[] = [
+    ev('turn/start', { turnId: 't-' + stepId }),
+    ev('step/start', { stepId, turnId: 't-' + stepId }),
+    ev('user/message', { messageId: stepId + '-u', content: [{ type: 'text', text: '批量读' }] }),
+    ev('request/header', { stepId, header: { provider: 'test', model: 'm1' } }),
+    ev('assistant/message', { messageId: stepId + '-a', stepId, content: [{ type: 'text', text: '读多个文件' }] }),
+  ]
+  sizes.forEach((size, index) => {
+    const id = stepId + '-c' + String(index)
+    events.push(ev('tool/call', { id, stepId, name: 'read_file', args: { path: 'f' + String(index) } }))
+    events.push(ev('tool/result', { id, ok: true, output: { text: 'x'.repeat(size) } }))
+  })
+  events.push(ev('step/end', { stepId }), ev('turn/end', { turnId: 't-' + stepId }))
+  return events
+}
+
+function toolResultTexts(messages: readonly { role: string; content?: unknown }[]): string[] {
+  return messages
+    .filter(message => message.role === 'tool-result')
+    .map(message => String(message.content))
+}
+
+test('a tool result under the limit reaches the model untouched, over the limit becomes a preview', () => {
+  const small = parallelTools('s1', [1_000])
+  const smallTexts = toolResultTexts(deriveMessages(small))
+  expect(smallTexts[0]).toBe('x'.repeat(1_000))
+
+  const big = parallelTools('s2', [PROJECTED_TOOL_RESULT_MAX_CHARS + 5_000])
+  const bigText = toolResultTexts(deriveMessages(big))[0] ?? ''
+  expect(bigText).toContain(PREVIEW_MARKER)
+  expect(bigText).toContain('read_session_log')
+  expect(bigText).toContain('"id":"s2-c0"')
+  expect(bigText.length).toBeLessThan(PROJECTED_TOOL_RESULT_MAX_CHARS)
+  // 头部与尾部的原文都在（首尾保留，不是只砍尾巴）
+  expect(bigText.startsWith('x'.repeat(100))).toBe(true)
+  expect(bigText.endsWith('x'.repeat(100))).toBe(true)
+
+  // 日志本身没被动过：完整文本仍在事件里
+  const raw = big.find(event => event.type === 'tool/result')
+  expect(raw?.type === 'tool/result' ? raw.output.text.length : 0).toBe(PROJECTED_TOOL_RESULT_MAX_CHARS + 5_000)
+})
+
+test('the same log projects to exactly the same preview (pure and replayable)', () => {
+  const events = parallelTools('s3', [PROJECTED_TOOL_RESULT_MAX_CHARS + 1_234])
+  expect(deriveMessages(events)).toEqual(deriveMessages(events))
+})
+
+test('a step over the aggregate budget truncates the longest results first', () => {
+  // 每条都在单条上限（24k）之下，但 5×20k = 100k 超过单步预算（96k）
+  const size = 20_000
+  const events = parallelTools('s4', [size, size, size, size, size])
+  const texts = toolResultTexts(deriveMessages(events))
+  const total = texts.reduce((sum, text) => sum + text.length, 0)
+
+  expect(total).toBeLessThanOrEqual(PROJECTED_STEP_TOOL_RESULTS_MAX_CHARS)
+  // 一条预览约 16k（前 8k + 后 8k + 指引文字），截掉两条才回到 96k 预算内
+  expect(texts.filter(text => text.includes(PREVIEW_MARKER))).toHaveLength(2)
+  expect(texts[0]).toContain(PREVIEW_MARKER)
+  expect(texts[1]).toContain(PREVIEW_MARKER)
+  expect(texts.slice(2)).toEqual(['x'.repeat(size), 'x'.repeat(size), 'x'.repeat(size)])
+})
+
+test('results in different steps do not share one aggregate budget', () => {
+  // 每步 4×12k = 48k（都在预算内），两步合计 96k —— 如果按"全局"算就会被误截
+  const size = 12_000
+  const events = [...parallelTools('s5', [size, size, size, size]), ...parallelTools('s6', [size, size, size, size])]
+  const texts = toolResultTexts(deriveMessages(events))
+  expect(texts).toEqual(Array.from({ length: 8 }, () => 'x'.repeat(size)))
 })

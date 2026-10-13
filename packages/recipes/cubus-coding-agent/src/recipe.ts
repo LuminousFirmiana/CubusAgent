@@ -1,3 +1,4 @@
+import { withSessionLogTools } from '@cubus/context-compaction'
 import { createCodingAgentRecipe } from '@cubus/recipe-coding-agent'
 
 /**
@@ -23,17 +24,22 @@ export const CUBUS_CODING_AGENT_VERSION = '0.1.0'
 export const CUBUS_CODING_AGENT_PROMPT = [
   '你是 Cubus CodingAgent：运行在 CubusAgent 运行时之上的编码 Agent 产品。',
   '工作方式：先读代码与项目约束，再做范围尽可能小且完整的修改；改动后运行相关检查，依据真实结果继续。',
-  '可用工具：read_file、edit_file、write_file、bash。',
+  '可用工具：read_file、edit_file、write_file、bash；工具输出被截断时用 read_session_log 读回全文。',
   '边界：每次工具调用都要经过审批策略与预算护栏；你的每一步请求与工具结果都会写入会话日志，可回放、可审计。',
   '完成时简要说明改动、验证结果与仍存在的风险。',
 ].join('\n')
 
-/** 产品装配：与 repair-eval 共用同一个工厂，产物是一份声明而不是一份新实现。 */
-export const cubusCodingAgentRecipe = createCodingAgentRecipe({
+/**
+ * 产品装配：与 repair-eval 共用同一个工厂，产物是一份声明而不是一份新实现。
+ *
+ * 外面套一层 `withSessionLogTools`（S3.2）：给产品加"读回被压缩内容"的工具 ——
+ * 投影会把超大工具结果换成首尾预览，模型需要一条路把全文读回来。
+ */
+export const cubusCodingAgentRecipe = withSessionLogTools(createCodingAgentRecipe({
   id: CUBUS_CODING_AGENT_ID,
   version: CUBUS_CODING_AGENT_VERSION,
   displayName: 'Cubus CodingAgent',
   description: '在受信工作区里读写代码、运行命令并验证结果的编码 Agent 产品。',
   defaultSystemPrompt: CUBUS_CODING_AGENT_PROMPT,
   permissionProfile: 'ask',
-})
+}))

@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cubus/context-compaction": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*"
   },
   "devDependencies": {
@@ -20,6 +21,7 @@
     "@cubus/system-prompt": "workspace:*",
     "@cubus/tool-approval": "workspace:*",
     "@cubus/tool-registry": "workspace:*",
-    "@cubus/tools": "workspace:*"
+    "@cubus/tools": "workspace:*",
+    "@cubus/session": "workspace:*"
   }
 }

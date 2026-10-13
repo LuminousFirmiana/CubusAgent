@@ -11,12 +11,13 @@
  * 1. **审批档必须显式给出**（命令行或配置文件都算显式）：默认不是 allow；
  * 2. **会话目录必须在工作区之外**：agent 的 bash 工具能写工作区，日志不该在它的射程内。
  */
-import { mkdir, realpath } from 'node:fs/promises'
+import { mkdir, readFile, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { withContextCompaction } from '@cubus/context-compaction'
+import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
 import {
   buildMcpConfig,
   connectMcpServers,
@@ -334,11 +335,20 @@ async function main(args: readonly string[]): Promise<number> {
   const compactionRecipe = withContextCompaction(cubusCodingAgentRecipe, {
     contextWindow: options.contextWindow,
   })
+  // 指令分层（S4.2）：app 读文件（用户层在工作区外，fs 能力按设计拒绝越界），
+  // 插件只负责把**已解析的层**渲染成系统提示片段 —— 所以快照里的文本就是模型看到的文本。
+  const loadedInstructions = await loadInstructionTiers({
+    readText: path => readFile(path, 'utf8'),
+    workspaceDir: workspace,
+    userPath: join(homedir(), '.cubus', 'instructions.md'),
+  })
   const mcpRecipe = withMcpTools(compactionRecipe, {
     connections: mcpConnections,
     contextWindow: options.contextWindow,
     ...(options.mcpMode === undefined ? {} : { configured: options.mcpMode }),
   })
+  // 指令层放在最外层：它需要读 app 传进来的 recipeOptions（内层的装饰器拿到的仍是同一份）
+  const recipe = withInstructions(mcpRecipe)
 
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
@@ -346,8 +356,12 @@ async function main(args: readonly string[]): Promise<number> {
       createLocalAgentHost({ adapterFactory, workspaceDir: workspace, credentials }),
       approval,
     ),
-    recipe: mcpRecipe,
-    recipeOptions: mcpMode === undefined ? {} : { mcp: buildMcpConfig(mcpConnections, mcpMode) },
+    recipe,
+    recipeOptions: {
+      instructions: loadedInstructions.tiers,
+      instructionNotices: loadedInstructions.notices,
+      ...(mcpMode === undefined ? {} : { mcp: buildMcpConfig(mcpConnections, mcpMode) }),
+    },
     permissionProfile: options.approval,
     // 重试由循环做（F4b）：每次重试进日志
     retry: { maxAttempts: options.maxAttempts },

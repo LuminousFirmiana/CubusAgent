@@ -1,0 +1,20 @@
+{
+  "name": "@cubus/instructions",
+  "version": "0.0.0",
+  "description": "Instruction tiers (user + project): load, cap, render into the system prompt, record in the mount snapshot",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/agent-recipe": "workspace:*",
+    "@cubus/cordis": "workspace:*",
+    "@cubus/system-prompt": "workspace:*"
+  }
+}

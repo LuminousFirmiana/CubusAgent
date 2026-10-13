@@ -22,6 +22,7 @@
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
+    "@cubus/instructions": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",
     "@cubus/mcp": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*",

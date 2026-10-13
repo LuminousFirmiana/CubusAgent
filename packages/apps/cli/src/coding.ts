@@ -1,4 +1,4 @@
-import { mkdir, realpath, stat } from 'node:fs/promises'
+import { mkdir, readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import type { BudgetState } from '@cubus/budget'
@@ -9,6 +9,7 @@ import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
 import { withContextCompaction } from '@cubus/context-compaction'
+import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
@@ -287,6 +288,13 @@ export async function runCodingCommand(
     contextWindow: options.contextWindow ?? 128_000,
   })
 
+  // 指令分层（S4.2）：app 读文件（用户层在工作区外），插件把已解析的层渲染成系统提示片段。
+  const loadedInstructions = await loadInstructionTiers({
+    readText: path => readFile(path, 'utf8'),
+    workspaceDir: workspace,
+    userPath: join(homedir(), '.cubus', 'instructions.md'),
+  })
+
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
     // 环境能力（模型、日志、文件系统、子进程）全部由 Host 提供；CLI 只给部署参数。
@@ -298,8 +306,11 @@ export async function runCodingCommand(
       }),
       approval,
     ),
-    recipe: compactionRecipe,
-    recipeOptions: undefined,
+    recipe: withInstructions(compactionRecipe),
+    recipeOptions: {
+      instructions: loadedInstructions.tiers,
+      instructionNotices: loadedInstructions.notices,
+    },
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(budget === undefined ? {} : { budget }),
     // 重试由循环做（F4b）：每次重试进日志（request/retry），而不是在适配器层悄悄重试

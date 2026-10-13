@@ -44,6 +44,9 @@ importers:
       '@cubus/llm-deepseek':
         specifier: workspace:*
         version: link:../../providers/llm-deepseek
+      '@cubus/mcp':
+        specifier: workspace:*
+        version: link:../../providers/mcp
       '@cubus/recipe-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/coding-agent

@@ -87,7 +87,13 @@ pnpm run workbench
   `mcp.mode` 与延迟工具数 —— 页面顶部的"装配："一行显示的就是它。
 - **凭据**：stdio 的 `env` 与 http 的 `headers` 由 app 读入，只有凭据**名字**进快照，值不进日志。
 
-想亲手看：`pnpm --filter @cubus/mcp run demo`（连接层）与 `demo:expose`（两档模式的账）。
+想亲手看：`pnpm --filter @cubus/mcp run demo`（连接层）与 `demo:expose`（两档模式的账）；
+用真模型量一遍：`pnpm run mcp:tokens`（同一任务跑两档各一条会话，从日志取真实 `promptTokens`）。
+
+实测（deepseek-chat，120 个 MCP 工具，不调用工具的任务）：全量模式首次请求 50,974 token，
+按需模式 2,097 token（**−95.9%**）；真的调用工具时（3 步）全量 157,011 → 按需 7,333（−95.3%）。
+两条必须一起说的口径：①按需模式要付"取回 schema"的代价，实测 +0.5k～+2k token，取决于一次取回几个工具，
+全部取回后反而比全量更贵；②以上都是 provider 真实计数，字符 ÷ 2.5 的估算会高估（120 工具估 83k、实测 51k）。
 
 ## 命令行
 

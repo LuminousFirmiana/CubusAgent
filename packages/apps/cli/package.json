@@ -12,7 +12,8 @@
     "start": "node --import tsx/esm src/main.ts",
     "demo:live": "node --import tsx/esm examples/live-demo.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "mcp:tokens": "node --import tsx/esm examples/mcp-token-report.ts"
   },
   "dependencies": {
     "@cubus/budget": "workspace:*",
@@ -21,6 +22,7 @@
     "@cubus/git-cli": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",
+    "@cubus/mcp": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*",
     "@cubus/recipe-cubus-coding-agent": "workspace:*",
     "@cubus/sdk": "workspace:*",

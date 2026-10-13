@@ -216,6 +216,34 @@ export type SessionEvent =
       ok: boolean
       output: ToolOutput
     }
+  | {
+      /**
+       * 上下文压缩（S3.1）：**这条事件不改历史，只改投影**。
+       *
+       * 它不是"又一条消息"，而是"从这一刻起，历史以什么形态出现"的事实：
+       * 投影时 [0, keepFrom) 被 summary 替代，[keepFrom, …] 逐字保留。
+       */
+      type: 'context/compacted'
+      /** 摘要正文。**模型可见内容**：它替代了被压缩的历史，原样进入投影。 */
+      summary: string
+      /**
+       * 投影边界（日志下标，已做配对吸附）：[0, keepFrom) 被 summary 替代，
+       * 从 keepFrom 起逐字保留。记录的是**调整后**的值 —— 事件本身就是"当时怎么压的"的事实。
+       */
+      keepFrom: number
+      /** 触发原因：接近窗口阈值 / 手动。 */
+      reason: 'threshold' | 'manual'
+      /**
+       * 生成摘要的输入：**日志区间 + 模板版本**。
+       * 不重复存输入正文 —— 输入就是 [from, to) 这段日志，可原样重建。
+       */
+      input: { from: number; to: number; template: string }
+      /** 摘要那次模型调用的真实用量（成本可审计）。 */
+      usage?: LlmUsage
+      /** 压缩前/后的估算 token（页面与评测显示的数字来源）。 */
+      before: number
+      after: number
+    }
 
 /** 投影出的模型工具调用（从同 stepId 的 tool/call 事件重建）。 */
 export type ProjectedToolCall = {

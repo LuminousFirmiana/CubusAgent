@@ -6,6 +6,7 @@ import { afterEach, expect, test } from 'vitest'
 // 只从**包名**导入：这是"外部人视角"的验收 —— 公开面够不够用，这个文件说了算
 import { createLocalAgentHost } from '@cubus/host-local'
 import { ScriptedAdapter } from '@cubus/llm'
+import { SESSION_FORMAT_VERSION } from '@cubus/session'
 import { systemPromptContribution } from '@cubus/system-prompt'
 import { toolContribution } from '@cubus/tool-registry'
 import { createTools } from '@cubus/tools'
@@ -106,7 +107,8 @@ test('a product built only on the public API can run, replay, measure and archiv
   // 4) 列表 + 指标 + 归档：都在公开面上
   const summaries = await listSessions(sessions)
   expect(summaries.map(summary => summary.id)).toEqual([session.id])
-  expect(summaries[0]?.formatVersion).toBe(3)
+  // 格式版本走常量：新增事件类型会升版，这条断言不该因此再红一次（4 = 含 context/compacted）
+  expect(summaries[0]?.formatVersion).toBe(SESSION_FORMAT_VERSION)
 
   const metrics = await collectMetrics(sessions)
   expect(metrics.totals).toMatchObject({ turns: 1, steps: 1, tokens: { total: 12 } })

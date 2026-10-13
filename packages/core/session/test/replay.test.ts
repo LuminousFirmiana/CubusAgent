@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { deriveMessages, deriveRequest } from '../src/replay.ts'
+import { deriveMessages, deriveRequest, snapKeepFrom } from '../src/replay.ts'
 import type { SessionEvent } from '../src/types.ts'
 
 function ev(type: SessionEvent['type'], extra: Record<string, unknown> = {}): SessionEvent {
@@ -178,4 +178,104 @@ test('reconstructs each request from its header and only the preceding log prefi
     ],
   })
   expect(deriveRequest(events, 'missing')).toBeUndefined()
+})
+
+/** 一段带工具调用的历史：user -> assistant(tool_call) -> tool_result。 */
+function toolTurn(turnId: string, stepId: string, callId: string, text: string): SessionEvent[] {
+  return [
+    ev('turn/start', { turnId }),
+    ev('step/start', { stepId, turnId }),
+    ev('user/message', { messageId: turnId + '-u', content: [{ type: 'text', text }] }),
+    ev('request/header', { stepId, header: { provider: 'test', model: 'm1' } }),
+    ev('assistant/message', { messageId: turnId + '-a', stepId, content: [{ type: 'text', text: '调用工具' }] }),
+    ev('tool/call', { id: callId, stepId, name: 'read_file', args: { path: 'a.txt' } }),
+    ev('tool/result', { id: callId, ok: true, output: { text: '文件内容' } }),
+    ev('step/end', { stepId }),
+    ev('turn/end', { turnId }),
+  ]
+}
+
+function compaction(keepFrom: number, summary: string): SessionEvent {
+  return ev('context/compacted', {
+    summary,
+    keepFrom,
+    reason: 'threshold',
+    input: { from: 0, to: keepFrom, template: 'compact-v1' },
+    before: 100_000,
+    after: 4_000,
+  })
+}
+
+test('a compaction event replaces the prefix with its summary and keeps the tail verbatim', () => {
+  const first = toolTurn('t1', 's1', 'c1', '第一轮')
+  const second = toolTurn('t2', 's2', 'c2', '第二轮')
+  const events: SessionEvent[] = [...first, ...second, compaction(first.length, '（早前对话的摘要）')]
+
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '（早前对话的摘要）' }] },
+    { role: 'user', content: [{ type: 'text', text: '第二轮' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '调用工具' }], toolCalls: [{ id: 'c2', name: 'read_file', args: { path: 'a.txt' } }] },
+    { role: 'tool-result', toolCallId: 'c2', content: '文件内容', ok: true },
+  ])
+})
+
+test('everything appended after a compaction is projected on top of the summary', () => {
+  const first = toolTurn('t1', 's1', 'c1', '第一轮')
+  const events: SessionEvent[] = [
+    ...first,
+    compaction(first.length, '摘要'),
+    ev('turn/start', { turnId: 't2' }),
+    ev('user/message', { messageId: 'm-later', content: [{ type: 'text', text: '之后的问题' }] }),
+    ev('request/header', { stepId: 's3', header: { provider: 'test', model: 'm1' } }),
+  ]
+
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '摘要' }] },
+    { role: 'user', content: [{ type: 'text', text: '之后的问题' }] },
+  ])
+  // 压缩之后重建的请求也含摘要（请求是投影的结果，不是重放）
+  expect(deriveRequest(events, 's3')?.messages[0]).toEqual({ role: 'user', content: [{ type: 'text', text: '摘要' }] })
+})
+
+test('with several compactions the last one wins, and older ones inside the tail stay invisible', () => {
+  const first = toolTurn('t1', 's1', 'c1', '第一轮')
+  const second = toolTurn('t2', 's2', 'c2', '第二轮')
+  const events: SessionEvent[] = [
+    ...first,
+    ...second,
+    compaction(second.length, '旧摘要'),
+    ev('user/message', { messageId: 'm-3', content: [{ type: 'text', text: '第三轮' }] }),
+    // 新边界落在"旧摘要"**之前**：旧压缩事件因此落在保留区里，不应再次生效
+    compaction(first.length + second.length, '新摘要'),
+  ]
+
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '新摘要' }] },
+    { role: 'user', content: [{ type: 'text', text: '第三轮' }] },
+  ])
+})
+
+test('snapKeepFrom moves the boundary back so a tool pair is never cut in half', () => {
+  const turn = toolTurn('t1', 's1', 'c1', '第一轮')
+  const resultIndex = turn.findIndex(event => event.type === 'tool/result')
+  const callIndex = turn.findIndex(event => event.type === 'tool/call')
+
+  expect(snapKeepFrom(turn, resultIndex)).toBe(callIndex)
+  expect(snapKeepFrom(turn, 0)).toBe(0)
+  expect(snapKeepFrom(turn, turn.length)).toBe(turn.length)
+  expect(snapKeepFrom(turn, -5)).toBe(0)
+  // 找不到配对的孤立 result：不吸附（投影会把它丢掉，见下一条测试）
+  const orphan: SessionEvent[] = [ev('tool/result', { id: 'ghost', ok: true, output: { text: 'x' } })]
+  expect(snapKeepFrom(orphan, 0)).toBe(0)
+})
+
+test('a boundary that cuts a pair anyway still yields a valid projection', () => {
+  const turn = toolTurn('t1', 's1', 'c1', '第一轮')
+  const resultIndex = turn.findIndex(event => event.type === 'tool/result')
+  // 生产者忘了吸附：投影必须自己防御 —— 孤立的 tool-result 被丢掉，请求仍然合法
+  const events: SessionEvent[] = [...turn, compaction(resultIndex, '摘要')]
+
+  expect(deriveMessages(events)).toEqual([
+    { role: 'user', content: [{ type: 'text', text: '摘要' }] },
+  ])
 })

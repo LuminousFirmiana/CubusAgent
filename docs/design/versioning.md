@@ -9,7 +9,7 @@
 
 | 版本号 | 在哪 | 管什么 | 当前值 |
 |---|---|---|---|
-| `SESSION_FORMAT_VERSION` | `<会话目录>/session.meta.json`（sidecar） | 会话日志的**词汇表**（事件类型与字段） | **3** |
+| `SESSION_FORMAT_VERSION` | `<会话目录>/session.meta.json`（sidecar） | 会话日志的**词汇表**（事件类型与字段） | **4** |
 | `contractVersion` | 每个 recipe 的 manifest | **产品声明契约**（manifest 必填字段与装配语义） | **1** |
 | `ARCHIVE_FORMAT_VERSION` | 归档目录的 `manifest.json` | 归档包的布局 | **1** |
 | 包版本（`package.json` 的 `version`） | 每个 workspace 包 | 公开 API（§4） | 全是 0.0.0（未发布） |
@@ -24,6 +24,7 @@
 | v1 | 最初的十种事件（无 `session/mount`、无预算） | — |
 | v2 | 新增 `session/mount`（装配快照）；`mount.budget` 字段 | **新增事件类型** + 新增可选字段 |
 | v3 | 新增 `request/retry`；`turn/start` 与 `turn/end` 加可选 `at` | **新增事件类型** + 新增可选字段 |
+| v4 | 新增 `context/compacted`（S3.1：上下文压缩只改投影、不改历史；投影规则见 [context-compaction.md](context-compaction.md)） | **新增事件类型** |
 
 ### 规则
 1. **新增事件类型 = 升版**（读取方据此拒绝过新的日志）；

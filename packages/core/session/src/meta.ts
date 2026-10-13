@@ -9,9 +9,10 @@
  * v1 = D1 之前（无 session/mount、无 budget）；
  * v2 = 含装配快照与预算（B/C 阶段）；
  * v3 = 含 request/retry 事件与 turn/start|end 的 at 时间戳（F4b）。
+ * v4 = 含 context/compacted 事件（S3.1：上下文压缩只改投影、不改历史）。
  * 规则（D1 决定）：**新增事件类型算一次版本递增**（读取方据此拒绝过新的日志），新增可选字段不算。
  */
-export const SESSION_FORMAT_VERSION = 3
+export const SESSION_FORMAT_VERSION = 4
 
 export interface SessionMeta {
   readonly formatVersion: number

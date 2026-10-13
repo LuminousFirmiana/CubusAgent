@@ -23,3 +23,22 @@ export {
   unwrapResult,
 } from './jsonrpc.ts'
 export type { DecodedMessage } from './jsonrpc.ts'
+export {
+  buildMcpCallTool,
+  buildPromptSection,
+  buildToolSearchTool,
+  CHARS_PER_TOKEN,
+  decideExposureMode,
+  DEFAULT_EAGER_THRESHOLD_PERCENT,
+  MAX_SEARCH_RESULTS,
+  MCP_PROMPT_FRAGMENT,
+  MCP_TOOL_CALL,
+  MCP_TOOL_SEARCH,
+  MCP_TOOL_SOURCE,
+  mcpToolSchemaChars,
+  mountMcpExposure,
+  planMcpExposure,
+  qualifiedToolName,
+  searchTools,
+} from './expose.ts'
+export type { McpExposureMode, McpExposurePlan } from './expose.ts'

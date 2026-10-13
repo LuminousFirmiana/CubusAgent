@@ -11,7 +11,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "demo": "node --import tsx/esm examples/connect-demo.ts"
+    "demo": "node --import tsx/esm examples/connect-demo.ts",
+    "demo:expose": "node --import tsx/esm examples/expose-demo.ts"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@cubus/cordis": "workspace:*",
+    "@cubus/system-prompt": "workspace:*",
+    "@cubus/tool-registry": "workspace:*"
+  }
 }

@@ -133,8 +133,22 @@ export function createAgentRuntimePlugin<RecipeOptions>(config: AgentRuntimePlug
           return config.recipe.mount(recipeContext, config.recipeOptions)
         },
       })
-      // 会话 id 交给循环：策略（审批）据此知道"是哪个会话在请求"
-      await ctx.plugin(agentLoopPlugin, { sessionId: config.session.id, ...config.loop })
+      // 会话 id 交给循环：策略（审批）据此知道"是哪个会话在请求"。
+      //
+      // beforeRequest（S3.3）：每次拼请求之前给"上下文压缩"一次机会。这里用**字符串查找**
+      // 而不是 import 策略包 —— 内核不依赖任何策略；没有挂载策略时查到 undefined，钩子是 no-op。
+      // config.loop 里显式给了 beforeRequest 就以它为准（展开在后）。
+      const compactionHook = async (): Promise<void> => {
+        const holder = ctx as unknown as {
+          get(key: string): { prepareNextRequest?: () => Promise<void> } | undefined
+        }
+        await holder.get('contextCompaction')?.prepareNextRequest?.()
+      }
+      await ctx.plugin(agentLoopPlugin, {
+        sessionId: config.session.id,
+        beforeRequest: compactionHook,
+        ...config.loop,
+      })
 
       const log = ctx.get('sessionLog')
       if (log === undefined) {

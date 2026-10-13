@@ -142,5 +142,34 @@
 |---|---|---|
 | S3.1 | 词汇：`context/compacted` + `SESSION_FORMAT_VERSION` 3→4 + 投影规则（含配对吸附） | §8.1 §8.2 的测试；旧日志读法不变 |
 | S3.2 | 第一层：投影截断 + `read_session_log` 工具 | **已落地**：投影按单条/单步两条规则截断（纯函数）；`@cubus/context-compaction` 提供 `read_session_log`（tool_output 分页 / messages 列区间）并经 `withSessionLogTools` 进产品声明；端到端实测见 §7.1；测试 = session 包 4 条 + 新包 4 条 |
-| S3.3 | 第二层：`beforeRequest` 钩子 + 压缩策略（触发、摘要、写事件、熔断） | §8.3 测试 + 假模型的确定性压缩测试 |
+| S3.3 | 第二层：`beforeRequest` 钩子 + 压缩策略（触发、摘要、写事件、熔断） | **已落地**：循环钩子 `LoopConfig.beforeRequest`（step/start 之后、request/header 之前 await；缺省时逐字不变）+ `ContextCompactionPolicy`（usage 锚点 + 尾部估算触发；保留边界经配对吸附；失败重试 2 次→放弃，连续 3 次熔断）；端到端实测见下文 |
 | S3.4 | 测量：长会话压测脚本 + 信息保留评测 + 工作台显示压缩边界 | §8.5 §8.6 的数字写进 EVALS.md / README |
+
+### 7.2 第二层的端到端实测（2026-10-13）
+
+真模型（deepseek-chat）+ 88KB 文件 + `--context-window 4000`（故意调小以强制触发）：
+
+```
+① 压缩事件次数：1
+   keepFrom=46  reason=threshold  template=compact-v1
+   输入区间=[0,46)  用量={"promptTokens":2578,"completionTokens":78,"totalTokens":2656}
+   估算 before=5185 → after=101
+② 第 1 次请求：首条不是摘要（压缩前）
+   第 2 次请求：首条**是摘要** ✓
+```
+
+摘要正文（截断）：
+
+> 用户要求用 read_file 读取 big.txt 并回答最后一行的开头数字。已调用 read_file 读取 big.txt，
+> 但工具返回内容被截断……尚未得到最后一行的开头数字。后续需要重新读取该文件末尾部分……
+
+**三个被实测打出来的设计缺陷**（都已修）：
+
+1. **保留预算必须由窗口推导上界**：窗口 3k 时"保留 8k token 的尾巴"是荒谬的 —— 压缩后反而更超窗。
+   现在 `keepRecentTokens ≤ window × 0.5`、`maxKeepTokens ≤ window × 0.6`，并且**硬上限优先于"至少保留 N 条"的偏好**。
+2. **摘要输入不能被原始工具输出淹没**：第一次实现把整段前缀（含 88k 的工具结果）喂给摘要模型，
+   它最后只总结出"全是占位符"。现在工具结果在摘要输入里只留 400 字符预览（全文在日志里，可读回）。
+3. **摘要模板要明确禁止工具调用标记**：真实模型会把 `<｜｜DSML｜｜ calls>` 这类模板当正文吐出来，
+   那会被原样带进下一次上下文。模板里已写明 "never emit tool-call markup"。
+
+另外输入上限的处理也从"只留结尾"改成**两头都留、省略中间** —— 开头是用户请求与目标，结尾是当前状态。

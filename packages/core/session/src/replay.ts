@@ -22,7 +22,7 @@ export const PREVIEW_TAIL_CHARS = 8_000
  *
  * 纯函数保证：同一份日志永远推导出同一份消息序列（确定性）。
  */
-export function deriveMessages(events: SessionEvent[]): ProjectedMessage[] {
+export function deriveMessages(events: readonly SessionEvent[]): ProjectedMessage[] {
   const boundary = lastCompactionIndex(events)
   if (boundary === -1) return projectRange(events)
 
@@ -39,7 +39,7 @@ export function deriveMessages(events: SessionEvent[]): ProjectedMessage[] {
 }
 
 /** 最后一个压缩边界的下标；没有则 -1。 */
-export function lastCompactionIndex(events: SessionEvent[]): number {
+export function lastCompactionIndex(events: readonly SessionEvent[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index]?.type === 'context/compacted') return index
   }
@@ -52,7 +52,7 @@ export function lastCompactionIndex(events: SessionEvent[]): number {
  * 今天只有一种需要吸附的情形：边界正好落在某条 tool/result 上，而它的 tool/call 在边界之前
  * ——此时把边界前移到那条 tool/call，让配对完整。返回**调整后**的下标（生产者应把它记进事件）。
  */
-export function snapKeepFrom(events: SessionEvent[], keepFrom: number): number {
+export function snapKeepFrom(events: readonly SessionEvent[], keepFrom: number): number {
   const index = clampIndex(keepFrom, events.length)
   const event = events[index]
   if (event?.type !== 'tool/result') return index
@@ -69,7 +69,7 @@ function clampIndex(value: number, upperBound: number): number {
 }
 
 /** 一段事件的消息投影（不含压缩语义）。 */
-function projectRange(events: SessionEvent[]): ProjectedMessage[] {
+function projectRange(events: readonly SessionEvent[]): ProjectedMessage[] {
   // 先收集每个 step 的工具调用：assistant 消息的 toolCalls 从它们重建
   const callsByStep = new Map<string, ProjectedToolCall[]>()
   for (const event of events) {
@@ -200,7 +200,7 @@ export function previewToolResultText(text: string, toolCallId: string): string 
  * 重建指定 step 实际发出的 provider-neutral 请求。
  * 消息投影只读取 header 之前的前缀，因此稍后追加的回复不会污染历史请求。
  */
-export function deriveRequest(events: SessionEvent[], stepId: string): ProjectedRequest | undefined {
+export function deriveRequest(events: readonly SessionEvent[], stepId: string): ProjectedRequest | undefined {
   const headerIndex = events.findIndex(event => event.type === 'request/header' && event.stepId === stepId)
   const event = events[headerIndex]
   if (event?.type !== 'request/header') return undefined

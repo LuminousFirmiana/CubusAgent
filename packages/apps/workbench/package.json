@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
+    "@cubus/context-compaction": "workspace:*",
     "@cubus/credentials": "workspace:*",
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",

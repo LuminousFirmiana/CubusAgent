@@ -1,5 +1,7 @@
 import type { AgentRecipe } from '@cubus/agent-recipe'
 import type { Context } from '@cubus/cordis'
+import { contextCompactionPlugin } from './plugin.ts'
+import type { ContextCompactionPluginConfig } from './plugin.ts'
 import { createReadSessionLogTool, READ_SESSION_LOG_TOOL } from './tools.ts'
 
 /**
@@ -22,6 +24,25 @@ export function withSessionLogTools(recipe: AgentRecipe<void>): AgentRecipe<void
           return scope.tools.register(createReadSessionLogTool(scope.sessionLog))
         },
       })
+    },
+  }
+}
+
+/**
+ * 给产品挂上上下文压缩策略（S3.3）。
+ *
+ * 不需要扩声明：压缩不改工具面，只改"请求怎么拼"。挂载后运行时的 beforeRequest 钩子
+ * 会找到 `ctx.contextCompaction` 并在每次拼请求之前调一次。
+ */
+export function withContextCompaction(
+  recipe: AgentRecipe<void>,
+  options: ContextCompactionPluginConfig,
+): AgentRecipe<void> {
+  return {
+    manifest: recipe.manifest,
+    async mount(ctx: Context, recipeOptions: void) {
+      await recipe.mount(ctx, recipeOptions)
+      await ctx.plugin(contextCompactionPlugin, options)
     },
   }
 }

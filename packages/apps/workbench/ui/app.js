@@ -69,6 +69,10 @@ function summarize(event) {
         mcp +
         ' · 能力 ' + m.capabilities.map(c => c.kind + ':' + c.provider).join(', ')
     }
+    case 'context/compacted':
+      // 压缩边界（S3.3）：历史被摘要替代、之后的消息逐字保留 —— 原事件一条没少。
+      return '上下文压缩：' + event.summary.length + ' 字摘要替代了前 ' + event.keepFrom + ' 条事件' +
+        '（估算 ' + event.before + ' → ' + event.after + ' token，原因 ' + event.reason + '）'
     case 'turn/start': return '回合开始'
     case 'turn/end': return event.settled === true ? '回合结束（恢复时结算）' : '回合结束'
     case 'step/start': return '第 ' + (event.stepId || '').slice(0, 8) + ' 步'

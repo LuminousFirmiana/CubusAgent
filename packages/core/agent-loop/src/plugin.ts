@@ -29,6 +29,8 @@ export interface AgentLoopPluginConfig {
   now?: () => number
   /** 本循环服务的会话 id（交给工具执行上下文，供审批等策略使用）。 */
   sessionId?: string
+  /** 每次 step 拼请求之前的钩子（S3.3）；由运行时接到"上下文压缩策略"上。 */
+  beforeRequest?: (context: { turnId: string; stepId: string }) => Promise<void> | void
 }
 
 /**
@@ -64,6 +66,7 @@ export const agentLoopPlugin = {
       ...(config.retry === undefined ? {} : { retry: config.retry }),
       ...(config.now === undefined ? {} : { now: config.now }),
       ...(config.sessionId === undefined ? {} : { sessionId: config.sessionId }),
+      ...(config.beforeRequest === undefined ? {} : { beforeRequest: config.beforeRequest }),
     })
     ctx.provide('loop', loop)
   },

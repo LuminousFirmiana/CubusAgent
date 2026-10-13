@@ -16,6 +16,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
+import { withContextCompaction } from '@cubus/context-compaction'
 import {
   buildMcpConfig,
   connectMcpServers,
@@ -328,7 +329,12 @@ async function main(args: readonly string[]): Promise<number> {
         contextWindow: options.contextWindow,
         ...(options.mcpMode === undefined ? {} : { configured: options.mcpMode }),
       })
-  const mcpRecipe = withMcpTools(cubusCodingAgentRecipe, {
+  // 上下文压缩（S3.3）：投影接近窗口时自动摘要（进 context/compacted 事件）。
+  // 窗口大小是 app 的知识，所以在这里注入 —— 策略本身不知道模型是谁。
+  const compactionRecipe = withContextCompaction(cubusCodingAgentRecipe, {
+    contextWindow: options.contextWindow,
+  })
+  const mcpRecipe = withMcpTools(compactionRecipe, {
     connections: mcpConnections,
     contextWindow: options.contextWindow,
     ...(options.mcpMode === undefined ? {} : { configured: options.mcpMode }),

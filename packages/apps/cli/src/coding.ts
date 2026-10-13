@@ -8,6 +8,7 @@ import type { BudgetLimits, MountSnapshot } from '@cubus/session'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
+import { withContextCompaction } from '@cubus/context-compaction'
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
@@ -30,6 +31,8 @@ export interface CodingCommandOptions {
   maxToolCalls?: number
   maxDurationMs?: number
   maxTokens?: number
+  /** 上下文窗口（token）：只用于"要不要压缩历史"的判定（S3.3）；缺省 128k。 */
+  contextWindow?: number
 }
 
 export interface CodingCommandDependencies {
@@ -119,6 +122,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let maxToolCalls: number | undefined
   let maxDurationMs: number | undefined
   let maxTokens: number | undefined
+  let contextWindow: number | undefined
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -149,6 +153,15 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
         throw new CliUsageError('--approval must be ask, allow, or deny')
       }
       approval = value
+      index += 1
+      continue
+    }
+    if (arg === '--context-window') {
+      const value = Number(optionValue(args, index, arg))
+      if (!Number.isInteger(value) || value < 1_000) {
+        throw new CliUsageError('--context-window must be an integer of at least 1000 tokens')
+      }
+      contextWindow = value
       index += 1
       continue
     }
@@ -195,6 +208,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       ...(maxToolCalls === undefined ? {} : { maxToolCalls }),
       ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
       ...(maxTokens === undefined ? {} : { maxTokens }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
   }
@@ -268,6 +282,11 @@ export async function runCodingCommand(
   const mergedBudget: BudgetLimits = { ...cubusCodingAgentRecipe.manifest.budget, ...appBudget }
   const budget = Object.keys(mergedBudget).length === 0 ? undefined : mergedBudget
 
+  // 上下文压缩（S3.3）：窗口接近满时自动摘要（写 context/compacted，模型可见 ⟺ 已记录）。
+  const compactionRecipe = withContextCompaction(cubusCodingAgentRecipe, {
+    contextWindow: options.contextWindow ?? 128_000,
+  })
+
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
     // 环境能力（模型、日志、文件系统、子进程）全部由 Host 提供；CLI 只给部署参数。
@@ -279,7 +298,7 @@ export async function runCodingCommand(
       }),
       approval,
     ),
-    recipe: cubusCodingAgentRecipe,
+    recipe: compactionRecipe,
     recipeOptions: undefined,
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(budget === undefined ? {} : { budget }),

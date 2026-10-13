@@ -47,6 +47,8 @@ export class Loop {
   private readonly now: () => number
   /** 本循环服务的会话（让审批等策略知道会话归属）。 */
   private readonly sessionId: string | undefined
+  /** 每次 step 拼请求之前的钩子（S3.3，上下文压缩用；缺省 = 不做任何事）。 */
+  private readonly beforeRequest: LoopConfig['beforeRequest']
 
   constructor(config: LoopConfig) {
     this.log = config.log
@@ -60,6 +62,7 @@ export class Loop {
     this.retry = resolveRetryOptions(config.retry)
     this.now = config.now ?? Date.now
     this.sessionId = config.sessionId
+    this.beforeRequest = config.beforeRequest
   }
 
   /** 事件时间戳（F4b）：只用于耗时指标，不参与任何投影。 */
@@ -113,6 +116,12 @@ export class Loop {
     const stepId = this.generateId()
     const capabilities = resolveStepCapabilities(this.resolveCapabilities())
     await this.log.append({ type: 'step/start', stepId, turnId })
+
+    // 拼请求之前的钩子（S3.3）：上下文压缩在这里完成，它写进日志的事件会成为本次请求的一部分。
+    // 缺省不存在时这一步是 no-op —— 没有策略挂载的循环行为与从前逐字一致。
+    if (this.beforeRequest !== undefined) {
+      await this.beforeRequest({ turnId, stepId })
+    }
 
     const toolSpecs = capabilities.tools.map(tool => ({
       name: tool.name,

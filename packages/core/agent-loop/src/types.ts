@@ -32,6 +32,14 @@ export interface LoopConfig {
   now?: () => number
   /** 本循环服务的会话 id：交给工具执行上下文（策略据此知道会话归属）。 */
   sessionId?: string
+  /**
+   * 每次 step 写 `request/header` **之前** await 一次（S3.3）。
+   *
+   * 存在的理由只有一个：上下文压缩必须在"下一条请求被拼出来之前"完成，而循环是唯一知道
+   * 这个时刻的人。钩子是**可选**的 —— 没有策略挂载时，循环行为与从前逐字一致。
+   * 钩子写进日志的事件会成为这一步请求的一部分（请求由日志投影而来）。
+   */
+  beforeRequest?: (context: { turnId: string; stepId: string }) => Promise<void> | void
 }
 
 /** 收件箱里的一条待处理输入。 */

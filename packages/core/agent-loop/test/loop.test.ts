@@ -340,3 +340,77 @@ test('unknown tool produces an ok: false result, and the loop continues', async 
   // 第二步仍然发生
   expect(events.filter(e => e.type === 'step/start')).toHaveLength(2)
 })
+
+test('the beforeRequest hook runs between step/start and request/header, and its writes join this step', async () => {
+  const request = { provider: 'test', model: 'm', messages: [] as never[] }
+  void request
+  const seen: LlmRequest[] = []
+  const adapter: LlmAdapter = {
+    provider: 'hook-test',
+    model: 'scripted',
+    async *stream(input) {
+      seen.push(input)
+      yield { delta: 'done' }
+    },
+  }
+  const log = new SessionLogFile(logPath)
+  const hookStepIds: string[] = []
+  let hookCalls = 0
+  const loop = new Loop({
+    log,
+    adapter,
+    tools: [],
+    generateId: makeIdGen(),
+    now: makeClock(),
+    beforeRequest: async context => {
+      hookCalls += 1
+      hookStepIds.push(context.stepId)
+      // 钩子写的事件必须成为"本次请求"的一部分（请求由日志投影而来）
+      await log.append({
+        type: 'user/message',
+        messageId: 'hook-' + String(hookCalls),
+        content: [{ type: 'text', text: '（压缩产生的上下文）' }],
+      })
+    },
+  })
+
+  await loop.submit([{ type: 'text', text: '你好' }])
+
+  expect(hookCalls).toBe(1)
+  // 请求里既有真实用户消息，也有钩子在 step/start 之后写进去的那条
+  expect(seen[0]?.messages.map(message => (message.content[0] as { text: string }).text)).toEqual([
+    '你好',
+    '（压缩产生的上下文）',
+  ])
+  // 顺序：step/start 在钩子之前，request/header 在钩子之后
+  const { events } = await log.read()
+  const stepStart = events.findIndex(event => event.type === 'step/start')
+  const stepStartEvent = events[stepStart]
+  const injected = events.findIndex(event => event.type === 'user/message' && event.messageId === 'hook-1')
+  const header = events.findIndex(event => event.type === 'request/header')
+  expect(stepStart).toBeLessThan(injected)
+  expect(injected).toBeLessThan(header)
+  // 钩子收到的 stepId 就是这一步的 stepId（不是猜的）
+  expect(stepStartEvent?.type === 'step/start' ? hookStepIds : []).toEqual(
+    stepStartEvent?.type === 'step/start' ? [stepStartEvent.stepId] : [],
+  )
+})
+
+test('without a beforeRequest hook the loop writes exactly the same events as before', async () => {
+  const adapter: LlmAdapter = {
+    provider: 'no-hook',
+    model: 'scripted',
+    async *stream() {
+      yield { delta: 'ok' }
+    },
+  }
+  const withHook = new SessionLogFile(join(dir, 'with-hook.jsonl'))
+  const withoutHook = new SessionLogFile(join(dir, 'without-hook.jsonl'))
+  const noop = new Loop({ log: withHook, adapter, tools: [], generateId: makeIdGen(), now: makeClock(), beforeRequest: () => undefined })
+  const plain = new Loop({ log: withoutHook, adapter, tools: [], generateId: makeIdGen(), now: makeClock() })
+
+  await noop.submit([{ type: 'text', text: 'hi' }])
+  await plain.submit([{ type: 'text', text: 'hi' }])
+
+  expect(withoutTimestamps((await withHook.read()).events)).toEqual(withoutTimestamps((await withoutHook.read()).events))
+})

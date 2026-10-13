@@ -29,6 +29,9 @@ importers:
       '@cubus/budget':
         specifier: workspace:*
         version: link:../../policies/budget
+      '@cubus/context-compaction':
+        specifier: workspace:*
+        version: link:../../policies/context-compaction
       '@cubus/credentials':
         specifier: workspace:*
         version: link:../../seams/credentials
@@ -78,6 +81,9 @@ importers:
       '@cubus/agent-recipe':
         specifier: workspace:*
         version: link:../../core/agent-recipe
+      '@cubus/context-compaction':
+        specifier: workspace:*
+        version: link:../../policies/context-compaction
       '@cubus/credentials':
         specifier: workspace:*
         version: link:../../seams/credentials
@@ -312,6 +318,9 @@ importers:
       '@cubus/agent-recipe':
         specifier: workspace:*
         version: link:../../core/agent-recipe
+      '@cubus/llm':
+        specifier: workspace:*
+        version: link:../../seams/llm
       '@cubus/session':
         specifier: workspace:*
         version: link:../../core/session

@@ -52,6 +52,8 @@ test('effective options come from the command line, then the config file, then d
     // MCP 未配置：空清单 + 保守的上下文窗口默认值（只影响"全量还是按需"的判定）
     mcpServers: [],
     contextWindow: 128_000,
+    // 记忆（S4.3）：默认落在用户目录下的记忆文件
+    memoryPath: join(homedir(), '.cubus', 'memory', 'memory.jsonl'),
   })
   // 命令行覆盖配置文件（逐字段）
   const merged = resolveWorkbenchOptions(

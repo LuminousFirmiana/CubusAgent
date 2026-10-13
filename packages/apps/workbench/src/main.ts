@@ -18,6 +18,7 @@ import { CredentialsError, LocalCredentials } from '@cubus/credentials'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { withContextCompaction } from '@cubus/context-compaction'
 import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
+import { DEFAULT_MEMORY_INDEX_LIMIT, MemoryStore, nodeMemoryIO, withMemory } from '@cubus/memory'
 import {
   buildMcpConfig,
   connectMcpServers,
@@ -56,6 +57,8 @@ export interface WorkbenchCommandOptions {
   readonly mcpServers: readonly McpServerConfig[]
   /** 上下文窗口（token）：只用于"工具定义全量给还是按需检索"的判定。 */
   readonly contextWindow: number
+  /** 跨会话记忆文件路径（默认 ~/.cubus/memory/memory.jsonl）。 */
+  readonly memoryPath: string
   /** 显式指定暴露模式；缺省按体量判定（native 需要 provider 支持，否则报错）。 */
   readonly mcpMode?: 'eager' | 'on-demand' | 'native'
 }
@@ -226,6 +229,7 @@ export function resolveWorkbenchOptions(
     // MCP 在这里就解析：配置写错要在启动时失败，而不是等第一个会话装配时才发现。
     mcpServers: parseMcpServerConfigs(config?.mcpServers),
     contextWindow: config?.contextWindow ?? 128_000,
+    memoryPath: config?.memoryPath ?? join(homedir(), '.cubus', 'memory', 'memory.jsonl'),
     ...(overrides.mcpMode === undefined ? {} : { mcpMode: overrides.mcpMode }),
   }
 }
@@ -348,7 +352,12 @@ async function main(args: readonly string[]): Promise<number> {
     ...(options.mcpMode === undefined ? {} : { configured: options.mcpMode }),
   })
   // 指令层放在最外层：它需要读 app 传进来的 recipeOptions（内层的装饰器拿到的仍是同一份）
-  const recipe = withInstructions(mcpRecipe)
+  const instructedRecipe = withInstructions(mcpRecipe)
+
+  // 记忆（S4.3）：store 由 app 造（路径在本机、在工作区之外），插件只渲染索引并提供服务
+  const memoryStore = new MemoryStore({ path: options.memoryPath, io: nodeMemoryIO() })
+  const memoryEntries = await memoryStore.recent(DEFAULT_MEMORY_INDEX_LIMIT)
+  const recipe = withMemory(instructedRecipe, { store: memoryStore, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT })
 
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
@@ -360,6 +369,7 @@ async function main(args: readonly string[]): Promise<number> {
     recipeOptions: {
       instructions: loadedInstructions.tiers,
       instructionNotices: loadedInstructions.notices,
+      memory: { path: options.memoryPath, entries: memoryEntries.length, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT },
       ...(mcpMode === undefined ? {} : { mcp: buildMcpConfig(mcpConnections, mcpMode) }),
     },
     permissionProfile: options.approval,

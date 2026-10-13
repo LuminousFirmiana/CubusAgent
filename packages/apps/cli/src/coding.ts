@@ -10,6 +10,7 @@ import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
 import { withContextCompaction } from '@cubus/context-compaction'
 import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
+import { DEFAULT_MEMORY_INDEX_LIMIT, MemoryStore, nodeMemoryIO, withMemory } from '@cubus/memory'
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
@@ -34,6 +35,8 @@ export interface CodingCommandOptions {
   maxTokens?: number
   /** 上下文窗口（token）：只用于"要不要压缩历史"的判定（S3.3）；缺省 128k。 */
   contextWindow?: number
+  /** 跨会话记忆文件路径（S4.3）；缺省 ~/.cubus/memory/memory.jsonl。 */
+  memoryPath?: string
 }
 
 export interface CodingCommandDependencies {
@@ -124,6 +127,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let maxDurationMs: number | undefined
   let maxTokens: number | undefined
   let contextWindow: number | undefined
+  let memoryPath: string | undefined
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -154,6 +158,11 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
         throw new CliUsageError('--approval must be ask, allow, or deny')
       }
       approval = value
+      index += 1
+      continue
+    }
+    if (arg === '--memory') {
+      memoryPath = optionValue(args, index, arg)
       index += 1
       continue
     }
@@ -210,6 +219,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
       ...(maxTokens === undefined ? {} : { maxTokens }),
       ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...(memoryPath === undefined ? {} : { memoryPath }),
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
   }
@@ -295,6 +305,13 @@ export async function runCodingCommand(
     userPath: join(homedir(), '.cubus', 'instructions.md'),
   })
 
+  // 记忆（S4.3）：store 由 app 造（本机路径在工作区之外），插件只渲染索引并提供服务
+  const memoryStore = new MemoryStore({
+    path: options.memoryPath ?? join(homedir(), '.cubus', 'memory', 'memory.jsonl'),
+    io: nodeMemoryIO(),
+  })
+  const memoryEntries = await memoryStore.recent(DEFAULT_MEMORY_INDEX_LIMIT)
+
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
     // 环境能力（模型、日志、文件系统、子进程）全部由 Host 提供；CLI 只给部署参数。
@@ -306,10 +323,14 @@ export async function runCodingCommand(
       }),
       approval,
     ),
-    recipe: withInstructions(compactionRecipe),
+    recipe: withMemory(withInstructions(compactionRecipe), {
+      store: memoryStore,
+      indexLimit: DEFAULT_MEMORY_INDEX_LIMIT,
+    }),
     recipeOptions: {
       instructions: loadedInstructions.tiers,
       instructionNotices: loadedInstructions.notices,
+      memory: { path: memoryStore.filePath, entries: memoryEntries.length, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT },
     },
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(budget === undefined ? {} : { budget }),

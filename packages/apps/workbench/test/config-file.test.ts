@@ -33,7 +33,7 @@ test('a config file is parsed strictly: unknown keys and wrong types are named',
   expect(() => parseWorkbenchConfig('{"workspac":"/tmp/repo"}', 'c.json'))
     .toThrow('c.json: unknown key "workspac" (known keys: ')
   expect(() => parseWorkbenchConfig('{"workspac":"/tmp/repo"}', 'c.json'))
-    .toThrow('mcpServers, contextWindow)')
+    .toThrow('mcpServers, contextWindow, memoryPath)')
   expect(() => parseWorkbenchConfig('{"approval":"always"}', 'c.json'))
     .toThrow('c.json: "approval" must be one of ask, allow, deny')
   expect(() => parseWorkbenchConfig('{"workspace":""}', 'c.json'))

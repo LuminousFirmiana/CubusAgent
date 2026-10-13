@@ -29,6 +29,8 @@ export interface WorkbenchConfigFile {
    * 缺省 128k（保守值，宁可早一点走按需）。
    */
   readonly contextWindow?: number
+  /** 跨会话记忆文件（默认 ~/.cubus/memory/memory.jsonl）。 */
+  readonly memoryPath?: string
 }
 
 export const CONFIG_ENV_VAR = 'CUBUS_CONFIG'
@@ -43,6 +45,7 @@ const KNOWN_KEYS: readonly string[] = [
   'model',
   'mcpServers',
   'contextWindow',
+  'memoryPath',
 ]
 
 /** 配置路径：--config > $CUBUS_CONFIG > $XDG_CONFIG_HOME/cubus/config.json > ~/.cubus/config.json */
@@ -84,6 +87,7 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
     model?: string
     mcpServers?: unknown
     contextWindow?: number
+    memoryPath?: string
   } = {}
 
   const workspace = record['workspace']
@@ -132,6 +136,13 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
       throw new Error(source + ': "contextWindow" must be an integer of at least 1000 tokens')
     }
     config.contextWindow = contextWindow
+  }
+  const memoryPath = record['memoryPath']
+  if (memoryPath !== undefined) {
+    if (typeof memoryPath !== 'string' || memoryPath.trim() === '') {
+      throw new Error(source + ': "memoryPath" must be a non-empty string')
+    }
+    config.memoryPath = memoryPath
   }
 
   for (const key of ['approvalTimeoutSeconds', 'maxAttempts'] as const) {

@@ -107,7 +107,7 @@
 |---|---|---|
 | S4.1 | 本文件（设计 + 决定） | 你评审通过 |
 | S4.2 | `@cubus/instructions`：三层加载 + 上限截断 + 进 prompt + 全文进装配快照 | **已落地**（见 §9 实测） |
-| S4.3 | `@cubus/memory`：存储（append-only jsonl）+ 索引注入 | 单测：追加/读取/去重/索引上限；工作台里能看到索引片段 |
+| S4.3 | `@cubus/memory`：存储（append-only jsonl）+ 索引注入 | **已落地**（见 §10 实测） |
 | S4.4 | `recall_memory` + `remember_memory` 工具（扩声明 + 挂载） | 单测：按 id、按关键词、输出上限、找不到的报错；真实会话里模型能自己取回 |
 | S4.5 | 后台提炼（会话结束触发，去重，失败不阻断，全部进日志） | 单测：提炼解析/去重/失败路径；真实会话跑一次看条目落盘 |
 | S4.6 | 测量：**跨会话召回评测**（会话 A 说事实 → 会话 B 问 → 命中率） | 真模型评测脚本 + EVALS.md 记录（简历数字来源） |
@@ -147,3 +147,36 @@ assistant: [PROJ] CEDAR-9
 
 另外确认：`request/header` 里**记了每一步的 systemPrompt** —— 指令层因此有两条独立的审计路径
 （装配快照里的原文 + 每步请求里的实际拼装结果）。
+
+## 10. S4.3 实测（2026-10-13）
+
+**分工与指令层一致**：app 造 store（它知道路径和本机 IO）、插件只渲染索引并提供 `memoryStore` 服务。
+
+**行为验证**（真模型，工作区是**空目录**——事实只存在于记忆文件里）：
+
+```
+$ pnpm run cubus -- coding --workspace /tmp/cubus-mem-workspace \
+    --task "长期记忆里，order 服务的默认超时是多少毫秒？只回答数字。" \
+    --memory /tmp/cubus-mem/memory.jsonl --sessions-dir /tmp/cubus-mem-sessions
+assistant: 2500
+```
+
+**日志证据**：
+
+- 装配快照 `session/mount.config.memory` = `{ path, entries: 2, indexLimit: 12 }`（"这次带了几条"可审计）；
+- `request/header.systemPrompt` 里是索引段本身：
+
+```text
+## 长期记忆（索引）
+
+以下是跨会话记住的条目（只有索引，正文按需取回）。需要细节时用 recall_memory：
+按 id 取单条，或按关键词检索。
+
+- m-2026-10-13-002 [发布] 发布窗口固定在每周四下午，周一不发版
+- m-2026-10-13-001 [order,决定] order 服务的默认超时定成 2500 毫秒（比原先的 5000 小一半）
+```
+
+- 记忆文件里**故意留了一行坏 JSON**：解析失败只被计数，并在提示里附一句"有 1 行无法解析，已跳过"——
+  人可编辑的文件必须能承受写坏一行（其余条目照常可用）。
+
+**为什么索引里给 id**：模型可以先用 `recall_memory({id})` 精确取回，不必靠关键词猜。

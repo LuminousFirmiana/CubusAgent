@@ -25,6 +25,7 @@
     "@cubus/instructions": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",
     "@cubus/mcp": "workspace:*",
+    "@cubus/memory": "workspace:*",
     "@cubus/recipe-coding-agent": "workspace:*",
     "@cubus/recipe-cubus-coding-agent": "workspace:*",
     "@cubus/sdk": "workspace:*",

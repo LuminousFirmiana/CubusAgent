@@ -23,3 +23,13 @@ export {
   RECALL_MEMORY_TOOL,
   REMEMBER_MEMORY_TOOL,
 } from './tools.ts'
+export {
+  EXTRACT_INSTRUCTION,
+  EXTRACT_SYSTEM_PROMPT,
+  EXTRACT_TEMPLATE_V1,
+  extractMemories,
+  parseMemoryCandidates,
+  renderExtractionInput,
+  storeCandidates,
+} from './extract.ts'
+export type { ExtractOptions, ExtractReport, MemoryCandidate } from './extract.ts'

@@ -15,6 +15,7 @@
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
     "@cubus/cordis": "workspace:*",
+    "@cubus/llm": "workspace:*",
     "@cubus/system-prompt": "workspace:*",
     "@cubus/tool-registry": "workspace:*"
   }

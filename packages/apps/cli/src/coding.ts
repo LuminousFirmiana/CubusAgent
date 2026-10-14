@@ -10,7 +10,15 @@ import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
 import { withContextCompaction } from '@cubus/context-compaction'
 import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
-import { DEFAULT_MEMORY_INDEX_LIMIT, MemoryStore, nodeMemoryIO, withMemory } from '@cubus/memory'
+import {
+  DEFAULT_MEMORY_INDEX_LIMIT,
+  EXTRACT_INSTRUCTION,
+  MemoryStore,
+  nodeMemoryIO,
+  parseMemoryCandidates,
+  storeCandidates,
+  withMemory,
+} from '@cubus/memory'
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
@@ -37,6 +45,8 @@ export interface CodingCommandOptions {
   contextWindow?: number
   /** 跨会话记忆文件路径（S4.3）；缺省 ~/.cubus/memory/memory.jsonl。 */
   memoryPath?: string
+  /** 任务结束后做一次记忆提炼（S4.5）：那次模型调用走正常回合，因此进日志。 */
+  extractMemory?: boolean
 }
 
 export interface CodingCommandDependencies {
@@ -86,6 +96,8 @@ export interface CodingCommandResult {
   /** 本次运行实际生效的预算上限与用量（未配置时为 undefined）。 */
   budget?: { limits: BudgetLimits, state: BudgetState }
   assistantText?: string
+  /** 记忆提炼结果（S4.5）：只在 `--extract-memory` 时存在。 */
+  memoryReport?: { readonly added: readonly string[]; readonly duplicates: number }
   turnEvents: SessionEvent[]
   /** 相对运行前基线的 Git 变更报告（只读；非 Git 目录以 isRepository: false 表达）。 */
   changes: GitChangeReport
@@ -128,6 +140,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let maxTokens: number | undefined
   let contextWindow: number | undefined
   let memoryPath: string | undefined
+  let extractMemory = false
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -159,6 +172,10 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       }
       approval = value
       index += 1
+      continue
+    }
+    if (arg === '--extract-memory') {
+      extractMemory = true
       continue
     }
     if (arg === '--memory') {
@@ -220,6 +237,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       ...(maxTokens === undefined ? {} : { maxTokens }),
       ...(contextWindow === undefined ? {} : { contextWindow }),
       ...(memoryPath === undefined ? {} : { memoryPath }),
+      ...(extractMemory ? { extractMemory: true } : {}),
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
   }
@@ -366,6 +384,22 @@ export async function runCodingCommand(
     renderer?.flush()
   }
 
+  // 记忆提炼（S4.5）：任务结束后**再走一个正常回合**让模型提炼 —— 那次 request/header 与
+  // assistant/message 因此天然落在会话日志里（不需要内核认识"提炼"这个概念），
+  // 我们只负责解析回答并写入记忆文件。提炼失败不影响任务结果。
+  let memoryReport: { added: readonly string[]; duplicates: number } | undefined
+  if (options.extractMemory === true) {
+    try {
+      const extraction = await runtime.run(session.id, EXTRACT_INSTRUCTION)
+      const candidates = parseMemoryCandidates(extraction.assistantText ?? '')
+      const stored = await storeCandidates(memoryStore, candidates)
+      memoryReport = { added: stored.added.map(entry => entry.id), duplicates: stored.duplicates.length }
+    } catch (error) {
+      memoryReport = { added: [], duplicates: 0 }
+      void error
+    }
+  }
+
   // 报告在结束或取消后都必须产出，因此不参与运行期取消。
   const changes = await git.report(workspace, baseline)
   const budgetState = budget === undefined ? undefined : runtime.budgetState(session.id)
@@ -375,6 +409,7 @@ export async function runCodingCommand(
     logPath: session.logPath,
     cancelled,
     ...(run.assistantText === undefined ? {} : { assistantText: run.assistantText }),
+    ...(memoryReport === undefined ? {} : { memoryReport }),
     turnEvents: run.turnEvents,
     changes,
     ...(budgetState === undefined || budget === undefined
@@ -395,6 +430,13 @@ export function renderCodingResult(result: CodingCommandResult, output: CodingCo
   for (const line of result.changes.summary.split('\n')) output.write(line)
   if (result.budget !== undefined) {
     output.write(describeBudget(result.budget.state, result.budget.limits))
+  }
+  if (result.memoryReport !== undefined) {
+    const added = result.memoryReport.added
+    output.write(
+      'memory: ' + (added.length === 0 ? '没有新的长期事实' : '新增 ' + String(added.length) + ' 条 ' + added.join(', ')) +
+      (result.memoryReport.duplicates === 0 ? '' : '（重复 ' + String(result.memoryReport.duplicates) + ' 条）'),
+    )
   }
   if (result.budget?.state.tripped !== undefined) {
     output.write('status: cancelled (budget: ' + result.budget.state.tripped + ')')

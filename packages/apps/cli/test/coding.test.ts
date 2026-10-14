@@ -68,6 +68,8 @@ test('parses the explicit trusted-workspace command surface', () => {
       // 没给 --approval 时不覆盖：默认档来自 recipe manifest（B4）
       maxModelAttempts: 3,
       sessionsDir: './sessions',
+      // 沙箱档（S5.2）：默认 unconfined，要隔离得显式 --sandbox seatbelt
+      sandbox: 'unconfined',
     },
   })
   expect(parseCodingCommand([

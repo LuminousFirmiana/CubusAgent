@@ -2,6 +2,8 @@
 export const SANDBOX_FEATURES = [
   /** 显式声明"没有隔离"——需要隔离的需求永远不会匹配它。 */
   'unconfined',
+  /** 工作区之外**不可写**（读仍可能可见）—— 比 fs-isolation 弱一档，必须分开声明，不许混用。 */
+  'fs-write-isolation',
   /** 工作区之外不可见 / 不可写。 */
   'fs-isolation',
   /** 无网络出口。 */

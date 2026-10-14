@@ -31,6 +31,8 @@ export interface WorkbenchConfigFile {
   readonly contextWindow?: number
   /** 跨会话记忆文件（默认 ~/.cubus/memory/memory.jsonl）。 */
   readonly memoryPath?: string
+  /** 沙箱档（S5.2）：unconfined（默认）或 seatbelt。 */
+  readonly sandbox?: 'unconfined' | 'seatbelt'
 }
 
 export const CONFIG_ENV_VAR = 'CUBUS_CONFIG'
@@ -46,6 +48,7 @@ const KNOWN_KEYS: readonly string[] = [
   'mcpServers',
   'contextWindow',
   'memoryPath',
+  'sandbox',
 ]
 
 /** 配置路径：--config > $CUBUS_CONFIG > $XDG_CONFIG_HOME/cubus/config.json > ~/.cubus/config.json */
@@ -88,6 +91,7 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
     mcpServers?: unknown
     contextWindow?: number
     memoryPath?: string
+    sandbox?: 'unconfined' | 'seatbelt'
   } = {}
 
   const workspace = record['workspace']
@@ -143,6 +147,13 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
       throw new Error(source + ': "memoryPath" must be a non-empty string')
     }
     config.memoryPath = memoryPath
+  }
+  const sandbox = record['sandbox']
+  if (sandbox !== undefined) {
+    if (sandbox !== 'unconfined' && sandbox !== 'seatbelt') {
+      throw new Error(source + ': "sandbox" must be unconfined or seatbelt')
+    }
+    config.sandbox = sandbox
   }
 
   for (const key of ['approvalTimeoutSeconds', 'maxAttempts'] as const) {

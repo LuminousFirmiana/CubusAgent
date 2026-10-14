@@ -54,6 +54,8 @@ test('effective options come from the command line, then the config file, then d
     contextWindow: 128_000,
     // 记忆（S4.3）：默认落在用户目录下的记忆文件
     memoryPath: join(homedir(), '.cubus', 'memory', 'memory.jsonl'),
+    // 沙箱档（S5.2）：默认 unconfined —— 诚实声明无隔离，要隔离得显式选 seatbelt
+    sandbox: 'unconfined',
   })
   // 命令行覆盖配置文件（逐字段）
   const merged = resolveWorkbenchOptions(

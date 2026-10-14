@@ -52,6 +52,8 @@ export interface CodingCommandOptions {
   memoryPath?: string
   /** 任务结束后做一次记忆提炼（S4.5）：那次模型调用走正常回合，因此进日志。 */
   extractMemory?: boolean
+  /** 沙箱档（S5.2）：unconfined（默认）或 seatbelt（macOS 内核沙箱，fail-closed）。 */
+  sandbox?: 'unconfined' | 'seatbelt'
 }
 
 export interface CodingCommandDependencies {
@@ -146,6 +148,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let contextWindow: number | undefined
   let memoryPath: string | undefined
   let extractMemory = false
+  let sandbox: 'unconfined' | 'seatbelt' = 'unconfined'
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -176,6 +179,15 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
         throw new CliUsageError('--approval must be ask, allow, or deny')
       }
       approval = value
+      index += 1
+      continue
+    }
+    if (arg === '--sandbox') {
+      const value = optionValue(args, index, arg)
+      if (value !== 'unconfined' && value !== 'seatbelt') {
+        throw new CliUsageError('--sandbox must be unconfined or seatbelt')
+      }
+      sandbox = value
       index += 1
       continue
     }
@@ -243,6 +255,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
       ...(contextWindow === undefined ? {} : { contextWindow }),
       ...(memoryPath === undefined ? {} : { memoryPath }),
       ...(extractMemory ? { extractMemory: true } : {}),
+      sandbox,
       ...(sessionsDir === undefined ? {} : { sessionsDir }),
     },
   }
@@ -348,6 +361,7 @@ export async function runCodingCommand(
       createLocalAgentHost({
         adapterFactory,
         workspaceDir: workspace,
+        sandbox: options.sandbox ?? 'unconfined',
         ...(dependencies.credentials === undefined ? {} : { credentials: dependencies.credentials }),
       }),
       approval,

@@ -160,3 +160,33 @@ interface CredentialsProvider {
    改完必须跑 `pnpm --filter @cubus/host-docker run test` —— 其中一条**镜像预检**会核对取消机制依赖的工具（sh / setsid / cat / rm / sleep）与全部边界，
    镜像换代让假设失效时立刻红，而不是等到线上取消命令留下孤儿才发现。
 4. **预算 v1**：只做步数 / 工具调用数 / 墙钟时长（不改日志词汇）；usage 字段与格式版本一起放到 D1。理由：先装粗粒度刹车挡住「跑飞」，避免为费用统计两次修改宪法第一页。
+## 附：本地 seatbelt 档（S5.2 落地记录，2026-10-14）
+
+**档位**：`--sandbox seatbelt`（工作台配置键 `sandbox`；默认 `unconfined`，行为与从前一致）。
+
+**它承诺什么**（features 只写这两项，不夸大）：
+
+| feature | 含义 | 怎么验证 |
+|---|---|---|
+| `fs-write-isolation` | **写**只允许在工作区（默认不给任何额外路径） | 真测试：`/tmp` 下写文件被 `Operation not permitted` 拒绝 |
+| `network-deny` | 命令没有网络出口 | 真测试：沙箱内 `curl` 失败 |
+
+**它不承诺什么**：没有 `fs-isolation`（读仍然全开 —— 不读 /usr、/System 什么都跑不起来）、没有
+`resource-limits`、没有 `pid-isolation`。需要完整 fs 隔离的 recipe 在这档上**装配期就会失败**，
+而不是"看起来有沙箱、其实只挡了写"。为此在封闭特性表里新增了 `fs-write-isolation`：
+比 `fs-isolation` 弱一档，**必须分开声明**。
+
+**fail-closed**：选了这一档但 `sandbox-exec` 不在（非 macOS / 被移除）→ 装配期抛错，
+**绝不静默退回无隔离执行**；报错信息明确提示"要放弃隔离请显式用 `--sandbox unconfined`"。
+
+**实测打出来的两个坑**（都已修、都有测试）：
+
+1. **默认给 /tmp 可写 = 自己开了个逃逸面**：第一版默认把 `/tmp`、`/private/var/folders` 也算可写，
+   真模型立刻把文件写到了工作区之外，并如实报告"边界不是你以为的那样"。现在默认**只有工作区**，
+   额外路径必须显式开；`describe()` 会列出**完整**的可写清单。
+2. **seatbelt 按真实路径匹配**：macOS 的 `/tmp` 是 `/private/tmp` 的符号链接，不规范化就连
+   "写工作区"都会被拒（沙箱看起来坏了，其实是路径对不上）。构造时用 `realpathSync` 规范化。
+
+**实测**（真模型 + seatbelt 档）：`/tmp/cubus-escape.txt` → `Operation not permitted`；
+工作区内 `inside.txt` → 写入成功；装配快照记
+`{"kind":"sandbox","provider":"seatbelt","features":["fs-write-isolation","network-deny"]}`。

@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-14T03:14:47.297Z",
+  "model": "deepseek-chat",
+  "files": 6,
+  "withoutRules": {
+    "toolCalls": 14,
+    "prompts": 14
+  },
+  "withRules": {
+    "toolCalls": 14,
+    "prompts": 2
+  },
+  "promptReductionPercent": 85.7
+}

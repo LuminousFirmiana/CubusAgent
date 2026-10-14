@@ -14,7 +14,8 @@
     "eval:real": "node --import tsx/esm src/run.ts",
     "eval:golden": "node --import tsx/esm src/golden.ts",
     "eval:retention": "node --import tsx/esm src/retention.ts",
-    "eval:recall": "node --import tsx/esm src/recall.ts"
+    "eval:recall": "node --import tsx/esm src/recall.ts",
+    "eval:approvals": "node --import tsx/esm src/approvals.ts"
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",

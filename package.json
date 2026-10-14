@@ -24,7 +24,8 @@
     "mcp:tokens": "pnpm --filter @cubus/cli run mcp:tokens",
     "eval:retention": "pnpm --filter @cubus/evals run eval:retention",
     "eval:recall": "pnpm --filter @cubus/evals run eval:recall",
-    "stats": "pnpm --filter @cubus/project-stats run stats --"
+    "stats": "pnpm --filter @cubus/project-stats run stats --",
+    "eval:approvals": "pnpm --filter @cubus/evals run eval:approvals"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

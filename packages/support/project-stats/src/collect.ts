@@ -125,6 +125,18 @@ export function collectProjectStats(repositoryRoot: string): ProjectStats {
     })
   }
 
+  const approvals = readJson(join(packagesRoot, 'evals', 'evals', 'evals-approvals.json'))
+  if (approvals !== undefined) {
+    const without = approvals['withoutRules'] as { toolCalls?: number; prompts?: number } | undefined
+    const withRules = approvals['withRules'] as { toolCalls?: number; prompts?: number } | undefined
+    evals.push({
+      name: '审批打扰',
+      summary: '同一任务 ' + String(withRules?.toolCalls ?? 0) + ' 次工具调用：无规则打扰 ' +
+        String(without?.prompts ?? 0) + ' 次 → 有规则 ' + String(withRules?.prompts ?? 0) +
+        ' 次（**下降 ' + String(approvals['promptReductionPercent']) + '%**）',
+    })
+  }
+
   return {
     packages,
     eventKinds: countUnionMembers(sessionTypes),

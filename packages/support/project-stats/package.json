@@ -1,0 +1,20 @@
+{
+  "name": "@cubus/project-stats",
+  "version": "0.0.0",
+  "description": "Collect project-scale facts (packages, event kinds, capabilities, eval results) so no number in docs is hand-copied",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "stats": "node --import tsx/esm src/render.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@cubus/session": "workspace:*"
+  }
+}

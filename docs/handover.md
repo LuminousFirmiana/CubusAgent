@@ -50,6 +50,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| **S7.1 数字不许手抄** | 完成 | ①新包 `@cubus/project-stats`：`collectProjectStats` 从**仓库本身**采集规模事实（包数、事件类型数、能力种数、测试文件/声明数、容器集成测试数、评测结果 JSON），`renderStats` 生成 `docs/stats.md`，`pnpm run stats -- --check-log <log> --write` 一条命令刷新；测试里有一条**盯住"文档 == 采集器输出"**（抹掉运行期的生成时间与测试数再比）——改了代码忘了更新文档就是红的。②**采集器当场纠正了一个过期数字**：路线图与简历里一直写"12 类事件"，采集器算出来是 11 —— 查下去发现它漏了**单行成员**（`| { type: 'step/start'; … }`）与**注释里的假成员**两个坑；修好后真实数字是 **13 类**（`context/compacted` 是第 13 个，简历里的 12 已过时）。这正是"数字不许手抄"的意义：手抄的数字不会自己变红。③当前实测规模（`docs/stats.md`，2026-10-14）：**33 包 · 13 类事件 · 8 种能力 · 74 个测试文件 · 395 条测试声明 · 7 条真容器集成测试 · 464 个测试通过**；评测：上下文信息保留 100%（12 条事实/12 次压缩）、跨会话召回 100% + 克制 100% + 按需检索 1 次。④README 新增"项目规模与实测数字"一节（指向 docs/stats.md，并给出复现命令）。测试：新包 6 条，全量 **464**。 |
 | **S4.6 跨会话召回评测** | 完成 | ①新评测 `pnpm run eval:recall`（`packages/evals/evals/src/recall.ts`）：**会话 A** 种 6 条持久事实 + 2 条临时状态（正确行为是**别记住**）→ 结束时走提炼回合 → **会话 B**（全新会话、同一记忆文件）逐条提问 → 判分。②**实测（deepseek-chat）**：召回率 **6/6 = 100%**、克制率 **2/2 = 100%**、记忆 6 条、`recall_memory` 调用 **1 次**（只为那条 319 字符的错误码表）。结果写进 EVALS.md + `evals-recall.json`（带模型/轮次/参数）。③**过程里打出来的两条真结论**：**(a) 索引常常就够了** —— 第一版错误码表有规律，提炼模型压成一句话进了索引，6 条事实全部无需检索（0 次）；换成 24 条同等独特的映射后索引必然装不下，检索才被触发并答对 —— 说明**检索是兜底，主路径是"提炼写得够紧凑准确"**；**(b) 去重只按文本完全相同，语义重复会漏** —— 有一轮里 `remember_memory` 的措辞与提炼措辞不同，同一事实存了两份（那次 10 条），已记为已知限制与后续候选（提炼时给它看已有索引并要求复用措辞，或给条目加规范化 key）。④还没测：长文事实、多跳问题、相似事实互相干扰、记忆写错后的纠错。测试：全量 **458**（评测是脚本，另有既有 fixture 门禁）。 |
 | **S4.5 记忆提炼** | 完成 | ①核心（`@cubus/memory`）：`EXTRACT_SYSTEM_PROMPT`（只记"下次仍然成立"的事实）、`parseMemoryCandidates`（**先 JSON、失败退化成一行一条**，两条路径都过滤空条目与缺字段的条目）、`storeCandidates`（逐条写入、去重交给 store、**单条失败不影响其余**）、`extractMemories`（自己调模型的离线路径）。②**触发方式（与设计有一处偏差，已写进设计文档 §12）**：`--extract-memory` 时 CLI 在任务结束后**再走一个正常回合**（user 消息 = 维护指令），再解析那条回答并写入 —— 好处是那次 `request/header`/`assistant/message` **天然在会话日志里**，内核不需要认识"提炼"，也不需要新事件类型或格式版本；偏差是这个回合用的是产品提示词而不是 `EXTRACT_SYSTEM_PROMPT`（专用模板那条路径目前只有单测覆盖，尚未接进 app 流程）。③**实测**（真模型、空工作区、任务里含两条约定）：日志里 `turn/start` 2 次（任务回合 + 提炼回合）、`request/header`/`assistant/message` 各 4 条；提炼回答是干净的 JSON 数组，内容与模型在任务中自己用 `remember_memory` 记的**完全一致** → 全部判为重复，记忆文件没有多出条目 —— **去重纪律在真实流程里被验证**，不只是单测。④测试：新包 +7（共 23），全量 **458**。还没做：跨会话召回评测（S4.6）、工作台一键提炼、按会话结束自动触发。 |
 | **S4.4 记忆工具** | 完成 | ①`recall_memory`：按 `id` 取正文或按 `query` 关键词检索（命中数 → 新的在前）；单次输出 ≤ 8000 字符；**找不到时告诉模型记忆里总共几条、最近有哪些 id**（而不是只说"没有"，让模型能换招）。②`remember_memory`：显式记一条长期事实，去重（重复返回原 id、不写盘）；**写入效果是改本机文件，而这次工具调用进日志** —— "模型能记住什么"本身可审计。③`withMemory` 现在**扩声明 + 挂载**两个工具（产品不用改一行）；工具面因此变成 7 个：bash / edit_file / read_file / read_session_log / recall_memory / remember_memory / write_file。④**行为验证**（真模型，工作区空目录）：记忆正文 161 字符、索引只显示前 120 字符，编号 `ZEBRA-42` **只出现在被裁掉的那段**里 —— 模型答出 `ZEBRA-42` 且日志里有 `recall_memory {"id":"m-2026-10-13-001"}`，证明它确实按需取回了正文；同一任务里 `remember_memory` 让记忆文件真的多了一条 `m-2026-10-14-001`。测试：新包 +7（共 16），全量 **451**。 |
@@ -151,87 +152,3 @@
 
 ```
 vendor/cordis/                    冻结的 cordis 快照（改动必须记账 vendor/README.md）
-packages/core/session/            会话事实源契约、事件词汇表与投影
-packages/core/agent-loop/         循环 + cordis 插件
-packages/core/system-prompt/      可排序、可卸载的 prompt contribution service
-packages/core/tool-registry/      Tool 契约 + 作用域注册 + 确定性 step 快照
-packages/core/agent-recipe/       typed Host/Recipe 契约与可回卷组合根
-packages/providers/session-jsonl/ JSONL 会话存储 provider
-packages/hosts/local/             本地单进程 Host（每会话 LLM + JSONL）
-packages/policies/tool-approval/  provider-neutral 工具审批 seam + Host/Tool 装饰器
-packages/policies/budget/          预算策略：步数/工具/时长/token 上限
-packages/recipes/reference-agent/ 领域无关参考 Agent（add_numbers，无 fs/shell/repo）
-packages/recipes/coding-agent/   正式 Coding Agent Recipe（受信工作区 + 四工具）
-packages/recipes/repair-eval/     由 Coding Recipe 工厂派生的修复评测变体
-packages/apps/cli/                Coding Agent headless CLI 应用入口（含运行前后只读 Git 变更报告）
-packages/apps/workbench/          工作台：HTTP + SSE + 单页 UI + 指标/归档 CLI
-packages/support/architecture-guard/ 仓库级守卫：依赖方向、公开面、跨包相对导入
-packages/seams/llm/               模型接缝（只有契约 + 一个测试替身；实现见 providers）
-packages/seams/git/               只读 Git 工作区状态 seam（Service Definition）
-packages/evals/evals/             修复任务评测：fixtures/bug-repos/* 自描述夹具 + 无 key 门禁 + 真模型分数表
-packages/providers/git-cli/       git CLI 只读 provider（走 subprocess seam）
-packages/providers/llm-deepseek/   DeepSeek provider（一次请求）+ env/凭据接线（唯一一份）
-packages/plugins/tools/           真工具（fs/subprocess seam + 四工具）
-packages/sdk/sdk/                 SDK（协议/传输/服务端/会话运行时）
-packages/evals/evals/             评测（harness + fixtures + 真模型入口）
-packages/support/*                工具链与 cordis 冒烟测试
-docs/                             文档（本文件）
-AGENTS.md                         工程纪律
-.env                              DeepSeek key（git 忽略；仓库根；格式 DEEPSEEK_API_KEY=sk-...）
-```
-
-```bash
-pnpm install --frozen-lockfile   # 依赖（CI 同款）
-pnpm run check                   # typecheck + lint + test，一步验证全绿
-pnpm run test                    # 只跑测试
-pnpm run cubus -- --help         # Coding Agent CLI 帮助
-pnpm run cubus -- coding --workspace /path/to/repo --task "修复测试" --trust-workspace --approval ask --max-model-attempts 3
-pnpm --filter @cubus/sdk run demo        # 真实进程 stdio 演示（假模型）
-pnpm run eval:real               # 真模型修 bug 评测（需要 .env 里的 key，花真钱）
-```
-
-## 6. 关键设计决策与理由
-
-| 决策 | 理由 |
-|---|---|
-| vendor cordis 而非手写/安装 | 底座约 1800 行含异步回卷等易错逻辑；上游 API 未稳定，vendor + 台账防漂移。DSH 同款做法 |
-| 假模型 + 真模型双层评测 | 假模型（ScriptedAdapter）保证确定性回放、CI 无 key 全绿；真模型（eval:real）暴露集成缺口（已三次立功） |
-| 会话日志是唯一事实源 | UI/resume/回放/遥测全部是日志的读法；确定性是对抗 agent 非确定性的武器 |
-| 沙箱后置到 P5 | seam 第一天就位，换 provider 零改动；P5 前只跑内部仓库（容器里跑服务作粗隔离） |
-| 契约与实现分离 | Loop 类从朴素注入到 cordis 插件经历三种挂法零逻辑改动——内核冻得住 |
-| adapter 工厂注入 | 会话间不共享有状态 provider（假模型的场景队列、将来的每会话限流） |
-| 评测 fixture 不可变 | 任务永远跑在 fixture 的临时副本上；原样仓库永远带 bug（被真模型改坏过一次，教训入章） |
-| 模型子进程清洗宿主凭据 | `bash` 保留 PATH 等普通环境，但不继承名称含 KEY/SECRET/TOKEN/PASSWORD 的变量，防止模型通过 `env` 或命令输出拿到 harness 凭据 |
-| SDK 按会话串行化 run | 每个 `session.run` 拥有一个完整 turn 区间；同会话排队、不同会话仍可并行，避免把 Loop 的 fire-and-queue 语义误当成单条完成通知 |
-| request/header 先记录后调用 | 每个 step 在调用模型前记录 provider/model/system prompt/工具 schema，再由该 header 之前的日志前缀重建实际请求；未来事件不会污染历史请求 |
-| reasoning 收束并回传 | chunk 保留流式回放，assistant/message 保存完整 thinking；DeepSeek 后续请求对所有含 reasoning 的 assistant 轮次回传 `reasoning_content` |
-| 通用内核与产品 profile 分离 | loop/session/llm 只定义 Agent 机制；Coding Agent 的提示词、工具和评测属于一种组合，不反向定义内核 |
-| all is plugin 是产品化方法 | 不靠复制或 fork 内核产生新 Agent；通过 profile/bundle 选择插件并形成可复现的产品装配 |
-| step 能力先快照再请求 | 每个 step 只解析一次 prompt/tools；先冻结并记录 request/header，再用同一工具快照执行调用，避免模型 schema 与执行器漂移 |
-| Prompt contribution 确定性组装 | fragment 以稳定 id 标识，按 order + id 排序；重复 id 在请求前失败，注册随 Cordis fiber 撤销 |
-| Tool 契约不属于 Loop | `Tool` 由独立 registry 包定义；Loop 只消费 step 快照，具体 read/edit/bash 等工具不再反向依赖 agent-loop |
-| step 内能力不可漂移 | 插件即使在模型流中途卸载，已经发出的工具调用仍使用该 step 的原快照完成；下一 step 才观察到新注册表 |
-| 会话契约与持久化分离 | `@cubus/session` 只定义事件、投影和 `SessionLog` seam；JSONL 路径、文件 IO、截断恢复与损坏检测属于 Host 提供的 `@cubus/session-jsonl` |
-| Loop 不创建环境资源 | agent-loop 插件同时注入 `llm` 与 `sessionLog`；provider 替换会触发 Cordis 重挂，Loop 始终消费当前 Host 环境而不拥有文件系统策略 |
-| Host 与 Recipe 是正交轴 | Host 只挂模型、日志等环境 provider；Recipe 只挂 prompt/tool/领域插件。组合根固定按 capability services -> Host -> Recipe -> Loop 装配 |
-| 一会话一棵组合树 | `SessionRuntime` 绑定一个 typed Recipe；每次 `session.create` 创建独立 Context、Host provider 和 Recipe contributions，整棵树由一个父 fiber 可逆回卷 |
-| SDK 只做协议与会话编排 | SDK 不再依赖 agent-loop、LLM 实现、JSONL provider 或具体 Tool；它只消费 `AgentHost` / `AgentRecipe` 并保持 JSON-RPC 方法不变 |
-| reference-agent 是原型证据 | 默认参考产品只有领域无关 prompt 与 `add_numbers`，不依赖文件系统、Shell 或代码仓库；CubusAgent 因此不再靠 coding eval 证明自己“通用” |
-| repair-eval 是产品变体而非内核身份 | 通用 coding 工具组合由正式 Coding Recipe 工厂拥有；repair-eval 只替换 manifest 与评测 prompt，同一 SDK/Host/Loop 下事件骨架不变 |
-| CLI 是应用入口，不是 Agent 插件 | CLI 只解析参数、校验信任、选择 Host/Recipe 并展示结果；Coding 行为在 Recipe，模型与日志在 Host，Loop 仍保持通用 |
-| trust 是知情确认而非沙箱 | S4.1 必须显式 `--trust-workspace` 才会读取凭据或创建工具，但本地 bash 仍继承宿主权限；陌生仓库与无人值守执行留给 Docker provider |
-| 会话日志不放工具工作区 | CLI 默认写入 `~/.cubus/sessions`，并拒绝把 sessions 目录放在文件工具可写的 workspace 内，避免产品装配主动暴露唯一事实源 |
-| repair-eval 复用正式产品装配 | `repair-eval` 由 `createCodingAgentRecipe()` 派生，只替换 manifest 与评测 prompt；正式产品和评测不复制工具组合，更不复制 Loop |
-| 审批紧贴工具而非进入 Loop | Host 提供 `ToolApprovalService`，Coding Recipe 统一包装工具执行器；缺 provider 时挂载失败，不允许静默退回 allow-all |
-| ask 的保守默认 | CLI 默认为 ask；TTY 中逐次确认，非交互环境默认 deny。`--approval allow` 必须显式选择，repair eval 也明确声明自动评测 allow |
-| 最小审批审计不扩词汇 | `tool/call` 先记录；deny 成为 `tool/result ok:false`；allow 后才执行。当前不记录审批人/规则版本，若需要 provenance 必须单独讨论新事件和迁移 |
-| Provider 归一化模型错误 | `LlmError` 携带 kind/retryable/status；DeepSeek 负责解释 HTTP、网络和协议事实，retry policy 不解析供应商错误字符串 |
-| 重试只包 adapter | `@cubus/llm-retry` 以 wrapper 提供有界指数退避和 abort-aware 等待；Loop 不增加供应商条件分支，CLI 与真模型评测显式装配 |
-| 产出 chunk 后禁止重试 | 同一 step 尚未产出 chunk 时可重发已记录的同一请求；一旦日志已有正文、思考或工具意图，自动重试会造成重复内容或副作用意图，必须原样失败 |
-| Tool 执行上下文只放运行态 | `Tool.execute(args, { signal })` 让取消贯穿所有能力；审批/沙箱/预算不塞进上下文，继续由独立 policy/provider 负责 |
-| 取消也必须完整结算 | 已记录的每个 `tool/call` 都写对应结果；当前调用记 `cancelled`，后续调用记 `cancelled before execution`，随后关闭 step/turn 且不再请求模型 |
-| 子进程按进程组终止 | Unix Shell 使用独立进程组；取消先 SIGTERM 再 SIGKILL，超时也杀整组。Windows 直接子进程限制与真正隔离留给 Docker provider |
-| 取消入口属于应用/门面 | SDK 暴露 `session.cancel`，CLI 将首次 Ctrl-C 转为协作式取消并以 130 退出；Loop 只认识 AbortSignal，不认识终端或 RPC |
-| Git 报告只读且与取消解耦 | 基线在运行前记录、报告在结束或取消后必须产出，因此报告不接收运行期 AbortSignal；否则取消会让报告直接抛错 |
-| 变更分类按基线哈希，行数按 HEAD | 哪些文件被动过由基线内容哈希判定（保留用户既有改动边界）；行数只能相对 HEAD（不修改仓库就取不到基线内容快照），该限制写在 seam 类型文档里 |
-| Git 摘要由 provider 拥有 | CLI 只逐行输出 provider 的 `summary`；格式与排序在 provider 内确定性生成，避免各入口各写一套 Git 语义 |

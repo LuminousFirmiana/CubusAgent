@@ -186,6 +186,19 @@ pnpm run eval:retention -- --facts 12 --window 2500   # 实测：压缩 12 次�
 | **评测夜跑需要凭据决定** | 真模型全量跑目前是手动命令；做成夜跑 CI 需要把 key 作为仓库 secret |
 | **Windows 本地档是二等公民** | 进程树终止与行数统计在 Windows 上能力更弱；可靠隔离走 Docker |
 
+## 项目规模与实测数字
+
+**不手抄**：所有规模数字由 `pnpm run stats` 从仓库本身采集，写进 [docs/stats.md](docs/stats.md)，
+并且有一条测试盯着"文档是否与采集器一致"（改了代码忘了更新文档 = 测试红）。
+
+```bash
+pnpm run check 2>&1 | tee /tmp/check.log   # 拿到权威的测试通过数
+pnpm run stats -- --check-log /tmp/check.log --write
+```
+
+真模型评测的数字（MCP 两档对比、上下文信息保留、跨会话召回）各自的复现命令写在
+[docs/stats.md](docs/stats.md) 与 [packages/evals/evals/EVALS.md](packages/evals/evals/EVALS.md)。
+
 ## 给开发者
 
 - 工程纪律（宪法、检查纪律、TS 风格、提交规范）：[AGENTS.md](AGENTS.md)

@@ -597,6 +597,12 @@ importers:
         specifier: workspace:*
         version: link:../../../vendor/cordis
 
+  packages/support/project-stats:
+    devDependencies:
+      '@cubus/session':
+        specifier: workspace:*
+        version: link:../../core/session
+
   packages/support/toolchain-smoke: {}
 
   vendor/cordis:

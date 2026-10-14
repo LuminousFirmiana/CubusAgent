@@ -20,6 +20,13 @@ import { withContextCompaction } from '@cubus/context-compaction'
 import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
 import { DEFAULT_MEMORY_INDEX_LIMIT, MemoryStore, nodeMemoryIO, withMemory } from '@cubus/memory'
 import {
+  loadSkills,
+  nodeSkillIO,
+  PROJECT_SKILLS_DIRNAME,
+  USER_SKILLS_DIRNAME,
+  withSkills,
+} from '@cubus/skills'
+import {
   buildMcpConfig,
   connectMcpServers,
   decideExposureMode,
@@ -372,10 +379,20 @@ async function main(args: readonly string[]): Promise<number> {
   // 指令层放在最外层：它需要读 app 传进来的 recipeOptions（内层的装饰器拿到的仍是同一份）
   const instructedRecipe = withInstructions(mcpRecipe)
 
+  // 技能（S4b.2）：两个作用域 —— 用户级在工作区之外（所以由 app 读），项目级跟着仓库走
+  const loadedSkills = await loadSkills({
+    io: nodeSkillIO(),
+    roots: [
+      { source: 'user', dir: join(homedir(), USER_SKILLS_DIRNAME) },
+      { source: 'project', dir: join(workspace, PROJECT_SKILLS_DIRNAME) },
+    ],
+  })
+
   // 记忆（S4.3）：store 由 app 造（路径在本机、在工作区之外），插件只渲染索引并提供服务
   const memoryStore = new MemoryStore({ path: options.memoryPath, io: nodeMemoryIO() })
   const memoryEntries = await memoryStore.recent(DEFAULT_MEMORY_INDEX_LIMIT)
-  const recipe = withMemory(instructedRecipe, { store: memoryStore, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT })
+  const memoriedRecipe = withMemory(instructedRecipe, { store: memoryStore, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT })
+  const recipe = withSkills(memoriedRecipe, { skills: loadedSkills.skills })
 
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
@@ -394,6 +411,15 @@ async function main(args: readonly string[]): Promise<number> {
       instructions: loadedInstructions.tiers,
       instructionNotices: loadedInstructions.notices,
       memory: { path: options.memoryPath, entries: memoryEntries.length, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT },
+      skills: loadedSkills.skills.map(skill => ({
+        name: skill.name,
+        source: skill.source,
+        path: skill.path,
+        description: skill.description,
+        sha256: skill.sha256,
+        attachmentCount: skill.attachmentCount,
+      })),
+      skillNotices: loadedSkills.notices,
       ...(mcpMode === undefined ? {} : { mcp: buildMcpConfig(mcpConnections, mcpMode) }),
     },
     permissionProfile: options.approval,

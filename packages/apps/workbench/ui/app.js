@@ -84,11 +84,15 @@ function summarize(event) {
       const memoryText = memory === undefined
         ? ''
         : ' · 记忆 ' + String(memory.entries) + ' 条索引' + (memory.entries === 0 ? '（空）' : '')
+      // 技能（S4b.2）：只注入了索引，正文按需读
+      const skills = m.config && Array.isArray(m.config.skills) ? m.config.skills : []
+      const skillText = skills.length === 0 ? '' : ' · 技能 ' + String(skills.length) + ' 个'
       return '装配：' + m.recipe.id + '@' + m.recipe.version +
         ' · 权限 ' + m.permission.profile + '(' + m.permission.source + ')' +
         mcp +
         instructionText +
         memoryText +
+        skillText +
         ' · 能力 ' + m.capabilities.map(c => c.kind + ':' + c.provider).join(', ') +
         (function () {
           // 权限规则（S5.1）：规则条数写在 approval 能力的 features 里

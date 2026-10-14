@@ -30,6 +30,7 @@
     "@cubus/recipe-cubus-coding-agent": "workspace:*",
     "@cubus/sdk": "workspace:*",
     "@cubus/session": "workspace:*",
+    "@cubus/skills": "workspace:*",
     "@cubus/tool-approval": "workspace:*",
     "@cubus/tools": "workspace:*"
   },

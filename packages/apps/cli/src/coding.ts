@@ -9,6 +9,13 @@ import { GitCliWorkspaceProvider } from '@cubus/git-cli'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
 import { withContextCompaction } from '@cubus/context-compaction'
+import {
+  loadSkills,
+  nodeSkillIO,
+  PROJECT_SKILLS_DIRNAME,
+  USER_SKILLS_DIRNAME,
+  withSkills,
+} from '@cubus/skills'
 import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
 import {
   DEFAULT_MEMORY_INDEX_LIMIT,
@@ -347,6 +354,15 @@ export async function runCodingCommand(
     userPath: join(homedir(), '.cubus', 'instructions.md'),
   })
 
+  // 技能（S4b.2）：用户级在工作区之外（app 读），项目级跟着仓库走
+  const loadedSkills = await loadSkills({
+    io: nodeSkillIO(),
+    roots: [
+      { source: 'user', dir: join(homedir(), USER_SKILLS_DIRNAME) },
+      { source: 'project', dir: join(workspace, PROJECT_SKILLS_DIRNAME) },
+    ],
+  })
+
   // 记忆（S4.3）：store 由 app 造（本机路径在工作区之外），插件只渲染索引并提供服务
   const memoryStore = new MemoryStore({
     path: options.memoryPath ?? join(homedir(), '.cubus', 'memory', 'memory.jsonl'),
@@ -371,14 +387,23 @@ export async function runCodingCommand(
         sha256: permissionRules.sha256,
       },
     ),
-    recipe: withMemory(withInstructions(compactionRecipe), {
+    recipe: withSkills(withMemory(withInstructions(compactionRecipe), {
       store: memoryStore,
       indexLimit: DEFAULT_MEMORY_INDEX_LIMIT,
-    }),
+    }), { skills: loadedSkills.skills }),
     recipeOptions: {
       instructions: loadedInstructions.tiers,
       instructionNotices: loadedInstructions.notices,
       memory: { path: memoryStore.filePath, entries: memoryEntries.length, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT },
+      skills: loadedSkills.skills.map(skill => ({
+        name: skill.name,
+        source: skill.source,
+        path: skill.path,
+        description: skill.description,
+        sha256: skill.sha256,
+        attachmentCount: skill.attachmentCount,
+      })),
+      skillNotices: loadedSkills.notices,
     },
     ...(options.approval === undefined ? {} : { permissionProfile: options.approval }),
     ...(budget === undefined ? {} : { budget }),

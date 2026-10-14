@@ -2,16 +2,36 @@ import type { AgentHost, HostCapabilityOffering } from '@cubus/agent-recipe'
 import type { ToolApprovalService } from './service.ts'
 
 /**
+ * 装饰器不发明 Host 的能力：capabilities() 只追加这一项。
+ * 策略档（ask/allow/deny）是声明/覆盖数据，不是能力特性，所以它不进 features。
+ */
+export interface ApprovalRulesFacts {
+  /** 规则文件路径（工作区相对）。 */
+  readonly path: string
+  /** 规则条数。 */
+  readonly count: number
+  /** 规则内容的指纹：改了规则它就变 —— "当时生效的是哪一份"可追溯。 */
+  readonly sha256: string
+}
+
+/**
  * 把审批策略作为 Host 的一项能力（B4）。
  *
- * provider 名是 tool-approval；策略档（ask/allow/deny）是声明/覆盖数据，不是能力特性，
- * 因此 features 为空。装饰器不发明 Host 的能力：capabilities() 只追加这一项。
+ * `rules`（S5.1）只是**事实**：规则由 app 读进内存后交给审批服务执行，这里把"这次带了哪份规则"
+ * 写进能力的 features，于是装配快照里能直接看到 —— 规则原文不进日志（它在仓库里，由版本控制管），
+ * 日志记 path + 条数 + 指纹：内容一改指纹就变。
  */
-export function withToolApprovalHost(host: AgentHost, approval: ToolApprovalService): AgentHost {
+export function withToolApprovalHost(
+  host: AgentHost,
+  approval: ToolApprovalService,
+  rules?: ApprovalRulesFacts,
+): AgentHost {
   const offering: HostCapabilityOffering = {
     kind: 'approval',
     provider: 'tool-approval',
-    features: [],
+    features: rules === undefined || rules.count === 0
+      ? []
+      : ['rules:' + String(rules.count), 'rules-path:' + rules.path, 'rules-sha256:' + rules.sha256.slice(0, 12)],
     mount(ctx) {
       ctx.provide('toolApproval', approval)
     },

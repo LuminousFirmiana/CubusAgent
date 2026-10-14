@@ -29,7 +29,14 @@ import {
 import type { McpServerConfig } from '@cubus/mcp'
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
-import { createInteractiveToolApproval, createStaticToolApproval, withToolApprovalHost } from '@cubus/tool-approval'
+import {
+  createInteractiveToolApproval,
+  createRulesToolApproval,
+  createStaticToolApproval,
+  loadPermissionRules,
+  PERMISSION_RULES_RELATIVE_PATH,
+  withToolApprovalHost,
+} from '@cubus/tool-approval'
 import type { InteractiveApproval } from '@cubus/tool-approval'
 import {
   createDeepSeekAdapterFactory,
@@ -319,9 +326,17 @@ async function main(args: readonly string[]): Promise<number> {
   }
 
   // 审批策略：ask 是交互式（页面上回答，超时默认拒绝）；allow/deny 是静态档。
-  const approval = options.approval === 'ask'
+  const approvalProfile = options.approval === 'ask'
     ? createInteractiveToolApproval({ profile: 'ask', timeoutMs: options.approvalTimeoutMs })
     : createStaticToolApproval(options.approval, 'workbench --approval ' + options.approval)
+
+  // 权限规则（S5.1）：工作区里的 .cubus/permissions.json 命中就直接给结论（不打扰人），
+  // 没命中或写的是 ask 再交给档位（那里才有 prompter）。规则原文进装配快照。
+  const permissionRules = await loadPermissionRules({
+    readText: path => readFile(path, 'utf8'),
+    path: join(workspace, PERMISSION_RULES_RELATIVE_PATH),
+  })
+  const approval = createRulesToolApproval({ rules: permissionRules.file.rules, fallback: approvalProfile })
 
   // MCP 工具来源（S2.4）：**装配前**连接，结果同时进装配快照（谁连上了、用了哪种暴露模式）。
   // 连不上不阻塞启动：失败的服务器在页面上以"未连接"出现，其余照常工作。
@@ -364,6 +379,12 @@ async function main(args: readonly string[]): Promise<number> {
     host: withToolApprovalHost(
       createLocalAgentHost({ adapterFactory, workspaceDir: workspace, credentials }),
       approval,
+      // 规则事实进能力 features（装配快照里能看到"这次带了哪份规则"）
+      {
+        path: PERMISSION_RULES_RELATIVE_PATH,
+        count: permissionRules.file.rules.length,
+        sha256: permissionRules.sha256,
+      },
     ),
     recipe,
     recipeOptions: {

@@ -1,0 +1,79 @@
+# 权限规则（S5.1 设计）
+
+> 状态：**已落地**。目标：把"每次工具调用都要打扰人"降成"**只有规则说不清的时候才问**"，
+> 并且让"哪份规则在生效"进日志、可审计。
+
+相关：[recipe-capabilities.md](recipe-capabilities.md)（审批是一种能力）、[mcp-seam.md](mcp-seam.md)、
+[memory.md](memory.md)（"名字便宜、正文贵"的索引思路）。
+
+## 1. 决定 1：规则只做 allow/deny，`ask` 交回档位
+
+| 谁 | 回答什么问题 |
+|---|---|
+| **规则**（`.cubus/permissions.json`） | "这条调用我**明确知道**该怎么办吗？" |
+| **档位**（`--approval ask|allow|deny` + prompter） | "不知道的时候默认怎么处理、**要不要问人**？" |
+
+规则命中 `allow`/`deny` → 直接给结论，**不打扰人**；命中 `ask` 或**没有任何规则命中** → 交给档位。
+
+这样"规则"是**减少打扰**的手段，而不是另一套权限系统：没有规则文件时行为与从前逐字一致。
+
+## 2. 决定 2：文件顺序即优先级，首个命中生效
+
+```json
+{
+  "version": 1,
+  "rules": [
+    { "tool": "bash", "decision": "deny", "reason": "这个仓库禁止直接跑 shell，请用编辑工具" },
+    { "tool": "read_*", "decision": "allow", "reason": "读操作不需要打扰人" },
+    { "tool": "bash", "args": { "contains": ["pnpm run check"] }, "decision": "allow" }
+  ]
+}
+```
+
+- `tool`：精确名或通配（`*`、`read_*`、`write_?ile`）；**锚定整名**，所以 `read` 不会意外匹配 `read_file`；
+- `args`（可选）：对 `JSON.stringify(args)` 做 `contains`（全部片段都要出现）与 `regex`（都要满足）；
+- **首个命中生效**（与 .gitignore 同一心智模型），不做"deny 自动优先"的隐式排序 ——
+  那会让"我把 deny 写在后面"变成陷阱；想让它优先，就写在前面。
+
+## 3. 决定 3：拼错就报错，绝不静默降级
+
+权限配置是最不该"猜"的地方：把 `deny` 拼成 `denny` 却静默退回默认行为，会让人**以为禁掉了其实没有**。所以：
+
+- 未知决策值、缺 `tool`、`args` 类型不对、非法正则 → **解析失败并抛错**（带上文件路径与条目下标）；
+- 文件**不存在**与文件**写坏了**区别对待：不存在 = 空规则（正常），写坏 = 抛错。
+
+## 4. 决定 4：日志里记的是"哪份规则"，不是每次判决
+
+装配快照的 approval 能力里记：
+
+```jsonc
+{ "kind": "approval", "provider": "tool-approval",
+  "features": ["rules-path:.cubus/permissions.json", "rules-sha256:49f682e748f2", "rules:2"] }
+```
+
+理由：**判决过程是代码，输入已被记录**。有了"哪份规则（路径 + 条数 + 内容指纹）+ 这次的工具调用"，
+任何人都能重放出"当时该不该放行"。规则原文不进日志，是因为它**在仓库里、由版本控制管**，指纹变了就说明
+规则变了 —— 这与指令层不同（`AGENTS.md` 会被直接注入提示词、影响模型行为，所以那边记全文）。
+
+拒绝时理由会随工具结果进日志（`tool/result` 的文本就是
+`tool denied by approval policy: bash (这个仓库禁止直接跑 shell，请用编辑工具)`），所以"模型为什么没跑那条命令"当场可查。
+
+## 5. 实测（2026-10-14）
+
+工作区放上面的规则（bash deny + read_* allow），档位用 `--approval ask`，任务要求先 bash 再 read：
+
+```text
+快照里的审批能力：{"kind":"approval","provider":"tool-approval",
+                  "features":["rules-path:.cubus/permissions.json","rules-sha256:49f682e748f2","rules:2"]}
+工具 bash      → ok=false · tool denied by approval policy: bash (这个仓库禁止直接跑 shell，请用编辑工具)
+工具 read_file → ok=true  · # note.txt
+```
+
+模型不但被拦下，还**把理由转述给了用户**（"它被审批策略拦截了…所以我在这个仓库里不能直接用 bash"）。
+关键点：`read_file` 是**规则放行**的 —— 档位是 `ask`，但规则命中 allow，所以**没有打扰人**。
+
+## 6. 非目标
+
+- **不是沙箱**：规则只决定"要不要执行"，不限制执行**之后**能碰到什么（那是 S5.2 的 OS 沙箱）；
+- **不做细粒度参数策略语言**：只有 `contains`/`regex` 两种参数匹配，够用为止；
+- **不做规则热更新**：规则在装配时读一次、进快照；改了规则要重启/新会话（这样"哪份规则"才确定）。

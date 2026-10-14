@@ -89,7 +89,15 @@ function summarize(event) {
         mcp +
         instructionText +
         memoryText +
-        ' · 能力 ' + m.capabilities.map(c => c.kind + ':' + c.provider).join(', ')
+        ' · 能力 ' + m.capabilities.map(c => c.kind + ':' + c.provider).join(', ') +
+        (function () {
+          // 权限规则（S5.1）：规则条数写在 approval 能力的 features 里
+          const approval = m.capabilities.find(c => c.kind === 'approval')
+          const count = approval && approval.features
+            ? approval.features.filter(f => f.indexOf('rules:') === 0)[0]
+            : undefined
+          return count ? ' · ' + count.replace('rules:', '权限规则 ') + ' 条' : ''
+        })()
     }
     case 'context/compacted':
       // 压缩边界（S3.3）：历史被摘要替代、之后的消息逐字保留 —— 原事件一条没少。

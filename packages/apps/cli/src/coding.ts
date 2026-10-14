@@ -22,7 +22,12 @@ import {
 import { cubusCodingAgentRecipe } from '@cubus/recipe-cubus-coding-agent'
 import { SessionRuntime } from '@cubus/sdk'
 import type { SessionEvent } from '@cubus/session'
-import { withToolApprovalHost } from '@cubus/tool-approval'
+import {
+  createRulesToolApproval,
+  loadPermissionRules,
+  PERMISSION_RULES_RELATIVE_PATH,
+  withToolApprovalHost,
+} from '@cubus/tool-approval'
 import { LocalSubprocess } from '@cubus/tools'
 import { createCliToolApproval } from './approval.ts'
 import type { CliApprovalMode, ToolApprovalPrompter } from './approval.ts'
@@ -300,7 +305,13 @@ export async function runCodingCommand(
   if (approvalProfile !== 'ask' && approvalProfile !== 'allow' && approvalProfile !== 'deny') {
     throw new CliUsageError('unsupported approval profile: ' + approvalProfile)
   }
-  const approval = createCliToolApproval(approvalProfile, dependencies.approvalPrompter)
+  const approvalProfileService = createCliToolApproval(approvalProfile, dependencies.approvalPrompter)
+  // 权限规则（S5.1）：工作区 .cubus/permissions.json 命中就直接给结论，没命中/ask 交回档位
+  const permissionRules = await loadPermissionRules({
+    readText: path => readFile(path, 'utf8'),
+    path: join(workspace, PERMISSION_RULES_RELATIVE_PATH),
+  })
+  const approval = createRulesToolApproval({ rules: permissionRules.file.rules, fallback: approvalProfileService })
   // 有效预算：manifest 默认与 app 覆盖逐字段合并（app 优先）；两者都没有则不挂预算插件。
   const appBudget: BudgetLimits = {
     ...(options.maxSteps === undefined ? {} : { maxSteps: options.maxSteps }),
@@ -340,6 +351,11 @@ export async function runCodingCommand(
         ...(dependencies.credentials === undefined ? {} : { credentials: dependencies.credentials }),
       }),
       approval,
+      {
+        path: PERMISSION_RULES_RELATIVE_PATH,
+        count: permissionRules.file.rules.length,
+        sha256: permissionRules.sha256,
+      },
     ),
     recipe: withMemory(withInstructions(compactionRecipe), {
       store: memoryStore,

@@ -224,6 +224,9 @@ importers:
       '@cubus/llm-deepseek':
         specifier: workspace:*
         version: link:../../providers/llm-deepseek
+      '@cubus/memory':
+        specifier: workspace:*
+        version: link:../../policies/memory
       '@cubus/recipe-cubus-coding-agent':
         specifier: workspace:*
         version: link:../../recipes/cubus-coding-agent

@@ -22,7 +22,8 @@
     "cubus": "node --import tsx/esm packages/apps/cli/src/main.ts",
     "demo:live": "pnpm --filter @cubus/cli run demo:live",
     "mcp:tokens": "pnpm --filter @cubus/cli run mcp:tokens",
-    "eval:retention": "pnpm --filter @cubus/evals run eval:retention"
+    "eval:retention": "pnpm --filter @cubus/evals run eval:retention",
+    "eval:recall": "pnpm --filter @cubus/evals run eval:recall"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -13,7 +13,8 @@
     "test": "vitest run",
     "eval:real": "node --import tsx/esm src/run.ts",
     "eval:golden": "node --import tsx/esm src/golden.ts",
-    "eval:retention": "node --import tsx/esm src/retention.ts"
+    "eval:retention": "node --import tsx/esm src/retention.ts",
+    "eval:recall": "node --import tsx/esm src/recall.ts"
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
@@ -24,6 +25,7 @@
     "@cubus/host-local": "workspace:*",
     "@cubus/llm": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",
+    "@cubus/memory": "workspace:*",
     "@cubus/recipe-cubus-coding-agent": "workspace:*",
     "@cubus/recipe-reference-agent": "workspace:*",
     "@cubus/recipe-repair-eval": "workspace:*",

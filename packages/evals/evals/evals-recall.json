@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-14T02:08:56.349Z",
+  "model": "deepseek-chat",
+  "rounds": 1,
+  "facts": 6,
+  "transient": 2,
+  "recallRate": 100,
+  "restraintRate": 100,
+  "recallCalls": 1,
+  "memoryEntries": 6
+}

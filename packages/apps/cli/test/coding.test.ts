@@ -140,6 +140,7 @@ test('runs the formal Coding Agent Recipe against a trusted workspace and preser
     'edit_file',
     'read_file',
     'read_session_log',
+    'read_skill',
     'recall_memory',
     'remember_memory',
     'write_file',

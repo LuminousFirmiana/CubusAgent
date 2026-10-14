@@ -1,7 +1,10 @@
 import type { AgentRecipe } from '@cubus/agent-recipe'
 import type { Context } from '@cubus/cordis'
+import type { SkillCatalog } from './catalog.ts'
 import { renderSkillIndex } from './load.ts'
 import type { SkillIndexEntry } from './load.ts'
+import { READ_SKILL_TOOL } from './catalog.ts'
+import { createReadSkillTool } from './tools.ts'
 
 /** 技能索引在系统提示里的位置：角色 0 → 用户 100 → 项目 200 → 记忆 300 → **技能 400**。 */
 export const SKILL_INDEX_ORDER = 400
@@ -15,6 +18,8 @@ export interface SkillsMountOptions {
 export interface SkillsPluginConfig {
   /** 已解析的技能索引（app 读完目录后传进来 —— 用户级技能在工作区之外）。 */
   readonly skills: readonly SkillIndexEntry[]
+  /** 技能目录（提供时挂载 `read_skill`：模型按需读正文与附件）。 */
+  readonly catalog?: SkillCatalog
 }
 
 /**
@@ -25,8 +30,10 @@ export interface SkillsPluginConfig {
  */
 export const skillsPlugin = {
   name: 'skills',
-  inject: ['systemPrompt'],
+  inject: ['systemPrompt', 'tools'],
   apply(ctx: Context, config: SkillsPluginConfig) {
+    // 有 catalog 才挂工具：没有正文可读时，声明一个只会报错的工具是噪声
+    if (config.catalog !== undefined) ctx.tools.register(createReadSkillTool(config.catalog))
     const index = renderSkillIndex(config.skills)
     if (index === undefined) return
     ctx.systemPrompt.register({ id: 'skills.index', order: SKILL_INDEX_ORDER, text: index })
@@ -50,8 +57,12 @@ export function withSkills(
   config: SkillsPluginConfig,
 ): AgentRecipe<SkillsMountOptions> {
   const inner = recipe as AgentRecipe<object>
+  // 扩声明：提供 catalog 时 `read_skill` 会被注册，声明面必须同时列出它
+  const declared = config.catalog === undefined
+    ? recipe.manifest.tools
+    : [...new Set([...recipe.manifest.tools, READ_SKILL_TOOL])].sort()
   return {
-    manifest: recipe.manifest,
+    manifest: { ...recipe.manifest, tools: declared },
     async mount(ctx: Context, options: SkillsMountOptions) {
       await inner.mount(ctx, options)
       await ctx.plugin(skillsPlugin, config)

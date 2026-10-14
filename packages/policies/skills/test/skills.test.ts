@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { Context } from '@cubus/cordis'
 import { systemPromptPlugin } from '@cubus/system-prompt'
+import { toolRegistryPlugin } from '@cubus/tool-registry'
 import {
   loadSkills,
   parseSkillFrontmatter,
@@ -41,6 +42,10 @@ function fakeIO(files: Record<string, string>): SkillFileIO {
     },
     async isDirectory(path) {
       return dirs.has(path)
+    },
+    // 假文件系统里没有符号链接：realpath 原样返回（符号链接逃逸由单测单独构造）
+    async realpath(path) {
+      return path
     },
   }
 }
@@ -148,6 +153,7 @@ test('withSkills registers the index at order 400 and stays silent without skill
   const loaded = await loadSkills({ io, roots: [{ source: 'user', dir: 'skills' }] })
   const ctx = new Context()
   await ctx.plugin(systemPromptPlugin)
+  await ctx.plugin(toolRegistryPlugin)
   const decorated = withSkills({ manifest: fakeManifest(), mount() {} }, { skills: loaded.skills })
 
   await decorated.mount(ctx, { skills: loaded.skills, skillNotices: loaded.notices })
@@ -158,6 +164,7 @@ test('withSkills registers the index at order 400 and stays silent without skill
 
   const empty = new Context()
   await empty.plugin(systemPromptPlugin)
+  await empty.plugin(toolRegistryPlugin)
   await withSkills({ manifest: fakeManifest(), mount() {} }, { skills: [] }).mount(empty, {})
   expect(empty.systemPrompt.list()).toEqual([])
 })

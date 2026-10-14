@@ -11,6 +11,7 @@ import type { LlmAdapter } from '@cubus/llm'
 import { withContextCompaction } from '@cubus/context-compaction'
 import {
   loadSkills,
+  SkillCatalog,
   nodeSkillIO,
   PROJECT_SKILLS_DIRNAME,
   USER_SKILLS_DIRNAME,
@@ -363,6 +364,17 @@ export async function runCodingCommand(
     ],
   })
 
+  // 技能目录（S4b.3）：read_skill 要用它按需读正文与附件
+  const skillCatalog = new SkillCatalog({
+    skills: loadedSkills.skills,
+    bodies: loadedSkills.bodies,
+    roots: [
+      { source: 'user', dir: join(homedir(), USER_SKILLS_DIRNAME) },
+      { source: 'project', dir: join(workspace, PROJECT_SKILLS_DIRNAME) },
+    ],
+    io: nodeSkillIO(),
+  })
+
   // 记忆（S4.3）：store 由 app 造（本机路径在工作区之外），插件只渲染索引并提供服务
   const memoryStore = new MemoryStore({
     path: options.memoryPath ?? join(homedir(), '.cubus', 'memory', 'memory.jsonl'),
@@ -390,7 +402,7 @@ export async function runCodingCommand(
     recipe: withSkills(withMemory(withInstructions(compactionRecipe), {
       store: memoryStore,
       indexLimit: DEFAULT_MEMORY_INDEX_LIMIT,
-    }), { skills: loadedSkills.skills }),
+    }), { skills: loadedSkills.skills, catalog: skillCatalog }),
     recipeOptions: {
       instructions: loadedInstructions.tiers,
       instructionNotices: loadedInstructions.notices,

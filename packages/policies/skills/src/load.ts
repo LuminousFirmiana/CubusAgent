@@ -30,6 +30,8 @@ export interface SkillFileIO {
   readonly readDir: (path: string) => Promise<readonly string[]>
   /** 是否是目录（用于区分附件与子目录）。 */
   readonly isDirectory: (path: string) => Promise<boolean>
+  /** 真实路径（用于附件读取的符号链接逃逸检查）。 */
+  readonly realpath: (path: string) => Promise<string>
 }
 
 export interface SkillRoot {
@@ -240,6 +242,15 @@ export function nodeSkillIO(): SkillFileIO {
         return (await stat(path)).isDirectory()
       } catch {
         return false
+      }
+    },
+    async realpath(path) {
+      const { realpath } = await import('node:fs/promises')
+      try {
+        return await realpath(path)
+      } catch {
+        // 不存在就退回原路径：语法层已经拦过绝对路径与 .. ，这里只是再加一道真实路径检查
+        return path
       }
     },
   }

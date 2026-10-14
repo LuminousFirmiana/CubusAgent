@@ -19,4 +19,16 @@ export type {
   SkillRoot,
 } from './load.ts'
 export { SKILL_INDEX_ORDER, skillsPlugin, withSkills } from './recipe.ts'
+export {
+  capSkillText,
+  isInside,
+  normalizeRelative,
+  READ_SKILL_MAX_CHARS,
+  READ_SKILL_TOOL,
+  SkillCatalog,
+  SkillNotFoundError,
+  SkillPathError,
+} from './catalog.ts'
+export type { SkillCatalogOptions, SkillReadResult } from './catalog.ts'
+export { createReadSkillTool } from './tools.ts'
 export type { SkillsMountOptions, SkillsPluginConfig } from './recipe.ts'

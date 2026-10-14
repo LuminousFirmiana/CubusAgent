@@ -21,6 +21,7 @@ import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
 import { DEFAULT_MEMORY_INDEX_LIMIT, MemoryStore, nodeMemoryIO, withMemory } from '@cubus/memory'
 import {
   loadSkills,
+  SkillCatalog,
   nodeSkillIO,
   PROJECT_SKILLS_DIRNAME,
   USER_SKILLS_DIRNAME,
@@ -392,7 +393,17 @@ async function main(args: readonly string[]): Promise<number> {
   const memoryStore = new MemoryStore({ path: options.memoryPath, io: nodeMemoryIO() })
   const memoryEntries = await memoryStore.recent(DEFAULT_MEMORY_INDEX_LIMIT)
   const memoriedRecipe = withMemory(instructedRecipe, { store: memoryStore, indexLimit: DEFAULT_MEMORY_INDEX_LIMIT })
-  const recipe = withSkills(memoriedRecipe, { skills: loadedSkills.skills })
+  // 技能目录（S4b.3）：read_skill 要用它按需读正文与附件
+  const skillCatalog = new SkillCatalog({
+    skills: loadedSkills.skills,
+    bodies: loadedSkills.bodies,
+    roots: [
+      { source: 'user', dir: join(homedir(), USER_SKILLS_DIRNAME) },
+      { source: 'project', dir: join(workspace, PROJECT_SKILLS_DIRNAME) },
+    ],
+    io: nodeSkillIO(),
+  })
+  const recipe = withSkills(memoriedRecipe, { skills: loadedSkills.skills, catalog: skillCatalog })
 
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,

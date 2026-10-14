@@ -138,6 +138,8 @@ test('runs the formal Coding Agent Recipe against a trusted workspace and preser
     'edit_file',
     'read_file',
     'read_session_log',
+    'recall_memory',
+    'remember_memory',
     'write_file',
   ])
   expect(events.find(event => event.type === 'user/message')?.content[0]?.text).toBe('Update the note.')

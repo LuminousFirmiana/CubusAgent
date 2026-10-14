@@ -15,3 +15,11 @@ export type {
 } from './store.ts'
 export { MEMORY_INDEX_ORDER, memoryPlugin, withMemory } from './recipe.ts'
 export type { MemoryMountOptions, MemoryPluginConfig, MemorySnapshotFacts } from './recipe.ts'
+export {
+  createRecallMemoryTool,
+  createRememberMemoryTool,
+  RECALL_MAX_CHARS,
+  RECALL_MAX_ENTRIES,
+  RECALL_MEMORY_TOOL,
+  REMEMBER_MEMORY_TOOL,
+} from './tools.ts'

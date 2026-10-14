@@ -2,6 +2,7 @@ import type { AgentRecipe } from '@cubus/agent-recipe'
 import type { Context } from '@cubus/cordis'
 import { renderMemoryIndex } from './store.ts'
 import type { MemoryStore } from './store.ts'
+import { createRecallMemoryTool, createRememberMemoryTool, RECALL_MEMORY_TOOL, REMEMBER_MEMORY_TOOL } from './tools.ts'
 
 /** 记忆索引在系统提示里的位置：角色 0 → 用户 100 → 项目 200 → **记忆 300**。 */
 export const MEMORY_INDEX_ORDER = 300
@@ -39,10 +40,13 @@ export interface MemoryPluginConfig {
  */
 export const memoryPlugin = {
   name: 'memory',
-  inject: ['systemPrompt'],
+  inject: ['systemPrompt', 'tools'],
   async apply(ctx: Context, config: MemoryPluginConfig) {
     const { entries, brokenLines } = await config.store.list()
     ctx.provide('memoryStore', config.store)
+    // 工具与索引一起挂：模型先看索引知道"有什么"，再用 recall 取正文
+    ctx.tools.register(createRecallMemoryTool(config.store))
+    ctx.tools.register(createRememberMemoryTool(config.store))
     const index = renderMemoryIndex(entries.slice(-(config.indexLimit ?? 12)).reverse(), {
       limit: config.indexLimit ?? 12,
       ...(config.maxLineChars === undefined ? {} : { maxLineChars: config.maxLineChars }),
@@ -72,8 +76,10 @@ export function withMemory(
   config: MemoryPluginConfig,
 ): AgentRecipe<MemoryMountOptions> {
   const inner = recipe as AgentRecipe<object>
+  // 扩声明：工具注册进注册表，声明面必须同时列出它们（否则装配期校验拦下）
+  const declared = [...new Set([...recipe.manifest.tools, RECALL_MEMORY_TOOL, REMEMBER_MEMORY_TOOL])].sort()
   return {
-    manifest: recipe.manifest,
+    manifest: { ...recipe.manifest, tools: declared },
     async mount(ctx: Context, options: MemoryMountOptions) {
       await inner.mount(ctx, options)
       await ctx.plugin(memoryPlugin, config)

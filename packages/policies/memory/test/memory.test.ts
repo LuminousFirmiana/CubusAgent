@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { Context } from '@cubus/cordis'
 import { systemPromptPlugin } from '@cubus/system-prompt'
+import { toolRegistryPlugin } from '@cubus/tool-registry'
 import {
   MemoryStore,
   MEMORY_INDEX_ORDER,
@@ -120,6 +121,7 @@ test('withMemory provides the store and injects the index; empty memory stays si
   await store.append({ text: 'order 默认超时 2500ms' })
   const ctx = new Context()
   await ctx.plugin(systemPromptPlugin)
+  await ctx.plugin(toolRegistryPlugin)
   const decorated = withMemory({ manifest: fakeManifest(), mount() {} }, { store })
 
   await decorated.mount(ctx, { memory: { path: '/mem/memory.jsonl', entries: 1, indexLimit: 12 } })
@@ -133,6 +135,7 @@ test('withMemory provides the store and injects the index; empty memory stays si
   // 空记忆：不注册片段（提示词里不该出现空标题）
   const empty = new Context()
   await empty.plugin(systemPromptPlugin)
+  await empty.plugin(toolRegistryPlugin)
   await withMemory({ manifest: fakeManifest(), mount() {} }, {
     store: new MemoryStore({ path: '/mem/empty.jsonl', io, now: fixedClock }),
   }).mount(empty, {})

@@ -43,7 +43,15 @@ function toolCard(event) {
   div.dataset.callId = event.id
   const name = document.createElement('div')
   name.className = 'name'
-  name.textContent = event.name
+  // 记忆类工具加一句人话：模型在"回忆/记下"什么，一眼看懂（S7.2）
+  const toolNote = event.name === 'recall_memory'
+    ? '（按需读回记忆正文）'
+    : event.name === 'remember_memory'
+      ? '（写入长期记忆）'
+      : event.name === 'read_session_log'
+        ? '（读回被压缩的原文）'
+        : ''
+  name.textContent = event.name + toolNote
   const args = document.createElement('pre')
   args.textContent = JSON.stringify(event.args)
   const out = document.createElement('pre')
@@ -64,9 +72,23 @@ function summarize(event) {
           ' · ' + (m.config.mcp.mode === 'eager' ? '全量加载' : '按需检索') +
           (m.config.mcp.deferredTools > 0 ? '（延迟 ' + m.config.mcp.deferredTools + ' 个）' : '')
         : ''
+      // 指令分层（S4.2）：全文也在快照里，这里只显示"带了哪几层、多少字符、有没有被截"
+      const instructions = m.config && Array.isArray(m.config.instructions) ? m.config.instructions : []
+      const instructionText = instructions.length === 0
+        ? ' · 指令 无'
+        : ' · 指令 ' + instructions.map(tier =>
+            (tier.source === 'user' ? '用户' : '项目') + ' ' + String(tier.chars) + ' 字' +
+            (tier.truncated ? '（已截断）' : '')).join(' + ')
+      // 跨会话记忆（S4.3）：只注入了索引，正文按需检索
+      const memory = m.config && m.config.memory ? m.config.memory : undefined
+      const memoryText = memory === undefined
+        ? ''
+        : ' · 记忆 ' + String(memory.entries) + ' 条索引' + (memory.entries === 0 ? '（空）' : '')
       return '装配：' + m.recipe.id + '@' + m.recipe.version +
         ' · 权限 ' + m.permission.profile + '(' + m.permission.source + ')' +
         mcp +
+        instructionText +
+        memoryText +
         ' · 能力 ' + m.capabilities.map(c => c.kind + ':' + c.provider).join(', ')
     }
     case 'context/compacted':

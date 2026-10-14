@@ -15,7 +15,8 @@
     "eval:golden": "node --import tsx/esm src/golden.ts",
     "eval:retention": "node --import tsx/esm src/retention.ts",
     "eval:recall": "node --import tsx/esm src/recall.ts",
-    "eval:approvals": "node --import tsx/esm src/approvals.ts"
+    "eval:approvals": "node --import tsx/esm src/approvals.ts",
+    "eval:skills": "node --import tsx/esm src/skills-eval.ts"
   },
   "dependencies": {
     "@cubus/agent-recipe": "workspace:*",
@@ -33,6 +34,7 @@
     "@cubus/sdk": "workspace:*",
     "@cubus/session": "workspace:*",
     "@cubus/session-jsonl": "workspace:*",
+    "@cubus/skills": "workspace:*",
     "@cubus/tool-approval": "workspace:*",
     "@cubus/tools": "workspace:*"
   }

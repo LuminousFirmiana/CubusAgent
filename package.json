@@ -25,7 +25,8 @@
     "eval:retention": "pnpm --filter @cubus/evals run eval:retention",
     "eval:recall": "pnpm --filter @cubus/evals run eval:recall",
     "stats": "pnpm --filter @cubus/project-stats run stats --",
-    "eval:approvals": "pnpm --filter @cubus/evals run eval:approvals"
+    "eval:approvals": "pnpm --filter @cubus/evals run eval:approvals",
+    "eval:skills": "pnpm --filter @cubus/evals run eval:skills"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

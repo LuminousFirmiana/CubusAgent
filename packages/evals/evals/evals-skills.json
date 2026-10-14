@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-14T04:55:34.877Z",
+  "model": "deepseek-chat",
+  "withoutSkill": {
+    "score": 1,
+    "steps": 11,
+    "toolCalls": 17,
+    "tokens": 38171
+  },
+  "withSkill": {
+    "score": 3,
+    "steps": 6,
+    "toolCalls": 9,
+    "tokens": 12643
+  },
+  "checks": {
+    "preflight": "生成 .preflight-ok",
+    "version": "VERSION == v1.5.0-internal",
+    "changelog": "CHANGELOG 含 ## v1.5.0-internal"
+  }
+}

@@ -251,6 +251,9 @@ importers:
       '@cubus/session-jsonl':
         specifier: workspace:*
         version: link:../../providers/session-jsonl
+      '@cubus/skills':
+        specifier: workspace:*
+        version: link:../../policies/skills
       '@cubus/tool-approval':
         specifier: workspace:*
         version: link:../../policies/tool-approval

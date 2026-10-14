@@ -137,6 +137,17 @@ export function collectProjectStats(repositoryRoot: string): ProjectStats {
     })
   }
 
+  const skills = readJson(join(packagesRoot, 'evals', 'evals', 'evals-skills.json'))
+  if (skills !== undefined) {
+    const without = skills['withoutSkill'] as { score?: number; tokens?: number } | undefined
+    const withSkill = skills['withSkill'] as { score?: number; tokens?: number } | undefined
+    evals.push({
+      name: '技能有效性',
+      summary: '同一发版任务：无技能 **' + String(without?.score ?? 0) + '/3**（' + String(without?.tokens ?? 0) +
+        ' token）→ 有技能 **' + String(withSkill?.score ?? 0) + '/3**（' + String(withSkill?.tokens ?? 0) + ' token）',
+    })
+  }
+
   return {
     packages,
     eventKinds: countUnionMembers(sessionTypes),

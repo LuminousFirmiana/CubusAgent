@@ -50,6 +50,7 @@
 | C2 sandbox seam + 本地 provider | 完成 | 新包 @cubus/sandbox（features 闭集 + UnconfinedSandbox）；本地 Host 声明 sandbox 能力；recipe 把 sandbox 声明为可选并记录进快照；CLI 运行前打印无隔离警告；SDK 暴露 mountSnapshot |
 | E1 事件流协议 ADR | 完成 | docs/design/workbench-protocol.md：SSE（非 WebSocket）的选型理由、端点与状态码契约、id + Last-Event-ID 的精确续传（两次读 + 缓冲）、控制帧易失性与“日志是唯一事实源”、v1 只监听回环且不做鉴权的边界 |
 | E2 事件流服务端 | 完成 | 续传测试：事件帧 id 连续且从 0 起，带 Last-Event-ID 重连后收到 [resumeFrom+1 .. N-1]（不丢不重） |
+| **S6.1 多 Agent 设计** | 完成（Draft，待评审） | docs/design/subagents.md：①前提与参考一致（上下文污染 + 分支不隔离空间），**上下文隔离 + 文件隔离**同时要；②**逐条适配我们的 runtime**（对照表）：Agent 同构→`spawn_agent`/`wait_agent` 两工具；Fork 式继承上下文**推迟**（与"模型可见⟺已记录"冲突，要先设计继承物怎么进子日志）；RunToCompletion ✓；子 = **独立 SessionRuntime + 独立会话日志**（我们原生形态）；结构化结果 = 子进程 stdout 末行 JSON；工具收窄 = **depth 上限 + 定义文件工具白名单 + 权限规则照旧**；worktree 隔离 + **cwd 设在子进程上**（避开参考里"切进程 cwd 会撞并发"的坑）；slug 严格校验；**退出时先提交到子分支**、删 worktree 必须显式 `discard`；只做 **process** 后端；**第一版星型**（Team 留后续）。③结果契约：`{ok,id,sessionId,summary,worktree{path,branch,commit},changedFiles,stats,exitCode}` —— **父日志只记结论与指针，不复制子的过程**（双份事实会打架）；失败保留 worktree 并标 `.failed`。④安全：子进程读同一份权限规则/指令/记忆/技能，档位由父传参；**docker 档暂不支持嵌套**（非目标）；每子独立预算（默认 20 步/200k token），**并发上限 2、超限拒绝**（fail-closed）。⑤生命周期表 + 非目标（Team/Fork/in-process/docker 嵌套/自动合并/分布式）+ 风险（成本、编排依赖父模型、孤儿 worktree 是已知债务）。⑥分解 S6.2（定义加载+worktree+runner）→ S6.3（三个工具+depth/并发）→ S6.4（串行 vs 并行评测 = 简历数字）。 |
 | **S5.4 `--sandbox docker` 开关** | 完成 | ①CLI `--sandbox` 与工作台配置键 `sandbox` 现在接受三档：`unconfined`（默认）／`seatbelt`（macOS 内核）／**`docker`（容器级隔离）**。选 docker 时**整个 Host 换成容器化 Host**（`createDockerAgentHost`：fs / subprocess / sandbox 三项能力全部落进会话级容器），不再是"本机跑命令"；乱值直接报错（`--sandbox must be unconfined, seatbelt or docker`）。②**真实验证**（本机 Docker 29.4.3、`node:22-slim` 镜像）：`--sandbox docker` 跑任务，容器内 `cat /etc/hostname` = `a99c99e66f57`（容器主机名）、`echo x > /root/should-fail.txt` = **Permission denied**（非 root + 只读 rootfs）、模型还自己补跑 `id`/`ls -ld /root` 确认原因；装配快照记 `sandbox: docker` + **`features:["fs-isolation","network-deny","pid-isolation","resource-limits"]`**（四项齐全，比 seatbelt 强一档），fs/subprocess 的 provider 也都是 `docker`。③测试：CLI 三档解析（含非法值报错）+ 工作台配置解析各加断言（不新增用例）；全量 **493**。④**简历"OS 沙箱/内核级隔离"现在两档都有真实证据**：本地 seatbelt（写隔离 + 断网，fail-closed）与容器（完整隔离 + 资源限额）。 |
 | **S4b.4 技能有效性评测** | 完成 | ①新评测 `pnpm run eval:skills`（`packages/evals/evals/src/skills-eval.ts`）：脚手架里放一套**只有技能才知道的**发版约定，同一个任务跑两档（**无技能 / 有技能**），**判分看产物**（preflight 标记 / VERSION / CHANGELOG 条目），不看模型自评。②**第一轮（约定可从仓库推断）**：两档都 **3/3** —— 模型自己推出了约定，但成本差 **~87%**（82,113 → 10,301 token）、步数 12 → 6。**结论：约定能被推断时，技能省的是"探索成本"**。③**第二轮（约定无法推断：版本号必须带 `-internal` 后缀）**：**无技能 1/3**（步 11 · 工具 17 · 38,171 token）→ **有技能 3/3**（步 6 · 工具 9 · 12,643 token）—— 正确率 1/3 → 3/3，成本 **−67%**，步数几乎减半。④两条记录都留在 `EVALS.md` 并写清区别（"能从仓库推断" vs "推断不出来"），结果进 `evals-skills.json`；`docs/stats.md` 采集器新增"技能有效性"一行。⑤**C 段（技能）收口**。测试：全量 **493**（评测是脚本，不计入测试数）。 |
 | **S4b.3 `read_skill` 工具** | 完成 | ①`SkillCatalog`（`@cubus/skills`）：`readBody(name)` 读正文（**剥掉 frontmatter** —— 元数据只服务索引，不该再占正文位置）、`readAttachment(name, file)` 读附件；**三层路径防护**：语法层（拒绝对路径与 `..`）、拼接层（必须在技能目录下）、**真实路径层**（`realpath` 之后再查一次，防符号链接逃逸）。②`createReadSkillTool`：`{name}` / `{name, file}`；**单次输出 ≤ 16k 字符**（超出明确标注，不静默丢）；找不到技能时**列出可用技能名**（模型能自我纠正）。③`withSkills` 现在**扩声明 + 挂载** `read_skill`（仅在提供 catalog 时；没有正文可读却声明一个只会报错的工具是噪声）。④两入口传入 catalog。⑤**实测**（真模型，项目技能 `release` + 1 个附件）：日志里四步 —— `read_skill {name:release}` ✓ 读正文、`read_skill {name:release,file:templates/CHANGELOG.md}` ✗（模型猜错文件名被拒）、`bash find …` 列出真实文件、`read_skill {…,file:templates/CHANGELOG-entry.md}` ✓ 拿到模板并**原样返回**；模型还主动说明了自我纠正过程。工具面变成 8 个：bash / edit_file / read_file / read_session_log / read_skill / recall_memory / remember_memory / write_file。⑥测试：技能包 +7（共 15；含路径逃逸三情形、符号链接、未知名字列可用项、输出上限、扩声明），全量 **493**。 |
@@ -82,3 +83,85 @@
 | **S1 产品身份** | 完成 | 从冻结版另起 `feat/coding-agent` 分支：新增 @cubus/recipe-cubus-coding-agent（产品 id `cubus-coding-agent@0.1.0`、自己的提示词、四工具、审批默认 `ask`），CLI 与工作台改为装配该产品——装配快照因此能回答"这次跑的是哪个产品"。产品包**只声明**（提示词/工具面/审批档/预算），装配逻辑仍来自通用工厂 @cubus/recipe-coding-agent：`repair-eval` 与产品共用同一工厂，不复制装配。docs/design/coding-agent-product.md 增 §7（产品身份与验收）与 §8（目标能力 S2–S6 及各自的复现方式：每步都必须能用日志或评测出结论）。 |
 | 地基债第三批 | 完成 | ①**取消不再留孤儿**：容器内命令改由 `setsid -w` 起独立进程组并记录组号，取消/超时后按组 `kill -s TERM -- -$p` -> KILL；`docker run --init` 让被杀孤儿被回收。真容器集成测试断言"取消后容器内无存活进程且容器仍可用"。②**镜像升级流程**：DEFAULT_DOCKER_IMAGE 的升级四步写进 sandbox ADR，并新增镜像预检集成测试（核对 sh/setsid/cat/rm/sleep 与全部边界）——镜像换代让假设失效时立刻红。③**容器上限**：Host 新增 maxContainers（默认 4）与 DockerContainerLimitError，超限快速失败、释放后名额回收（集成测试覆盖） |
 | 地基债第二批 | 完成 | ①会话归属：ToolExecutionContext 加可选 sessionId（seam additive），循环从 runtime 插件的 session 描述符透传，审批项带 sessionId 并显示在工作台卡片上（实测与真实会话 id 一致）。②评测跑飞的可见性：预算本就由 recipe manifest 声明并被评测继承（40 步/60 工具/10 分钟/200k token，已核对真实评测日志的 mount.budget），缺的是"被拦住"与"答错"没有区分 -> EvalTaskOutcome 加 budgetTripped，控制台打 CANCELLED，EVALS.md 标 ⏱ 并在表头统计，机器可读结果保留该字段。③SDK 公开面补预算类型（BudgetState/BudgetTripReason/BudgetLimits），消费方不必再去 import 策略包 |
+| P1 保留选择权 | 完成 | ①@cubus/sdk 与 @cubus/agent-recipe 的入口改成**显式导出**（不再 export *）；②新增公开面测试（public-api.test.ts：只用包名导入，跑通建产品->运行->回放->指标->归档，并自检没有相对导入）；③docs/design/versioning.md 把四个版本号（会话日志/契约/归档/包）的规则与强制手段收成一处；④新支撑包 @cubus/architecture-guard：依赖方向（内核不依赖产品/应用）+ 无循环 + 公开面无 export * + 无跨包相对导入，且自带"守卫非空转"的自证测试 |
+| F3 日志归档 | 完成 | @cubus/sdk 新增 archive.ts：导出成**目录**（manifest.json + 原样 JSONL）+ 逐文件 sha256；导入前校验哈希与格式版本（过新拒绝）、id 冲突默认跳过（--rename 改名）；文件白名单写死（session.jsonl / session.meta.json）杜绝路径穿越；清理默认 **dry-run**（--yes 才删，删前列绝对路径），崩溃现场默认保留（判据是 planSettlement，不是猜字符串）。CLI：pnpm run archive -- --export|--import|--prune。实测：真日志导出 -> 移走原件 -> 导入 -> 指标逐项一致 -> 恢复并继续跑（真模型 17957 tokens）；顺带演示了装配不一致时恢复被拒（allow -> deny） |
+| F4b 时间戳与循环级重试 | 完成 | 词汇：turn/start 与 turn/end 加可选 at（ISO）；新增 request/retry 事件；SESSION_FORMAT_VERSION 2 -> 3（新增事件类型算一次递增）。重试改为循环拥有（LoopConfig.retry + SDK options.retry）：每次重试写进日志，CLI/工作台/评测不再在适配器外套 withLlmRetry（避免双重拥有者）。指标补齐：重试率（重试/模型请求）与回合耗时（只算两端有时间戳的正常闭合回合，恢复结算的不计） |
+| F4 观测指标 | 完成（5/6，费用待价目表） | @cubus/sdk 新增 metrics.ts（纯函数：回合/取消/恢复结算/步数/工具成功失败/审批拦截/按工具名/token 含缓存；分母为 0 的比率是 null 而不是 0）；pnpm run metrics -- --sessions <dir> [--json]（复用工作台配置里的 sessionsDir）；评测分数表新增 token 列（分数与成本同表）。真实数字：E5 的 ask 会话 12 次调用 / 5 次审批拦截 = 41.7% / 16648 tokens（缓存 79.9%）；E6 崩溃会话显示恢复结算 1 次。算不出来的两项：耗时（日志无时间戳）与重试率（llm-retry 不写日志），都需词汇/接线变更，待确认 |
+| F1 配置与一键启动 | 完成（打包未做） | 新增 config-file.ts：~/.cubus/config.json（严格解析，拼错的键报错）；优先级 命令行 > 配置 > 默认；--init 生成模板（不覆盖已有，除非 --force）；--config/$CUBUS_CONFIG/XDG/HOME 四种定位；入口不再强制传参；README.md 面向上手（安全模型、日志位置、恢复、配置、已知边界）。实测：全新 HOME + 全新工作区下 --init -> 只跑 pnpm run workbench -> 真模型跑完一轮。**打包/分发（真正的一键安装）未做**：属发布物，按 AGENTS.md 要先讨论交付目标与回滚 |
+| E6 恢复视图 | 完成 | 未打开的会话事件流退化为磁盘回放（末尾一行说明）；详情在会话未打开时不再假装有内存态；UI 给 needsSettlement 的会话加恢复按钮、把结算事件渲染成恢复补写、409 差异原样显示。实测：真模型跑到工具调用时 SIGKILL 服务 -> 重启看到 90 条历史与待恢复 -> 恢复产出三条结算事件 -> 同一会话继续跑完一轮 |
+| E5 审批交互 | 完成 | @cubus/tool-approval 新增 createInteractiveToolApproval：ask 档等待页面回答、**超时默认拒绝**（默认 120s，含排队时间）、全局 FIFO 排队（默认同时 8 项）+ 队列名次、事件订阅；工作台新增 GET /api/approvals 与 POST /api/approvals/:id，SSE 推 approval 控制帧；UI 审批卡片（允许/拒绝 + 超时提示）；CLI --approval ask 与 --approval-timeout |
+| 修复元数据泄漏 | 完成 | E5 实测发现真模型会去读 fixture.json/golden.json（参考修复与指纹！）；新增 copyFixtureRepo 统一复制路径并排除评分元数据，run.ts / golden.ts / 无 key 门禁 / harness 测试全部改用它，并有断言钉死工作区里没有这两个文件 |
+| E4 差异视图 | 完成 | 新增 GET /api/sessions/:id/changes：运行前记 Git 基线、请求时按需算报告（不缓存报告本身），复用 A1 的 GitCliWorkspaceProvider；无基线/无工作区时 409 并说明原因；UI 运行结束后列出改动；手工比对与 CLI 同格式 |
+| E3 真模型入口 + UI | 完成 | main.ts：凭据租约 -> DeepSeek 适配器、显式审批档（无默认）、会话目录必须在工作区外、只监听回环；ui/{index.html,app.js} 零构建单页：会话列表（待恢复/日志问题角标）+ 实时事件流（EventSource 自动续传）+ transcript 渲染 + token 用量 |
+| E1a 工作台服务端 | 完成 | 新包 @cubus/workbench：GET/POST /api/sessions、GET /api/sessions/:id（摘要+快照+预算+运行状态）、POST .../run（202 异步）、GET .../events（SSE，先回放再订阅）、POST .../resume、GET /api/concurrency；SDK 新增 listSessions/readSessionSummary/readSessionEvents（容错 JSONL）+ replay()/sessionsDir；错误语义化映射 400/404/409/500 |
+| D4b 评测集 30 任务 | 完成 | 夹具从 7 扩到 30（覆盖 boundary/logic/type-coercion/async/side-effect/error-handling/missing-branch 七类），suite 版本 1.1.0；套件清单与磁盘夹具集合由测试双向对齐；每个任务用真模型生成 golden |
+| D4a 行为指纹与门禁 | 完成 | fingerprint.ts：行为指纹（判分 / 事件序列 / 工具序列 / 工作区文件集，来自 A1 只读 Git 报告）+ compareFingerprints 四条规则；harness 把夹具副本变成真 git 仓库并产出指纹；eval:real 报告门禁结果并因回归退出非零；eval:golden 显式重算（打印 diff、拒绝从失败运行生成） |
+| D3b usage 与 token 预算 | 完成 | LlmUsage 进会话词汇（assistant/message.usage?，不进投影）；DeepSeek 适配器带 stream_options.include_usage 并解析末帧（含 cachedTokens）；Loop 落盘 usage；预算新增 maxTokens（读 usage 累计）；CLI 新增 --max-tokens 并打印 token 用量 |
+| D3 恢复与结算 | 完成 | 词汇：turn/end.settled?、step/end.settled?；core/session 新增 settle.ts（纯函数规划 + 结算事件）与 meta.ts（SESSION_FORMAT_VERSION=2、sidecar 解析规则）；SDK 写 session.meta.json 并提供 resume()：身份校验 + 结算；预算跨崩溃续算 |
+| D2 Eval Suite 制品化 | 完成 | fixtures/suites/repair-eval-v1.json 显式任务清单（含门禁档位）；loadSuite/validateSuite/resolveSuiteTasks；harness 入口校验 recipe 声明的套件已注册；评测结果写 EVALS.md + evals-latest.json（机器可读） |
+| D1 评测/恢复 ADR | 完成（Accepted） | docs/design/eval-suite-and-resume.md：Eval Suite 一等制品 + 行为指纹与回归门禁 + 恢复与结算规则表 + sidecar 格式版本 + usage 字段 |
+| C6 有界并发与队列 | 完成 | SDK 新增 ConcurrencyGate：跨会话并发上限（默认 4）+ FIFO 排队 + 等待超时（0 = 不排队）+ abort 出队；名额交接不经过空闲窗口；runtime.concurrency() 暴露名额与排队位置 |
+| C5 预算策略 | 完成 | 新包 @cubus/budget：观察日志事件计数、超限调用 loop.cancel()、不新增事件；manifest.budget 默认 + app 逐字段覆盖，生效值进装配快照；CLI 新增 --max-steps/--max-tool-calls/--max-duration 并打印用量 |
+| C4 Docker sandbox host | 完成 | 新包 @cubus/host-docker：会话级容器（--network none / 非 root / cap-drop ALL / no-new-privileges / 只读 rootfs + tmpfs / 内存·CPU·PID 上限 / 只挂工作区 / 无 docker.sock）；容器化 fs（docker cp）与 subprocess（docker exec）；镜像 pin digest 且 digest 进快照；Docker 不可用时集成测试显式 skip |
+| C3 credentials seam + 环境白名单 | 完成 | 新包 @cubus/credentials（引用 + 租约 + 白名单发放）；LocalSubprocess 由名字黑名单改为最小环境白名单；Host 声明 credentials 能力（只有名字进快照）；CLI 经租约取模型凭据；DeepSeekAdapter 改用 ES 私有字段（JSON.stringify 不再带出 apiKey） |
+| P4 Coding Agent profile | 完成（A 阶段收尾） | 下一步 P2：A1 Docker 沙箱入口（--sandbox docker + 预检）-> A2 打包分发（需先讨论交付目标/凭据/回滚）-> A3 CLI --resume -> A4 UI 日用化 |
+| P5 共享安全层 | 未开始 | Docker 沙箱 provider + 陌生仓库/无人值守边界，供所有 profile 复用 |
+| P6 Agent 工作台 | 未开始 | Web UI + 多 profile + 会话/任务/工具/审批/差异视图 |
+| P7 个人交付 | 未开始 | 单机安装 + 重启恢复 + 有界并发 + 备份/观测 + 可选 PR/通知 |
+
+**测试现状**：370 个测试全绿（pnpm run check 一键验证：typecheck + lint + test）。62 个测试文件、27 个测试包、28 个包，分支 `feat/coding-agent`（自 `Cubus-v1.0` 冻结版另起）。
+
+**参考实现审计（2026-08-24）**：DeepSeek Harness 已同步到 `dsh-v0.1.1-rc.2`，pi 已同步到 `a470b121b`，Kthena 新增于 `f5b8fd7bc`；Cordis 与 Claude Code reference 无远端更新。Cordis vendor 仍与上游 `8cc9e33` 对齐。审计发现的 request/header、reasoning passback 和同会话并发缺口均已在 S2.3 关闭。各项目的详细借鉴笔记与边界见本地 `references/README.md`。
+
+## 3. 五分钟接手地图（按顺序读）
+
+1. AGENTS.md —— 工程纪律（宪法、检查、TS 风格、锁文件、vendoring），人和 agent 都遵守；
+2. docs/handover.md —— 本文件；
+3. packages/core/session/src/types.ts —— 宪法第一页：会话日志词汇表（11 种事件 + 投影规则；session/mount 是装配快照，不进投影）；
+4. packages/core/agent-loop/src/loop.ts —— 循环驱动（turn/step 语义，约 200 行，必读）；
+5. packages/seams/llm/src/types.ts —— llm seam 的接口定义；
+6. docs/design/coding-agent-product.md —— Coding Agent 用户、信任边界与阶段验收；
+7. docs/design/recipe-capabilities.md —— B 阶段设计：recipe 声明面、能力协商、装配期校验（Accepted）；
+7b. docs/design/sandbox-seam.md —— C 阶段设计：沙箱与凭据能力、Docker provider 契约、拒绝测试清单（Accepted）；
+7d. docs/design/workbench-protocol.md —— E 阶段设计：工作台事件流协议（SSE、续传、鉴权边界）（Accepted）；
+7c. docs/design/eval-suite-and-resume.md —— D 阶段设计：Eval Suite 契约、行为指纹门禁、恢复与结算、格式版本（Accepted）；
+7e. docs/design/mcp-seam.md —— S2 设计：MCP 作为**工具来源**（非能力类型）、动态工具与"声明 = 注册"不变量的调和、三种暴露模式、可重建的上下文路径、测量方案（Draft，待评审）；
+7f. docs/design/context-compaction.md —— S3 设计：两层压缩（投影截断 + 会话摘要）、`context/compacted` 事件与投影规则、`beforeRequest` 钩子、信息保留评测（Draft，待评审）；
+7g. docs/design/memory.md —— S4 设计：指令三层与优先级、指令全文进装配快照、记忆用 append-only JSONL（索引注入 + `recall_memory` 按需取回）、`remember_memory` 与后台提炼、跨会话召回评测（Draft，待评审）；
+7h. docs/design/permission-rules.md —— S5.1 权限规则：规则只做 allow/deny（ask 交回档位）、文件顺序即优先级、拼错即报错、日志记"哪份规则"而非每次判决；
+7i. docs/design/skills.md —— S4b 设计：技能 = 目录 + SKILL.md（用户级/项目级，项目覆盖用户）、只注入索引、`read_skill` 按需读正文与附件（输出上限 + 路径限制）、日志记"当时有哪些技能"、（Draft，待评审）；
+7j. docs/design/subagents.md —— S6 设计：子 Agent = 独立进程 + 独立会话日志 + git worktree 隔离；spawn/wait 两工具、结果契约、depth/并发/预算限制（Draft，待评审）；
+8. docs/design/tool-cancellation.md —— Tool signal、进程终止与事实日志结算；
+9. packages/apps/cli/src/coding.ts —— 当前产品入口的校验、装配与结果输出；
+10. docs/roadmap.md —— 四条产品声明对应的阶段计划与验收证据清单。
+
+## 4. 架构一页图
+
+```
+底座层  @cubus/cordis       插件挂载、依赖注入、事件、作用域、可逆回卷
+宪法层  @cubus/session      SessionLog seam + 10 事件词汇表 + 消息/请求投影纯函数
+机制层  @cubus/agent-loop   通用 turn/step 循环、inbox、模型/工具取消、确定性回放
+装配层  @cubus/agent-recipe typed Host/Recipe 契约 + 单会话 Cordis 组合根
+接缝层  @cubus/llm          LlmAdapter 接口 + Scripted（假）+ DeepSeek（真）
+供应层  @cubus/session-jsonl append-only JSONL 持久化 + 末行截断恢复 + 落盘后实时订阅 + Cordis provider
+宿主层  @cubus/host-local   每会话独立模型实例 + 本地 JSONL 环境装配
+策略层  @cubus/tool-approval Host 提供审批 policy；工具 wrapper 紧贴副作用执行
+        @cubus/llm-retry    adapter wrapper；只重试尚未产出 chunk 的 typed 暂态错误
+能力层  @cubus/tools        可取消的 fs/subprocess + read/edit/write/bash（编码 profile 的候选能力）
+检查层  @cubus/git         只读工作区版本状态 seam；@cubus/git-cli 经 subprocess seam 实现
+产品层  @cubus/recipe-*     reference / coding / repair-eval；只选择 prompt、tools 与领域插件
+门面层  @cubus/sdk          JSON-RPC 2.0 + typed Host/Recipe 会话运行时 + session.cancel + session.subscribe
+应用层  @cubus/cli          参数/信任校验 + 产品装配 + Ctrl-C 结算 + headless 输出
+验证层  @cubus/evals        修复任务 harness；验证通用内核，不定义内核用途
+```
+
+三条宪法铁律（改它们 = 改架构，必须讨论）：
+
+1. 会话日志是唯一事实源；模型可见 = 已记录（任何进模型请求的内容都能从日志重建）；
+2. 工具只摸 fs/subprocess seam，不直接碰磁盘（沙箱后置的抵押品）；
+3. 新行为挂扩展点；改循环驱动本身要先讨论。
+
+## 5. 仓库布局与常用命令
+
+```
+vendor/cordis/                    冻结的 cordis 快照（改动必须记账 vendor/README.md）

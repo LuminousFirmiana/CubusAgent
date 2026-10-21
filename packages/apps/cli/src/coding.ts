@@ -6,6 +6,7 @@ import type { CredentialsProvider } from '@cubus/credentials'
 import type { GitChangeReport } from '@cubus/git'
 import type { BudgetLimits, MountSnapshot } from '@cubus/session'
 import { GitCliWorkspaceProvider } from '@cubus/git-cli'
+import { createDockerAgentHost } from '@cubus/host-docker'
 import { createLocalAgentHost } from '@cubus/host-local'
 import type { LlmAdapter } from '@cubus/llm'
 import { withContextCompaction } from '@cubus/context-compaction'
@@ -60,8 +61,8 @@ export interface CodingCommandOptions {
   memoryPath?: string
   /** 任务结束后做一次记忆提炼（S4.5）：那次模型调用走正常回合，因此进日志。 */
   extractMemory?: boolean
-  /** 沙箱档（S5.2）：unconfined（默认）或 seatbelt（macOS 内核沙箱，fail-closed）。 */
-  sandbox?: 'unconfined' | 'seatbelt'
+  /** 沙箱档：unconfined（默认）／seatbelt（macOS 内核）／docker（容器级隔离，真容器）。 */
+  sandbox?: 'unconfined' | 'seatbelt' | 'docker'
 }
 
 export interface CodingCommandDependencies {
@@ -156,7 +157,7 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
   let contextWindow: number | undefined
   let memoryPath: string | undefined
   let extractMemory = false
-  let sandbox: 'unconfined' | 'seatbelt' = 'unconfined'
+  let sandbox: 'unconfined' | 'seatbelt' | 'docker' = 'unconfined'
   let trustWorkspace = false
 
   for (let index = 0; index < args.length; index++) {
@@ -192,8 +193,8 @@ export function parseCodingCommand(args: readonly string[]): ParsedCodingCommand
     }
     if (arg === '--sandbox') {
       const value = optionValue(args, index, arg)
-      if (value !== 'unconfined' && value !== 'seatbelt') {
-        throw new CliUsageError('--sandbox must be unconfined or seatbelt')
+      if (value !== 'unconfined' && value !== 'seatbelt' && value !== 'docker') {
+        throw new CliUsageError('--sandbox must be unconfined, seatbelt or docker')
       }
       sandbox = value
       index += 1
@@ -386,12 +387,21 @@ export async function runCodingCommand(
     rootDir: sessionsDir,
     // 环境能力（模型、日志、文件系统、子进程）全部由 Host 提供；CLI 只给部署参数。
     host: withToolApprovalHost(
-      createLocalAgentHost({
-        adapterFactory,
-        workspaceDir: workspace,
-        sandbox: options.sandbox ?? 'unconfined',
-        ...(dependencies.credentials === undefined ? {} : { credentials: dependencies.credentials }),
-      }),
+      // 沙箱档决定 Host：docker 档用**容器化 Host**（fs/subprocess/sandbox 全部落进容器），
+      // 其余两档用本机 Host（seatbelt 时命令被包的沙箱里）
+      (options.sandbox ?? 'unconfined') === 'docker'
+        ? createDockerAgentHost({
+            adapterFactory,
+            workspaceDir: workspace,
+            ...(dependencies.credentials === undefined ? {} : { credentials: dependencies.credentials }),
+          })
+        : createLocalAgentHost({
+            adapterFactory,
+            workspaceDir: workspace,
+            // 走到这里 sandbox 一定不是 'docker'（上面那个分支已经拦掉了）
+            sandbox: options.sandbox === 'seatbelt' ? 'seatbelt' : 'unconfined',
+            ...(dependencies.credentials === undefined ? {} : { credentials: dependencies.credentials }),
+          }),
       approval,
       {
         path: PERMISSION_RULES_RELATIVE_PATH,

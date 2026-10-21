@@ -32,7 +32,7 @@ export interface WorkbenchConfigFile {
   /** 跨会话记忆文件（默认 ~/.cubus/memory/memory.jsonl）。 */
   readonly memoryPath?: string
   /** 沙箱档（S5.2）：unconfined（默认）或 seatbelt。 */
-  readonly sandbox?: 'unconfined' | 'seatbelt'
+  readonly sandbox?: 'unconfined' | 'seatbelt' | 'docker'
 }
 
 export const CONFIG_ENV_VAR = 'CUBUS_CONFIG'
@@ -91,7 +91,7 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
     mcpServers?: unknown
     contextWindow?: number
     memoryPath?: string
-    sandbox?: 'unconfined' | 'seatbelt'
+    sandbox?: 'unconfined' | 'seatbelt' | 'docker'
   } = {}
 
   const workspace = record['workspace']
@@ -150,8 +150,8 @@ export function parseWorkbenchConfig(raw: string, source: string): WorkbenchConf
   }
   const sandbox = record['sandbox']
   if (sandbox !== undefined) {
-    if (sandbox !== 'unconfined' && sandbox !== 'seatbelt') {
-      throw new Error(source + ': "sandbox" must be unconfined or seatbelt')
+    if (sandbox !== 'unconfined' && sandbox !== 'seatbelt' && sandbox !== 'docker') {
+      throw new Error(source + ': "sandbox" must be unconfined, seatbelt or docker')
     }
     config.sandbox = sandbox
   }

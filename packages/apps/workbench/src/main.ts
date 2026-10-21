@@ -15,6 +15,7 @@ import { mkdir, readFile, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { CredentialsError, LocalCredentials } from '@cubus/credentials'
+import { createDockerAgentHost } from '@cubus/host-docker'
 import { createLocalAgentHost } from '@cubus/host-local'
 import { withContextCompaction } from '@cubus/context-compaction'
 import { loadInstructionTiers, withInstructions } from '@cubus/instructions'
@@ -74,8 +75,8 @@ export interface WorkbenchCommandOptions {
   readonly contextWindow: number
   /** 跨会话记忆文件路径（默认 ~/.cubus/memory/memory.jsonl）。 */
   readonly memoryPath: string
-  /** 沙箱档（S5.2）：unconfined（默认）或 seatbelt（macOS 内核沙箱）。 */
-  readonly sandbox: 'unconfined' | 'seatbelt'
+  /** 沙箱档：unconfined（默认）／seatbelt（macOS 内核）／docker（容器级隔离）。 */
+  readonly sandbox: 'unconfined' | 'seatbelt' | 'docker'
   /** 显式指定暴露模式；缺省按体量判定（native 需要 provider 支持，否则报错）。 */
   readonly mcpMode?: 'eager' | 'on-demand' | 'native'
 }
@@ -408,7 +409,15 @@ async function main(args: readonly string[]): Promise<number> {
   const runtime = new SessionRuntime({
     rootDir: sessionsDir,
     host: withToolApprovalHost(
-      createLocalAgentHost({ adapterFactory, workspaceDir: workspace, credentials, sandbox: options.sandbox }),
+      // 沙箱档决定 Host：docker 档 = 容器化 Host（fs/subprocess/sandbox 都落进容器）
+      options.sandbox === 'docker'
+        ? createDockerAgentHost({ adapterFactory, workspaceDir: workspace, credentials })
+        : createLocalAgentHost({
+            adapterFactory,
+            workspaceDir: workspace,
+            credentials,
+            sandbox: options.sandbox,
+          }),
       approval,
       // 规则事实进能力 features（装配快照里能看到"这次带了哪份规则"）
       {

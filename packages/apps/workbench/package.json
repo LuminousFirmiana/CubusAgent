@@ -20,6 +20,7 @@
     "@cubus/credentials": "workspace:*",
     "@cubus/git": "workspace:*",
     "@cubus/git-cli": "workspace:*",
+    "@cubus/host-docker": "workspace:*",
     "@cubus/host-local": "workspace:*",
     "@cubus/instructions": "workspace:*",
     "@cubus/llm-deepseek": "workspace:*",

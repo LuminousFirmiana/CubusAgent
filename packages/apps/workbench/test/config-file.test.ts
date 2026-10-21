@@ -34,6 +34,10 @@ test('a config file is parsed strictly: unknown keys and wrong types are named',
     .toThrow('c.json: unknown key "workspac" (known keys: ')
   expect(() => parseWorkbenchConfig('{"workspac":"/tmp/repo"}', 'c.json'))
     .toThrow('mcpServers, contextWindow, memoryPath, sandbox)')
+  // 沙箱三档（S5.2 + docker）：容器档也是合法值
+  expect(parseWorkbenchConfig('{"sandbox":"docker"}', 'c.json').sandbox).toBe('docker')
+  expect(() => parseWorkbenchConfig('{"sandbox":"chroot"}', 'c.json'))
+    .toThrow('"sandbox" must be unconfined, seatbelt or docker')
   expect(() => parseWorkbenchConfig('{"approval":"always"}', 'c.json'))
     .toThrow('c.json: "approval" must be one of ask, allow, deny')
   expect(() => parseWorkbenchConfig('{"workspace":""}', 'c.json'))

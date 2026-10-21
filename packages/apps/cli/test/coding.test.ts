@@ -75,6 +75,11 @@ test('parses the explicit trusted-workspace command surface', () => {
   expect(parseCodingCommand([
     '--workspace', './repo', '--task', 'x', '--approval', 'deny',
   ]).options?.approval).toBe('deny')
+  // 沙箱三档：unconfined / seatbelt / docker（docker = 容器化 Host）
+  expect(parseCodingCommand(['--workspace', './repo', '--task', 'x', '--sandbox', 'seatbelt']).options?.sandbox).toBe('seatbelt')
+  expect(parseCodingCommand(['--workspace', './repo', '--task', 'x', '--sandbox', 'docker']).options?.sandbox).toBe('docker')
+  expect(() => parseCodingCommand(['--workspace', './repo', '--task', 'x', '--sandbox', 'firecracker']))
+    .toThrow('--sandbox must be unconfined, seatbelt or docker')
 
   // 预算覆盖（C5）：字段可选，--max-duration 以秒为单位转成毫秒
   expect(parseCodingCommand([

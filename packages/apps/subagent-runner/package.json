@@ -1,0 +1,26 @@
+{
+  "name": "@cubus/subagent-runner",
+  "version": "0.0.0",
+  "description": "Child-process entry that runs one subagent session and writes the result contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/main.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cubus/host-local": "workspace:*",
+    "@cubus/llm": "workspace:*",
+    "@cubus/recipe-cubus-coding-agent": "workspace:*",
+    "@cubus/sdk": "workspace:*",
+    "@cubus/session": "workspace:*",
+    "@cubus/tool-approval": "workspace:*"
+  },
+  "devDependencies": {
+    "@cubus/subagents": "workspace:*"
+  }
+}
